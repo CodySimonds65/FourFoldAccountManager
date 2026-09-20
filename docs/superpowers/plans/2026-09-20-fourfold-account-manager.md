@@ -49,6 +49,12 @@
 - Create: FourFoldAccountManager.sln
 - Create: src/FourFoldAccountManager.Core/FourFoldAccountManager.Core.csproj
 - Create: src/FourFoldAccountManager.Desktop/FourFoldAccountManager.Desktop.csproj
+- Create: src/FourFoldAccountManager.Desktop/App.xaml
+- Create: src/FourFoldAccountManager.Desktop/App.xaml.cs
+- Create: src/FourFoldAccountManager.Desktop/MainWindow.xaml
+- Create: src/FourFoldAccountManager.Desktop/MainWindow.xaml.cs
+- Delete: src/FourFoldAccountManager.Core/Class1.cs
+- Delete: tests/FourFoldAccountManager.Core.Tests/UnitTest1.cs
 - Create: tests/FourFoldAccountManager.Core.Tests/FourFoldAccountManager.Core.Tests.csproj
 - Create: tools/FourFoldWebViewProbe/FourFoldWebViewProbe.csproj
 - Create: tools/FourFoldWebViewProbe/MainWindow.xaml
@@ -286,7 +292,7 @@ Commit: git add src/FourFoldAccountManager.Core tests/FourFoldAccountManager.Cor
 
 **Interfaces:**
 - Consumes: LocalDataPaths and account IDs from Task 2; allowed hosts from docs/fourfold-webview-compatibility.md.
-- Produces: FourFoldNavigationPolicy(IEnumerable<string> allowedHosts).TryValidate(Uri, out Uri); FourFoldDestination.StartUri; AccountBrowserSessionService.CreateViewAsync(Guid, CancellationToken), NavigateAsync(Guid, Uri, CancellationToken), CloseViewAsync(Guid), ClearProfileAsync(Guid, CancellationToken).
+- Produces: FourFoldNavigationPolicy(IEnumerable<string> allowedHosts).TryValidate(Uri, out Uri); FourFoldDestination.StartUri; AccountBrowserSessionService.CreateViewAsync(Guid, CancellationToken) returning Task<WebView2>, NavigateAsync(Guid, Uri, CancellationToken) returning Task, CloseViewAsync(Guid) returning Task, and ClearProfileAsync(Guid, CancellationToken) returning Task.
 
 - [ ] Step 1: Add URL-policy tests for allowed and rejected destinations.
 
@@ -357,6 +363,7 @@ Commit: git add src tests/FourFoldAccountManager.Core.Tests; git commit -m "feat
 - Create: src/FourFoldAccountManager.Desktop/ViewModels/MainViewModel.cs
 - Create: src/FourFoldAccountManager.Desktop/ViewModels/PanelSlotViewModel.cs
 - Create: src/FourFoldAccountManager.Desktop/Infrastructure/RelayCommand.cs
+- Create: src/FourFoldAccountManager.Desktop/Resources/Theme.xaml
 - Create: src/FourFoldAccountManager.Desktop/Views/AddAccountDialog.xaml
 - Create: src/FourFoldAccountManager.Desktop/Views/AddAccountDialog.xaml.cs
 - Create: src/FourFoldAccountManager.Desktop/Views/PanelSlotControl.xaml
@@ -372,7 +379,7 @@ Commit: git add src tests/FourFoldAccountManager.Core.Tests; git commit -m "feat
 
 - [ ] Step 1: Implement the account rail and label-only add dialog.
 
-Display account labels, favorites, and actions to add, rename, reorder, and favorite profiles. Add the Remove action in Task 6 after profile-data clearing is available. The add dialog accepts a display label only; it has no username/password fields. Persist changes to accounts.json immediately.
+Display account labels, favorites, and actions to add, rename, reorder, and favorite profiles. Reuse the RAM account-rail visual hierarchy with a restrained FourFold theme, clear spacing, and readable status contrast. Add the Remove action in Task 6 after profile-data clearing is available. The add dialog accepts a display label only; it has no username/password fields. Persist changes to accounts.json immediately.
 
 - [ ] Step 2: Add the three-layout selector and four stable slot assignments.
 
@@ -463,6 +470,7 @@ git commit -m "docs: document Windows release"
 git push -u origin feature/fourfold-account-manager
 ~~~
 Expected: private remote has the feature branch, and the executable is in artifacts/win-x64/.
+
 
 
 
