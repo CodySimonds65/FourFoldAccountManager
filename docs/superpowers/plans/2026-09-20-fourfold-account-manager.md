@@ -75,7 +75,7 @@ Run:
 ~~~powershell
 git switch -c feature/fourfold-account-manager
 dotnet new gitignore
-dotnet new sln -n FourFoldAccountManager
+dotnet new sln -n FourFoldAccountManager --format sln
 dotnet new classlib -n FourFoldAccountManager.Core -o src/FourFoldAccountManager.Core -f net10.0
 dotnet new wpf -n FourFoldAccountManager.Desktop -o src/FourFoldAccountManager.Desktop -f net10.0
 dotnet new mstest -n FourFoldAccountManager.Core.Tests -o tests/FourFoldAccountManager.Core.Tests -f net10.0
@@ -460,4 +460,5 @@ git commit -m "docs: document Windows release"
 git push -u origin feature/fourfold-account-manager
 ~~~
 Expected: private remote has the feature branch, and the executable is in artifacts/win-x64/.
+
 

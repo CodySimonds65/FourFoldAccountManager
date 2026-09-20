@@ -66,7 +66,7 @@ The application will not inspect page content to infer login state. Users can se
 
 - accounts.json: account IDs, labels, favorite/display ordering.
 - settings.json: selected layout, the four slot-to-account assignments, and ordinary window preferences.
-- WebView2\Profiles\<account-id>: separate persistent website data for each account.
+- WebView2 user-data root: a stable named profile per account ID; the app does not depend on WebView2 internal folder names.
 
 All data stays on the local Windows user profile. No account data is synced. Removing a profile deletes its associated website data after explicit confirmation.
 
@@ -109,4 +109,5 @@ If the FourFold site cannot run correctly in WebView2 or four concurrent views a
 - A failure in one view does not prevent other assigned accounts from opening.
 - Account passwords are never collected or stored by the manager.
 - The Windows build contains no macro, OCR, automated-input, activity-log, or game-preset feature.
+
 
