@@ -1,7 +1,7 @@
 <Window x:Class="FourFoldWebViewProbe.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="FourFold WebView2 Compatibility Probe"
+        Title="FourFold WebView2 Compatibility Probe — Diagnostic Build 2026.09.20-B"
         Width="1440" Height="900" MinWidth="900" MinHeight="620"
         Background="#11151D" Foreground="#E8EDF5"
         Loaded="Window_Loaded">

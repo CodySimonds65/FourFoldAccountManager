@@ -44,10 +44,12 @@ public partial class MainWindow : Window
         {
             Directory.CreateDirectory(root);
             File.WriteAllText(_statusLogPath, $"Started: {DateTimeOffset.UtcNow:O}{Environment.NewLine}");
+            Log($"Executable: {Environment.ProcessPath ?? "<unknown>"}.");
+            Log($"Probe data root is writable: {File.Exists(_statusLogPath)}.");
             var environment = await CoreWebView2Environment.CreateAsync(
                 browserExecutableFolder: null,
                 userDataFolder: root);
-            Log("WebView2 environment initialized.");
+            Log($"WebView2 environment initialized; effective user-data folder: {environment.UserDataFolder}.");
 
             for (var index = 0; index < _slots.Length; index++)
             {
@@ -65,7 +67,8 @@ public partial class MainWindow : Window
                     await browser.EnsureCoreWebView2Async(environment, options);
                     browser.CoreWebView2.Settings.AreDevToolsEnabled = false;
                     browser.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
-                    Log($"Profile {profileNumber}: initialized with a separate persistent profile.");
+                    var profile = browser.CoreWebView2.Profile;
+                    Log($"Profile {profileNumber}: initialized; runtime name={profile.ProfileName}; inPrivate={profile.IsInPrivateModeEnabled}.");
 
                     browser.CoreWebView2.NavigationStarting += (_, args) =>
                     {
