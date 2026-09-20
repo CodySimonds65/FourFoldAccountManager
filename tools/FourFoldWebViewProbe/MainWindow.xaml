@@ -1,0 +1,49 @@
+<Window x:Class="FourFoldWebViewProbe.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="FourFold WebView2 Compatibility Probe"
+        Width="1440" Height="900" MinWidth="900" MinHeight="620"
+        Background="#11151D" Foreground="#E8EDF5"
+        Loaded="Window_Loaded">
+    <Grid Margin="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,10">
+            <TextBlock FontSize="20" FontWeight="SemiBold" Text="FourFold compatibility probe" />
+            <TextBlock Margin="0,4,0,0" Foreground="#A7B3C5"
+                       Text="Four isolated browser profiles. Sign in manually in two slots to check profile separation." />
+        </StackPanel>
+        <UniformGrid Grid.Row="1" Columns="2" Rows="2">
+            <Border Margin="4" Padding="8" Background="#1A202B" BorderBrush="#323B4A" BorderThickness="1" CornerRadius="6">
+                <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                    <TextBlock x:Name="StatusOne" Margin="2,0,0,6" Text="Waiting" Foreground="#B9C6D8" />
+                    <Grid x:Name="HostOne" Grid.Row="1" />
+                </Grid>
+            </Border>
+            <Border Margin="4" Padding="8" Background="#1A202B" BorderBrush="#323B4A" BorderThickness="1" CornerRadius="6">
+                <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                    <TextBlock x:Name="StatusTwo" Margin="2,0,0,6" Text="Waiting" Foreground="#B9C6D8" />
+                    <Grid x:Name="HostTwo" Grid.Row="1" />
+                </Grid>
+            </Border>
+            <Border Margin="4" Padding="8" Background="#1A202B" BorderBrush="#323B4A" BorderThickness="1" CornerRadius="6">
+                <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                    <TextBlock x:Name="StatusThree" Margin="2,0,0,6" Text="Waiting" Foreground="#B9C6D8" />
+                    <Grid x:Name="HostThree" Grid.Row="1" />
+                </Grid>
+            </Border>
+            <Border Margin="4" Padding="8" Background="#1A202B" BorderBrush="#323B4A" BorderThickness="1" CornerRadius="6">
+                <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                    <TextBlock x:Name="StatusFour" Margin="2,0,0,6" Text="Waiting" Foreground="#B9C6D8" />
+                    <Grid x:Name="HostFour" Grid.Row="1" />
+                </Grid>
+            </Border>
+        </UniformGrid>
+    </Grid>
+</Window>
