@@ -82,6 +82,9 @@ dotnet new mstest -n FourFoldAccountManager.Core.Tests -o tests/FourFoldAccountM
 dotnet sln FourFoldAccountManager.sln add src/FourFoldAccountManager.Core/FourFoldAccountManager.Core.csproj src/FourFoldAccountManager.Desktop/FourFoldAccountManager.Desktop.csproj tests/FourFoldAccountManager.Core.Tests/FourFoldAccountManager.Core.Tests.csproj
 dotnet add src/FourFoldAccountManager.Desktop/FourFoldAccountManager.Desktop.csproj reference src/FourFoldAccountManager.Core/FourFoldAccountManager.Core.csproj
 dotnet add tests/FourFoldAccountManager.Core.Tests/FourFoldAccountManager.Core.Tests.csproj reference src/FourFoldAccountManager.Core/FourFoldAccountManager.Core.csproj
+dotnet add tests/FourFoldAccountManager.Core.Tests/FourFoldAccountManager.Core.Tests.csproj package Microsoft.NET.Test.Sdk --version 18.9.0
+dotnet add tests/FourFoldAccountManager.Core.Tests/FourFoldAccountManager.Core.Tests.csproj package MSTest.TestAdapter --version 4.3.3
+dotnet add tests/FourFoldAccountManager.Core.Tests/FourFoldAccountManager.Core.Tests.csproj package MSTest.TestFramework --version 4.3.3
 dotnet add src/FourFoldAccountManager.Desktop/FourFoldAccountManager.Desktop.csproj package Microsoft.Web.WebView2 --version 1.0.4078.44
 dotnet build FourFoldAccountManager.sln
 ~~~
@@ -369,7 +372,7 @@ Commit: git add src tests/FourFoldAccountManager.Core.Tests; git commit -m "feat
 
 - [ ] Step 1: Implement the account rail and label-only add dialog.
 
-Display account labels, favorites, and actions to add, rename, reorder, favorite, and remove profiles. The add dialog accepts a display label only; it has no username/password fields. Persist changes to accounts.json immediately.
+Display account labels, favorites, and actions to add, rename, reorder, and favorite profiles. Add the Remove action in Task 6 after profile-data clearing is available. The add dialog accepts a display label only; it has no username/password fields. Persist changes to accounts.json immediately.
 
 - [ ] Step 2: Add the three-layout selector and four stable slot assignments.
 
@@ -425,7 +428,7 @@ Commit: git add src/FourFoldAccountManager.Desktop; git commit -m "feat: add acc
 
 - [ ] Step 1: Implement account removal and shutdown.
 
-After confirmation, clear only that profile's CoreWebView2BrowsingDataKinds.AllProfile data, remove the view, clear that account ID from all slots, remove its metadata, and save both files. If profile clearing fails, keep the account and assignment. For an inactive profile, create a temporary hidden view with the same profile name, clear it on the UI dispatcher, then close it. App shutdown disposes views without clearing sessions.
+After the user confirms Remove, clear only that profile's CoreWebView2BrowsingDataKinds.AllProfile data, remove the view, clear that account ID from all slots, remove its metadata, and save both files. If profile clearing fails, keep the account and assignment. For an inactive profile, create a temporary hidden view with the same profile name, clear it on the UI dispatcher, then close it. App shutdown disposes views without clearing sessions.
 
 - [ ] Step 2: Handle popup, redirect, and WebView2 Runtime failures.
 
@@ -460,6 +463,7 @@ git commit -m "docs: document Windows release"
 git push -u origin feature/fourfold-account-manager
 ~~~
 Expected: private remote has the feature branch, and the executable is in artifacts/win-x64/.
+
 
 
 
