@@ -36,7 +36,9 @@ The RAM working tree contains local modifications and untracked files. Treat it 
 
 ## Application architecture
 
-Build a focused WPF application targeting .NET 8 on Windows x64 and using Microsoft WebView2.
+Build a focused WPF application targeting .NET 10 LTS on Windows x64 and using Microsoft WebView2.
+
+Use .NET 10 LTS instead of matching RAM's .NET 8 target because the current official support policy lists .NET 8 end of support as November 10, 2026 and .NET 10 LTS end of support as November 14, 2028: https://dotnet.microsoft.com/en-us/platform/support/policy.
 
 Keep responsibilities separate:
 
@@ -107,3 +109,4 @@ If the FourFold site cannot run correctly in WebView2 or four concurrent views a
 - A failure in one view does not prevent other assigned accounts from opening.
 - Account passwords are never collected or stored by the manager.
 - The Windows build contains no macro, OCR, automated-input, activity-log, or game-preset feature.
+
