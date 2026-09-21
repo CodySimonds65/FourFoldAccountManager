@@ -11,6 +11,20 @@ A Windows desktop app for managing FourFold accounts and opening them in separat
 
 Requires Windows, the .NET 10 SDK, and the Microsoft Edge WebView2 Runtime.
 
+## Updates and releases
+
+Stable Windows releases are published on [GitHub Releases](https://github.com/CodySimonds65/FourFoldAccountManager/releases). FourFold checks once after startup, asks before downloading a newer version, verifies the standalone executable, and restarts into the update when you approve it. WebView2 remains required after updating.
+
+Each Windows release includes:
+
+```text
+FourFoldAccountManager-v<version>-win-x64.zip
+FourFoldAccountManager-v<version>-win-x64-standalone.exe
+FourFoldAccountManager-v<version>-checksums.txt
+```
+
+The release workflow currently publishes Windows `win-x64` assets only; no macOS build is provided.
+
 ```powershell
 dotnet build FourFoldAccountManager.sln -c Release
 dotnet run --project src/FourFoldAccountManager.Desktop/FourFoldAccountManager.Desktop.csproj
