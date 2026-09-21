@@ -65,7 +65,8 @@ public partial class MainWindow : Window
             new LayoutChoice(PanelLayout.TwoByOne, "2 × 1 · Stacked"),
             new LayoutChoice(PanelLayout.TwoByTwo, "2 × 2 · Grid"),
             new LayoutChoice(PanelLayout.TwoByThree, "2 × 3 · Five clients"),
-            new LayoutChoice(PanelLayout.OneByTwoVertical, "1 × 2 · Vertical split")
+            new LayoutChoice(PanelLayout.OneByTwoVertical, "1 × 2 · Vertical split"),
+            new LayoutChoice(PanelLayout.OneByOne, "1 × 1 · Single client")
         };
 
         LayoutPicker.SelectedValuePath = nameof(LayoutChoice.Layout);
@@ -1739,6 +1740,7 @@ public partial class MainWindow : Window
         PanelLayout.TwoByTwo => "2 × 2",
         PanelLayout.TwoByThree => "2 × 3",
         PanelLayout.OneByTwoVertical => "1 × 2 vertical",
+        PanelLayout.OneByOne => "1 × 1",
         _ => "Unknown"
     };
 

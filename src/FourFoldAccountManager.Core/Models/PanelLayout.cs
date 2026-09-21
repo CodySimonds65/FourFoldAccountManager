@@ -6,7 +6,8 @@ public enum PanelLayout
     TwoByOne,
     TwoByTwo,
     TwoByThree,
-    OneByTwoVertical
+    OneByTwoVertical,
+    OneByOne
 }
 
 public readonly record struct GridDimensions(int Rows, int Columns);
