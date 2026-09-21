@@ -1,13 +1,21 @@
-﻿using System.Configuration;
-using System.Data;
 using System.Windows;
+using FourFoldAccountManager.Desktop.Updates;
 
 namespace FourFoldAccountManager.Desktop;
 
-/// <summary>
-/// Interaction logic for App.xaml
-/// </summary>
 public partial class App : Application
 {
-}
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        if (UpdateInstaller.TryRunReplacementMode(e.Args))
+        {
+            Shutdown();
+            return;
+        }
 
+        base.OnStartup(e);
+        var mainWindow = new MainWindow();
+        MainWindow = mainWindow;
+        mainWindow.Show();
+    }
+}

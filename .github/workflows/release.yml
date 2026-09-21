@@ -1,0 +1,167 @@
+name: Release FourFold Account Manager
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Semantic version to publish, for example 1.2.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fourfold-release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      commit: ${{ steps.version.outputs.commit }}
+    env:
+      PROJECT_PATH: src/FourFoldAccountManager.Desktop/FourFoldAccountManager.Desktop.csproj
+      PROJECT_NAME: FourFold Account Manager
+      REQUESTED_VERSION: ${{ inputs.version }}
+
+    steps:
+      - name: Check out release source without credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Validate release version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME } else { "v$env:REQUESTED_VERSION" }
+          if ($tag -notmatch '^v\d+\.\d+\.\d+$') {
+              throw "Release version must be vMAJOR.MINOR.PATCH; received '$tag'."
+          }
+          [xml]$project = Get-Content -Raw -LiteralPath $env:PROJECT_PATH
+          $projectVersion = [string]($project.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+          if ($projectVersion -ne $tag.Substring(1)) {
+              throw "Project Version '$projectVersion' does not match release tag '$tag'."
+          }
+          $tagCommit = (git rev-list -n 1 $tag 2>$null).Trim()
+          if ([string]::IsNullOrWhiteSpace($tagCommit) -or $tagCommit -ne $env:GITHUB_SHA) {
+              throw "Release tag '$tag' does not point to the checked-out commit."
+          }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "commit=$env:GITHUB_SHA" >> $env:GITHUB_OUTPUT
+
+      - name: Build Windows release assets
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.tag }}
+        run: |
+          $version = $env:RELEASE_VERSION.Substring(1)
+          $release = Join-Path $env:RUNNER_TEMP 'fourfold-release'
+          $portableStage = Join-Path $release 'portable'
+          $standaloneStage = Join-Path $release 'standalone'
+          New-Item -ItemType Directory -Force -Path $portableStage, $standaloneStage | Out-Null
+
+          dotnet publish .\src\FourFoldAccountManager.Desktop\FourFoldAccountManager.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -p:Version=$version -o $portableStage
+          dotnet publish .\src\FourFoldAccountManager.Desktop\FourFoldAccountManager.Desktop.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:EnableCompressionInSingleFile=true -p:Version=$version -o $standaloneStage
+
+          $portableZip = Join-Path $release "FourFoldAccountManager-v$version-win-x64.zip"
+          $standaloneSource = Join-Path $standaloneStage 'FourFoldAccountManager.Desktop.exe'
+          $standaloneAsset = Join-Path $release "FourFoldAccountManager-v$version-win-x64-standalone.exe"
+          $checksums = Join-Path $release "FourFoldAccountManager-v$version-checksums.txt"
+          Compress-Archive -Path (Join-Path $portableStage '*') -DestinationPath $portableZip -Force
+          Move-Item -LiteralPath $standaloneSource -Destination $standaloneAsset -Force
+
+          $lines = @(
+              "$( (Get-FileHash -LiteralPath $portableZip -Algorithm SHA256).Hash.ToLowerInvariant()) *$([IO.Path]::GetFileName($portableZip))",
+              "$( (Get-FileHash -LiteralPath $standaloneAsset -Algorithm SHA256).Hash.ToLowerInvariant()) *$([IO.Path]::GetFileName($standaloneAsset))"
+          )
+          [IO.File]::WriteAllLines($checksums, $lines)
+          Get-ChildItem -LiteralPath $release | Select-Object Name,Length | Format-Table | Out-String | Write-Output
+
+      - name: Upload unsigned release assets
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fourfold-release-assets
+          path: ${{ runner.temp }}/fourfold-release/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.build.outputs.tag }}
+      RELEASE_TARGET: ${{ needs.build.outputs.commit }}
+
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: fourfold-release-assets
+          path: release
+
+      - name: Verify checksums
+        shell: pwsh
+        run: |
+          $checksums = Get-Content -Raw -LiteralPath (Get-ChildItem -LiteralPath release -Filter '*-checksums.txt').FullName
+          foreach ($binary in @(Get-ChildItem -LiteralPath release -File | Where-Object { $_.Extension -in '.zip', '.exe' })) {
+              $expected = [regex]::Match($checksums, "(?m)^([0-9a-fA-F]{64})\s+\*?$([regex]::Escape($binary.Name))\s*$")
+              if (-not $expected.Success) { throw "Missing checksum for $($binary.Name)." }
+              $actual = (Get-FileHash -LiteralPath $binary.FullName -Algorithm SHA256).Hash
+              if ($actual -ine $expected.Groups[1].Value) { throw "Checksum mismatch for $($binary.Name)." }
+          }
+
+      - name: Create or repair GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          function Get-ReleaseMetadata {
+              $json = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json tagName,targetCommitish,isDraft,isPrerelease,assets 2>$null
+              if ($LASTEXITCODE -ne 0) { return $null }
+              return ($json | ConvertFrom-Json)
+          }
+
+          $assetPaths = @(Get-ChildItem -LiteralPath release -File | ForEach-Object { $_.FullName })
+          $existing = Get-ReleaseMetadata
+          if ($null -ne $existing) {
+              if ($existing.tagName -ne $env:RELEASE_TAG -or $existing.isDraft -or $existing.isPrerelease -or $existing.targetCommitish -ine $env:RELEASE_TARGET) {
+                  throw "Existing release $env:RELEASE_TAG has the wrong target or publication state; refusing to overwrite it."
+              }
+              gh release upload $env:RELEASE_TAG $assetPaths --repo $env:GITHUB_REPOSITORY --clobber
+              if ($LASTEXITCODE -ne 0) { throw "Release asset repair failed for $env:RELEASE_TAG." }
+              "Release $env:RELEASE_TAG was repaired or refreshed." >> $env:GITHUB_STEP_SUMMARY
+              exit 0
+          }
+
+          gh release create $env:RELEASE_TAG $assetPaths --repo $env:GITHUB_REPOSITORY --target $env:RELEASE_TARGET --title "$env:RELEASE_TAG" --generate-notes
+          if ($LASTEXITCODE -ne 0) {
+              gh release create $env:RELEASE_TAG $assetPaths --repo $env:GITHUB_REPOSITORY --target $env:RELEASE_TARGET --title "$env:RELEASE_TAG" --notes "FourFold Account Manager $env:RELEASE_TAG"
+              if ($LASTEXITCODE -ne 0) { throw "GitHub release creation failed for $env:RELEASE_TAG." }
+          }
+
+      - name: Verify published GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $releaseJson = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json tagName,targetCommitish,isDraft,isPrerelease,assets
+          if ($LASTEXITCODE -ne 0) { throw "Unable to read published release $env:RELEASE_TAG." }
+          $release = $releaseJson | ConvertFrom-Json
+          if ($release.tagName -ne $env:RELEASE_TAG -or $release.isDraft -or $release.isPrerelease -or $release.targetCommitish -ine $env:RELEASE_TARGET) {
+              throw "Published release $env:RELEASE_TAG has unexpected metadata."
+          }
+          foreach ($assetPath in Get-ChildItem -LiteralPath release -File) {
+              $matches = @($release.assets | Where-Object { $_.name -eq $assetPath.Name -and $_.state -eq 'uploaded' -and [int64]$_.size -gt 0 })
+              if ($matches.Count -ne 1) { throw "Published release is missing exactly one uploaded asset named $($assetPath.Name)." }
+          }
