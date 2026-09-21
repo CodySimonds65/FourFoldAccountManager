@@ -17,17 +17,6 @@ public static class PanelLayoutPolicy
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
 
-    public static IReadOnlyList<int> GetSlotsPerRow(PanelLayout layout) =>
-        layout switch
-        {
-            PanelLayout.OneByTwo => new[] { 2 },
-            PanelLayout.TwoByOne => new[] { 1, 1 },
-            PanelLayout.TwoByTwo => new[] { 2, 2 },
-            PanelLayout.TwoByThree => new[] { 2, 3 },
-            PanelLayout.OneByTwoVertical => new[] { 2, 2 },
-            _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
-        };
-
     public static int GetVisibleSlotCount(PanelLayout layout) =>
         GetSlotPlacements(layout).Count;
 
