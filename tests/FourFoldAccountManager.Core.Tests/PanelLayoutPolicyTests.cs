@@ -7,6 +7,26 @@ namespace FourFoldAccountManager.Core.Tests;
 public sealed class PanelLayoutPolicyTests
 {
     [TestMethod]
+    [DataRow(PanelLayout.OneByTwo, 2, 0)]
+    [DataRow(PanelLayout.TwoByOne, 1, 1)]
+    [DataRow(PanelLayout.TwoByTwo, 2, 2)]
+    [DataRow(PanelLayout.TwoByThree, 2, 3)]
+    public void GetSlotsPerRow_PreservesEveryLayoutShape(
+        PanelLayout layout,
+        int firstRowSlots,
+        int secondRowSlots)
+    {
+        var rows = PanelLayoutPolicy.GetSlotsPerRow(layout);
+
+        Assert.AreEqual(firstRowSlots, rows[0]);
+        Assert.AreEqual(secondRowSlots == 0 ? 1 : 2, rows.Count);
+        if (secondRowSlots > 0)
+        {
+            Assert.AreEqual(secondRowSlots, rows[1]);
+        }
+    }
+
+    [TestMethod]
     public void GetVisibleSlotCount_ForTwoByThree_ReturnsFive()
     {
         Assert.AreEqual(5, PanelLayoutPolicy.GetVisibleSlotCount((PanelLayout)3));

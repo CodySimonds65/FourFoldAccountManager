@@ -65,13 +65,31 @@ public sealed class SettingsStoreTests
     }
 
     [TestMethod]
-    public async Task SaveAsync_WithOutOfRangeTopRowFraction_RejectsSettings()
+    [DataRow(0.19)]
+    [DataRow(0.81)]
+    public async Task SaveAsync_WithOutOfRangeTopRowFraction_RejectsSettings(double fraction)
     {
         var settings = new PanelSettings(PanelLayout.TwoByTwo, new Guid?[5])
         {
-            TwoByThreeTopRowFraction = 0.95
+            TwoByThreeTopRowFraction = fraction
         };
 
         await Assert.ThrowsAsync<InvalidDataException>(() => _store.SaveAsync(settings));
+    }
+
+    [TestMethod]
+    [DataRow(0.2)]
+    [DataRow(0.8)]
+    public async Task SaveAsync_WithBoundaryTopRowFraction_RoundTripsSettings(double fraction)
+    {
+        var settings = new PanelSettings(PanelLayout.TwoByThree, new Guid?[5])
+        {
+            TwoByThreeTopRowFraction = fraction
+        };
+
+        await _store.SaveAsync(settings);
+        var loaded = await _store.LoadAsync();
+
+        Assert.AreEqual(fraction, loaded.TwoByThreeTopRowFraction, 0.0001);
     }
 }

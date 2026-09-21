@@ -24,6 +24,7 @@ public partial class MainWindow : Window
     private readonly WindowsCredentialStore _credentialStore;
     private readonly AccountBrowserSessionService _browserSessions;
     private readonly List<PanelSlotCard> _slotCards = [];
+    private readonly SemaphoreSlim _settingsMutationGate = new(1, 1);
     private readonly SemaphoreSlim _viewportSaveGate = new(1, 1);
     private PanelSettings _panelSettings = PanelSettings.Default;
     private bool _isReady;
@@ -170,22 +171,23 @@ public partial class MainWindow : Window
 
         AccountsListBox.SelectedItem = account;
         UpdateAccountActions();
-        var visibleSlot = Enumerable.Range(0, PanelLayoutPolicy.GetVisibleSlotCount(_panelSettings.Layout))
-            .FirstOrDefault(index => _panelSettings.SlotAccountIds[index] is null, -1);
-        if (visibleSlot >= 0)
+        var visibleSlot = -1;
+        try
         {
-            var nextSettings = PanelLayoutPolicy.Assign(_panelSettings, visibleSlot, account.Id);
-            try
+            await UpdateSettingsAsync(currentSettings =>
             {
-                await _settingsStore.SaveAsync(nextSettings);
-                _panelSettings = nextSettings;
-            }
-            catch
-            {
-                await RefreshSlotPickersAsync();
-                GlobalStatusText.Text = $"Added {account.Label}, but its panel assignment could not be saved. Choose it from a slot menu.";
-                return;
-            }
+                visibleSlot = Enumerable.Range(0, PanelLayoutPolicy.GetVisibleSlotCount(currentSettings.Layout))
+                    .FirstOrDefault(index => currentSettings.SlotAccountIds[index] is null, -1);
+                return visibleSlot >= 0
+                    ? PanelLayoutPolicy.Assign(currentSettings, visibleSlot, account.Id)
+                    : currentSettings;
+            });
+        }
+        catch
+        {
+            await RefreshSlotPickersAsync();
+            GlobalStatusText.Text = $"Added {account.Label}, but its panel assignment could not be saved. Choose it from a slot menu.";
+            return;
         }
 
         await RefreshSlotPickersAsync();
@@ -365,9 +367,8 @@ public partial class MainWindow : Window
         {
             await CloseAccountViewAsync(account.Id);
             await _browserSessions.ClearProfileAsync(account.Id, MaintenanceWebViewHost);
-            var nextSettings = PanelLayoutPolicy.ClearAccount(_panelSettings, account.Id);
-            await _settingsStore.SaveAsync(nextSettings);
-            _panelSettings = nextSettings;
+            await UpdateSettingsAsync(currentSettings =>
+                PanelLayoutPolicy.ClearAccount(currentSettings, account.Id));
             _accounts.Remove(account);
             NormalizeSortOrder();
             await SaveAccountsAsync();
@@ -402,11 +403,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        var nextSettings = PanelLayoutPolicy.WithLayout(_panelSettings, layout);
         try
         {
-            await _settingsStore.SaveAsync(nextSettings);
-            _panelSettings = nextSettings;
+            await UpdateSettingsAsync(currentSettings =>
+                PanelLayoutPolicy.WithLayout(currentSettings, layout));
             await RebuildPanelAsync(closeExistingViews: false);
             GlobalStatusText.Text = $"Layout changed to {FormatLayout(layout)}. Slot assignments were preserved.";
         }
@@ -459,22 +459,28 @@ public partial class MainWindow : Window
             return;
         }
 
-        var previousSettings = _panelSettings;
-        var nextSettings = _panelSettings with
-        {
-            FillGameToPanel = dialog.FillGameToPanel,
-            ShowFullScreenExitButton = dialog.ShowFullScreenExitButton
-        };
-        var scalingChanged = nextSettings.FillGameToPanel != previousSettings.FillGameToPanel;
+        PanelSettings? nextSettings = null;
+        var scalingChanged = false;
         SettingsButton.IsEnabled = false;
         try
         {
-            if (scalingChanged)
+            nextSettings = await UpdateSettingsAsync(async currentSettings =>
             {
-                await _browserSessions.SetGameScalingAsync(nextSettings.FillGameToPanel);
-            }
-            await _settingsStore.SaveAsync(nextSettings);
-            _panelSettings = nextSettings;
+                var candidate = currentSettings with
+                {
+                    FillGameToPanel = dialog.FillGameToPanel,
+                    ShowFullScreenExitButton = dialog.ShowFullScreenExitButton
+                };
+                scalingChanged = candidate.FillGameToPanel != currentSettings.FillGameToPanel;
+                if (scalingChanged)
+                {
+                    await _browserSessions.SetGameScalingAsync(candidate.FillGameToPanel);
+                }
+
+                return candidate;
+            }, previousSettings => scalingChanged
+                ? _browserSessions.SetGameScalingAsync(previousSettings.FillGameToPanel)
+                : Task.CompletedTask);
             if (!nextSettings.FillGameToPanel)
             {
                 _viewAdjustmentVisible = false;
@@ -491,18 +497,6 @@ public partial class MainWindow : Window
         }
         catch
         {
-            try
-            {
-                if (scalingChanged)
-                {
-                    await _browserSessions.SetGameScalingAsync(previousSettings.FillGameToPanel);
-                }
-            }
-            catch
-            {
-                // Preserve the original error message; the next launch reapplies the saved setting.
-            }
-
             MessageBox.Show(this, "The settings could not be applied.",
                 "FourFold settings", MessageBoxButton.OK, MessageBoxImage.Error);
         }
@@ -828,11 +822,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        var nextSettings = PanelLayoutPolicy.Assign(_panelSettings, slotIndex, choice.AccountId);
         try
         {
-            await _settingsStore.SaveAsync(nextSettings);
-            _panelSettings = nextSettings;
+            await UpdateSettingsAsync(currentSettings =>
+                PanelLayoutPolicy.Assign(currentSettings, slotIndex, choice.AccountId));
             await RebuildPanelAsync(closeExistingViews: false);
             GlobalStatusText.Text = choice.AccountId is null
                 ? "Slot cleared. Other saved assignments were preserved."
@@ -912,29 +905,28 @@ public partial class MainWindow : Window
                     return;
                 }
 
-                var previousFraction = _panelSettings.TwoByThreeTopRowFraction;
                 var nextFraction = Math.Clamp(
                     topRow.ActualHeight / (topRow.ActualHeight + bottomRow.ActualHeight),
                     0.2,
                     0.8);
                 topRow.Height = new GridLength(nextFraction, GridUnitType.Star);
                 bottomRow.Height = new GridLength(1 - nextFraction, GridUnitType.Star);
-                if (Math.Abs(nextFraction - previousFraction) < 0.001)
+                if (Math.Abs(nextFraction - _panelSettings.TwoByThreeTopRowFraction) < 0.001)
                 {
                     return;
                 }
 
-                var nextSettings = _panelSettings with { TwoByThreeTopRowFraction = nextFraction };
                 try
                 {
-                    await _settingsStore.SaveAsync(nextSettings);
-                    _panelSettings = nextSettings;
+                    await UpdateSettingsAsync(currentSettings =>
+                        currentSettings with { TwoByThreeTopRowFraction = nextFraction });
                     GlobalStatusText.Text = "The 2 × 3 row heights were saved.";
                 }
                 catch
                 {
-                    topRow.Height = new GridLength(previousFraction, GridUnitType.Star);
-                    bottomRow.Height = new GridLength(1 - previousFraction, GridUnitType.Star);
+                    var savedFraction = _panelSettings.TwoByThreeTopRowFraction;
+                    topRow.Height = new GridLength(savedFraction, GridUnitType.Star);
+                    bottomRow.Height = new GridLength(1 - savedFraction, GridUnitType.Star);
                     MessageBox.Show(this, "The row heights could not be saved.", "FourFold Account Manager",
                         MessageBoxButton.OK, MessageBoxImage.Error);
                 }
@@ -1241,32 +1233,30 @@ public partial class MainWindow : Window
         await _viewportSaveGate.WaitAsync();
         try
         {
-            var previousSize = PanelLayoutPolicy.GetGameViewportSize(_panelSettings, accountId);
-            if (nextSize == previousSize)
-            {
-                return;
-            }
-
-            var nextSettings = PanelLayoutPolicy.WithGameViewportSize(_panelSettings, accountId, nextSize);
+            GameViewportSize? previousSize = null;
             try
             {
-                await _browserSessions.SetGameViewportSizeAsync(accountId, nextSize);
-                await _settingsStore.SaveAsync(nextSettings);
-                _panelSettings = nextSettings;
+                await UpdateSettingsAsync(async currentSettings =>
+                {
+                    previousSize = PanelLayoutPolicy.GetGameViewportSize(currentSettings, accountId);
+                    if (nextSize == previousSize)
+                    {
+                        return currentSettings;
+                    }
+
+                    await _browserSessions.SetGameViewportSizeAsync(accountId, nextSize);
+                    return PanelLayoutPolicy.WithGameViewportSize(currentSettings, accountId, nextSize);
+                }, currentSettings => _browserSessions.SetGameViewportSizeAsync(
+                    accountId,
+                    PanelLayoutPolicy.GetGameViewportSize(currentSettings, accountId)));
                 GlobalStatusText.Text = $"{slot.AccountLabel.Text} game size set to {nextSize.WidthPercent:0}% × {nextSize.HeightPercent:0}%.";
             }
             catch
             {
-                try
+                if (previousSize is not null)
                 {
-                    await _browserSessions.SetGameViewportSizeAsync(accountId, previousSize);
+                    SetViewportSliderValues(slot, previousSize);
                 }
-                catch
-                {
-                    // Preserve the original failure; reopening the app reapplies the saved value.
-                }
-
-                SetViewportSliderValues(slot, previousSize);
                 SetSlotStatus(slot, "The game size could not be saved.", StatusTone.Error);
             }
         }
@@ -1453,7 +1443,60 @@ public partial class MainWindow : Window
     private async Task SaveAccountsAsync() =>
         await _accountStore.SaveAsync(_accounts.OrderBy(account => account.SortOrder).ToArray());
 
-    private Task SaveSettingsAsync() => _settingsStore.SaveAsync(_panelSettings);
+    private Task<PanelSettings> UpdateSettingsAsync(Func<PanelSettings, PanelSettings> update) =>
+        UpdateSettingsAsync(currentSettings => Task.FromResult(update(currentSettings)));
+
+    private async Task<PanelSettings> UpdateSettingsAsync(
+        Func<PanelSettings, Task<PanelSettings>> update,
+        Func<PanelSettings, Task>? rollback = null)
+    {
+        await _settingsMutationGate.WaitAsync();
+        try
+        {
+            var previousSettings = _panelSettings;
+            var nextSettings = await update(previousSettings);
+            try
+            {
+                await _settingsStore.SaveAsync(nextSettings);
+            }
+            catch
+            {
+                try
+                {
+                    if (rollback is not null)
+                    {
+                        await rollback(previousSettings);
+                    }
+                }
+                catch
+                {
+                    // Preserve the original save failure; the next launch reapplies saved settings.
+                }
+
+                throw;
+            }
+
+            _panelSettings = nextSettings;
+            return nextSettings;
+        }
+        finally
+        {
+            _settingsMutationGate.Release();
+        }
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        await _settingsMutationGate.WaitAsync();
+        try
+        {
+            await _settingsStore.SaveAsync(_panelSettings);
+        }
+        finally
+        {
+            _settingsMutationGate.Release();
+        }
+    }
 
     private async Task ReloadLocalDataAfterFailureAsync()
     {
