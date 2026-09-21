@@ -12,7 +12,8 @@ public static class PanelLayoutPolicy
             PanelLayout.OneByTwo => new GridDimensions(1, 2),
             PanelLayout.TwoByOne => new GridDimensions(2, 1),
             PanelLayout.TwoByTwo => new GridDimensions(2, 2),
-            PanelLayout.TwoByThree => new GridDimensions(2, 3),
+            // Six grid units let the top slots span three each and the bottom slots span two each.
+            PanelLayout.TwoByThree => new GridDimensions(2, 6),
             PanelLayout.OneByTwoVertical => new GridDimensions(2, 2),
             PanelLayout.OneByOne => new GridDimensions(1, 1),
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
@@ -43,11 +44,11 @@ public static class PanelLayoutPolicy
             },
             PanelLayout.TwoByThree => new[]
             {
-                new PanelSlotPlacement(0, 0),
-                new PanelSlotPlacement(0, 1),
-                new PanelSlotPlacement(1, 0),
-                new PanelSlotPlacement(1, 1),
-                new PanelSlotPlacement(1, 2)
+                new PanelSlotPlacement(0, 0, ColumnSpan: 3),
+                new PanelSlotPlacement(0, 3, ColumnSpan: 3),
+                new PanelSlotPlacement(1, 0, ColumnSpan: 2),
+                new PanelSlotPlacement(1, 2, ColumnSpan: 2),
+                new PanelSlotPlacement(1, 4, ColumnSpan: 2)
             },
             PanelLayout.OneByTwoVertical => new[]
             {
