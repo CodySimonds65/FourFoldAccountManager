@@ -4,6 +4,7 @@
         xmlns:local="clr-namespace:FourFoldAccountManager.Desktop"
         Title="FourFold Account Manager" Width="1480" Height="940"
         MinWidth="1080" MinHeight="700" WindowStartupLocation="CenterScreen"
+        Icon="Assets/FourFold.ico"
         Background="{DynamicResource Brush.AppBackground}" Foreground="{DynamicResource Brush.TextPrimary}"
         FontFamily="Segoe UI" UseLayoutRounding="True" PreviewKeyDown="MainWindow_PreviewKeyDown">
     <Window.Resources>
@@ -24,9 +25,8 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Border Width="34" Height="34" CornerRadius="10" Background="{DynamicResource Brush.AccentSoft}" VerticalAlignment="Center">
-                    <Path Data="M0,0 H7 V7 H0 Z M11,0 H18 V7 H11 Z M0,11 H7 V18 H0 Z M11,11 H18 V18 H11 Z"
-                          Fill="{DynamicResource Brush.AccentGold}" Width="18" Height="18" Stretch="Uniform"
-                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    <Image Source="Assets/FourFold.png" Stretch="UniformToFill"
+                           RenderOptions.BitmapScalingMode="HighQuality" />
                 </Border>
                 <StackPanel Grid.Column="1" Margin="11,0,0,0" VerticalAlignment="Center">
                     <TextBlock Text="FOURFOLD" FontSize="14" FontWeight="Bold" />
@@ -169,7 +169,7 @@
                                 ToolTip="Resize each active game within its account panel" />
                         <Button x:Name="ManageSlotsButton" Content="Manage slots" Click="ManageSlots_Click" Visibility="Collapsed"
                                 Style="{StaticResource AppButtonStyle}" Height="36" Padding="10,0" Margin="0,0,8,0" ToolTip="Change account assignments" />
-                        <ComboBox x:Name="LayoutPicker" Width="172" Height="36" Margin="0,0,8,0"
+                        <ComboBox x:Name="LayoutPicker" Width="190" Height="36" Margin="0,0,8,0"
                                   Style="{StaticResource ComboBoxStyle}" ItemTemplate="{StaticResource ChoiceLabelTemplate}"
                                   SelectionChanged="LayoutPicker_SelectionChanged" AutomationProperties.Name="Panel layout" />
                         <Button x:Name="LaunchVisibleButton" MinWidth="144" Height="36" Padding="16,0"

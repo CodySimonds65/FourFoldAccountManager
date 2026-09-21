@@ -102,9 +102,14 @@ public sealed class SettingsStore
             throw new InvalidDataException("Panel settings contain an unknown layout.");
         }
 
-        if (settings.SlotAccountIds is null || settings.SlotAccountIds.Count != 4)
+        if (settings.SlotAccountIds is null || settings.SlotAccountIds.Count is not (4 or 5))
         {
-            throw new InvalidDataException("Panel settings must contain exactly four slot assignments.");
+            throw new InvalidDataException("Panel settings must contain four or five slot assignments.");
+        }
+
+        if (settings.TwoByThreeTopRowFraction is < 0.2 or > 0.8)
+        {
+            throw new InvalidDataException("The 2 × 3 top-row height must be between 20% and 80%.");
         }
 
         var assignedIds = settings.SlotAccountIds.Where(id => id is not null).Select(id => id!.Value).ToArray();
@@ -119,10 +124,12 @@ public sealed class SettingsStore
             throw new InvalidDataException("Panel settings contain an invalid game viewport size.");
         }
 
-        return new PanelSettings(settings.Layout, settings.SlotAccountIds)
+        var assignments = settings.SlotAccountIds.Concat(new Guid?[5]).Take(5).ToArray();
+        return new PanelSettings(settings.Layout, assignments)
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             GameViewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes)
         };
     }

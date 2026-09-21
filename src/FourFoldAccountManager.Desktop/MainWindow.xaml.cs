@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using FourFoldAccountManager.Core.Data;
@@ -58,7 +59,8 @@ public partial class MainWindow : Window
         {
             new LayoutChoice(PanelLayout.OneByTwo, "1 × 2 · Side by side"),
             new LayoutChoice(PanelLayout.TwoByOne, "2 × 1 · Stacked"),
-            new LayoutChoice(PanelLayout.TwoByTwo, "2 × 2 · Grid")
+            new LayoutChoice(PanelLayout.TwoByTwo, "2 × 2 · Grid"),
+            new LayoutChoice(PanelLayout.TwoByThree, "2 × 3 · Five clients")
         };
 
         LayoutPicker.SelectedValuePath = nameof(LayoutChoice.Layout);
@@ -868,25 +870,102 @@ public partial class MainWindow : Window
         PanelGridHost.RowDefinitions.Clear();
         PanelGridHost.ColumnDefinitions.Clear();
 
-        var dimensions = PanelLayoutPolicy.GetDimensions(_panelSettings.Layout);
-        for (var row = 0; row < dimensions.Rows; row++)
+        var slotsPerRow = PanelLayoutPolicy.GetSlotsPerRow(_panelSettings.Layout);
+        var hasAdjustableRowSplit = _panelSettings.Layout == PanelLayout.TwoByThree;
+        RowDefinition? topRow = null;
+        RowDefinition? bottomRow = null;
+
+        if (hasAdjustableRowSplit)
         {
-            PanelGridHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            var topFraction = _panelSettings.TwoByThreeTopRowFraction;
+            topRow = new RowDefinition
+            {
+                Height = new GridLength(topFraction, GridUnitType.Star),
+                MinHeight = 120
+            };
+            bottomRow = new RowDefinition
+            {
+                Height = new GridLength(1 - topFraction, GridUnitType.Star),
+                MinHeight = 120
+            };
+            PanelGridHost.RowDefinitions.Add(topRow);
+            PanelGridHost.RowDefinitions.Add(bottomRow);
+
+            var splitter = new GridSplitter
+            {
+                Height = 10,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Bottom,
+                ResizeDirection = GridResizeDirection.Rows,
+                ResizeBehavior = GridResizeBehavior.CurrentAndNext,
+                ShowsPreview = false,
+                Background = Brushes.Transparent,
+                Cursor = System.Windows.Input.Cursors.SizeNS,
+                Margin = new Thickness(4, 0, 4, -5)
+            };
+            Panel.SetZIndex(splitter, 100);
+            splitter.DragCompleted += async (_, _) =>
+            {
+                if (!_isReady || _panelSettings.Layout != PanelLayout.TwoByThree ||
+                    topRow.ActualHeight + bottomRow.ActualHeight <= 0)
+                {
+                    return;
+                }
+
+                var previousFraction = _panelSettings.TwoByThreeTopRowFraction;
+                var nextFraction = Math.Clamp(
+                    topRow.ActualHeight / (topRow.ActualHeight + bottomRow.ActualHeight),
+                    0.2,
+                    0.8);
+                topRow.Height = new GridLength(nextFraction, GridUnitType.Star);
+                bottomRow.Height = new GridLength(1 - nextFraction, GridUnitType.Star);
+                if (Math.Abs(nextFraction - previousFraction) < 0.001)
+                {
+                    return;
+                }
+
+                var nextSettings = _panelSettings with { TwoByThreeTopRowFraction = nextFraction };
+                try
+                {
+                    await _settingsStore.SaveAsync(nextSettings);
+                    _panelSettings = nextSettings;
+                    GlobalStatusText.Text = "The 2 × 3 row heights were saved.";
+                }
+                catch
+                {
+                    topRow.Height = new GridLength(previousFraction, GridUnitType.Star);
+                    bottomRow.Height = new GridLength(1 - previousFraction, GridUnitType.Star);
+                    MessageBox.Show(this, "The row heights could not be saved.", "FourFold Account Manager",
+                        MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            };
+            Grid.SetRow(splitter, 0);
+            PanelGridHost.Children.Add(splitter);
+        }
+        else
+        {
+            for (var row = 0; row < slotsPerRow.Count; row++)
+            {
+                PanelGridHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            }
         }
 
-        for (var column = 0; column < dimensions.Columns; column++)
+        var slotIndex = 0;
+        for (var rowIndex = 0; rowIndex < slotsPerRow.Count; rowIndex++)
         {
-            PanelGridHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        }
+            var rowGrid = new Grid();
+            for (var column = 0; column < slotsPerRow[rowIndex]; column++)
+            {
+                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                var card = CreatePanelSlot(slotIndex);
+                Grid.SetColumn(card.Root, column);
+                rowGrid.Children.Add(card.Root);
+                _slotCards.Add(card);
+                slotIndex++;
+            }
 
-        var slotCount = PanelLayoutPolicy.GetVisibleSlotCount(_panelSettings.Layout);
-        for (var slotIndex = 0; slotIndex < slotCount; slotIndex++)
-        {
-            var card = CreatePanelSlot(slotIndex);
-            Grid.SetRow(card.Root, slotIndex / dimensions.Columns);
-            Grid.SetColumn(card.Root, slotIndex % dimensions.Columns);
-            PanelGridHost.Children.Add(card.Root);
-            _slotCards.Add(card);
+            Grid.SetRow(rowGrid, rowIndex);
+            PanelGridHost.Children.Add(rowGrid);
         }
 
         if (!closeExistingViews)
@@ -1514,6 +1593,7 @@ public partial class MainWindow : Window
         PanelLayout.OneByTwo => "1 × 2",
         PanelLayout.TwoByOne => "2 × 1",
         PanelLayout.TwoByTwo => "2 × 2",
+        PanelLayout.TwoByThree => "2 × 3",
         _ => "Unknown"
     };
 

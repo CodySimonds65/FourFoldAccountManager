@@ -20,8 +20,10 @@ public sealed record PanelSettings
 
     public bool ShowFullScreenExitButton { get; init; } = true;
 
+    public double TwoByThreeTopRowFraction { get; init; } = 0.6;
+
     public IReadOnlyDictionary<Guid, GameViewportSize> GameViewportSizes { get; init; } =
         new Dictionary<Guid, GameViewportSize>();
 
-    public static PanelSettings Default => new(PanelLayout.TwoByTwo, new Guid?[4]);
+    public static PanelSettings Default => new(PanelLayout.TwoByTwo, new Guid?[5]);
 }
