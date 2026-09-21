@@ -1,6 +1,6 @@
 # FourFold Account Manager Auto-Update Design
 
-**Date:** 2026-09-21  
+**Date:** 2026-09-21
 **Branch:** `feature/auto-update`
 
 ## Goal
