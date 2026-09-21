@@ -4,7 +4,7 @@
 
 **Goal:** Build a Windows-only FourFold account manager with separate persistent sessions and 1×2, 2×1, and 2×2 embedded browser layouts.
 
-**Architecture:** A small .NET 10 Core library owns account metadata, local JSON persistence, and panel rules. A WPF desktop app owns WebView2 sessions, account controls, and the embedded panel. Each stable account ID maps to one persistent WebView2 profile; the manager does not handle passwords or auth tokens.
+**Architecture:** A small .NET 10 Core library owns account metadata, local JSON persistence, and panel rules. A WPF desktop app owns WebView2 sessions, account controls, and the embedded panel. Each stable account ID maps to one persistent WebView2 profile; optional passwords are kept in Windows Credential Manager, and the manager never handles site auth tokens.
 
 **Tech Stack:** .NET 10 LTS; WPF; Microsoft.Web.WebView2 1.0.4078.44 (the pinned version in RAM's Windows client); System.Text.Json; MSTest 4.3.3 and Microsoft.NET.Test.Sdk 18.9.0.
 
@@ -15,12 +15,14 @@
 - Windows-only account manager.
 - Build a focused WPF application targeting .NET 10 LTS on Windows x64 and using Microsoft WebView2.
 - Give every account its own persistent browser session.
-- The user signs in manually through FourFold in that account's browser view.
-- The manager does not collect or serialize account passwords or authentication tokens.
+- Optional username/password pairs are kept in Windows Credential Manager, separate from account metadata JSON.
+- One global **Launch accounts** action submits saved credentials for assigned profiles and then opens each browser game page. Profiles without saved credentials remain on the sign-in page for manual use.
+- Started slots can hide account selectors behind a compact account label; a global **Manage slots** button restores them. A full-screen focus mode hides manager chrome and exits with **Esc** or a visible button.
+- The manager stores optional passwords only in Windows Credential Manager; it never writes them to JSON, logs, or exports. It never reads site cookies or authentication tokens.
 - Use one fixed official sign-in/game destination, resolved during the compatibility check; no editable game-preset system.
 - Support 1×2, 2×1, and 2×2 row-by-column layouts.
 - Store JSON metadata under %LOCALAPPDATA%\FourFoldAccountManager and separate persistent WebView2 data per account.
-- No macros, OCR, automated input, activity history, game presets, multiple game targets, or password fields.
+- No macros, OCR, gameplay automation, activity history, game presets, multiple game targets, or credential export. Login submission is limited to the explicit **Launch accounts** user action and the fixed official FourFold form.
 - Keep the ATTACK Clicker and RAM repositories untouched; retain applicable Apache-2.0 license and NOTICE material for any code derived from RAM.
 
 ## Review Focus
@@ -292,7 +294,7 @@ Commit: git add src/FourFoldAccountManager.Core tests/FourFoldAccountManager.Cor
 
 **Interfaces:**
 - Consumes: LocalDataPaths and account IDs from Task 2; allowed hosts from docs/fourfold-webview-compatibility.md.
-- Produces: FourFoldNavigationPolicy(IEnumerable<string> allowedHosts).TryValidate(Uri, out Uri); FourFoldDestination.StartUri; AccountBrowserSessionService.CreateViewAsync(Guid, CancellationToken) returning Task<WebView2>, NavigateAsync(Guid, Uri, CancellationToken) returning Task, CloseViewAsync(Guid) returning Task, and ClearProfileAsync(Guid, CancellationToken) returning Task.
+- Produces: FourFoldNavigationPolicy(IEnumerable<string> allowedHosts).TryValidate(Uri, out Uri); FourFoldDestination.StartUri and LoginUri; AccountBrowserSessionService.CreateViewAsync(Guid, CancellationToken) returning Task<WebView2>, NavigateAsync(Guid, Uri, CancellationToken) returning Task, CloseViewAsync(Guid) returning Task, and ClearProfileAsync(Guid, CancellationToken) returning Task.
 
 - [ ] Step 1: Add URL-policy tests for allowed and rejected destinations.
 
@@ -377,9 +379,9 @@ Commit: git add src tests/FourFoldAccountManager.Core.Tests; git commit -m "feat
 - Consumes: AccountStore from Task 2; SettingsStore and PanelLayoutPolicy from Task 3; browser and destination services from Task 4.
 - Produces: MainViewModel account commands; four stable PanelSlotViewModel instances (SlotIndex, AccountId, State, ErrorMessage); PanelLaunchCoordinator.LaunchVisibleAsync(PanelSettings, CancellationToken).
 
-- [ ] Step 1: Implement the account rail and label-only add dialog.
+- [ ] Step 1: Implement the account rail, profile editor, and secure credential storage.
 
-Display account labels, favorites, and actions to add, rename, reorder, and favorite profiles. Reuse the RAM account-rail visual hierarchy with a restrained FourFold theme, clear spacing, and readable status contrast. Add the Remove action in Task 6 after profile-data clearing is available. The add dialog accepts a display label only; it has no username/password fields. Persist changes to accounts.json immediately.
+Display account labels, favorites, and actions to add, edit, reorder, and favorite profiles. Reuse the RAM account-rail visual hierarchy with a restrained FourFold theme, clear spacing, and readable status contrast. Add the Remove action in Task 6 after profile-data clearing is available. The editor accepts a label and optional username/password pair. Store credentials in Windows Credential Manager keyed by account ID; keep them out of accounts.json and logs.
 
 - [ ] Step 2: Add the three-layout selector and four stable slot assignments.
 
@@ -387,7 +389,7 @@ Provide selectable 1×2, 2×1, and 2×2 layouts. Bind slot pickers to accounts; 
 
 - [ ] Step 3: Render the current grid and embed account views.
 
-Use WPF Grid row/column definitions from PanelLayoutPolicy.GetDimensions. Each visible cell contains the account label, state, Open FourFold, Reload, and Close actions, and its own WebView2 profile. Two-cell layouts show only the first two slots; 2×2 shows all four.
+Use WPF Grid row/column definitions from PanelLayoutPolicy.GetDimensions. Each visible cell contains a slot selector or compact account label, concise status, and its own WebView2 profile. Do not add per-slot action rows; the global **Launch accounts** action processes visible assigned slots sequentially. Started slots hide their selectors until the user selects **Manage slots**. New profiles take the first unassigned visible slot. Two-cell layouts show only the first two slots; 2×2 shows all four. A full-screen focus mode hides all controls around the client grid and exits with **Esc** or a visible button.
 
 - [ ] Step 4: Launch visible assigned slots independently.
 
@@ -435,7 +437,7 @@ Commit: git add src/FourFoldAccountManager.Desktop; git commit -m "feat: add acc
 
 - [ ] Step 1: Implement account removal and shutdown.
 
-After the user confirms Remove, clear only that profile's CoreWebView2BrowsingDataKinds.AllProfile data, remove the view, clear that account ID from all slots, remove its metadata, and save both files. If profile clearing fails, keep the account and assignment. For an inactive profile, create a temporary hidden view with the same profile name, clear it on the UI dispatcher, then close it. App shutdown disposes views without clearing sessions.
+After the user confirms Remove, clear only that profile's CoreWebView2BrowsingDataKinds.AllProfile data, remove the view, clear that account ID from all slots, remove its Windows Credential Manager entry and metadata, and save both files. If profile clearing fails, keep the account and assignment. For an inactive profile, create a temporary hidden view with the same profile name, clear it on the UI dispatcher, then close it. App shutdown disposes views without clearing sessions.
 
 - [ ] Step 2: Handle popup, redirect, and WebView2 Runtime failures.
 
@@ -448,7 +450,7 @@ $ErrorActionPreference = 'Stop'
 dotnet publish src/FourFoldAccountManager.Desktop/FourFoldAccountManager.Desktop.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -p:IncludeNativeLibrariesForSelfExtract=true -o artifacts/win-x64
 ~~~
 
-Document account setup, manual login per view, all three layouts, local session paths, profile removal, WebView2 Runtime requirement, and excluded features. State that passwords are not collected.
+Document account setup, secure saved-login storage, the global assigned-account start action, all three layouts, local session paths, profile removal, WebView2 Runtime requirement, and excluded features. Disclose the observed restart sign-out unless a same-build compatibility check proves persistence.
 
 - [ ] Step 4: Run Core tests and publish the Windows build.
 
