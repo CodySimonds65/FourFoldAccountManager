@@ -12,6 +12,7 @@ public sealed class UpdateCoordinator
     private readonly IUpdateInstaller _installer;
     private readonly Func<UpdateRelease, Task<bool>> _prompt;
     private readonly Action<string>? _failureNotice;
+    private readonly Action? _shutdown;
     private int _hasChecked;
 
     public UpdateCoordinator(
@@ -22,7 +23,8 @@ public sealed class UpdateCoordinator
         IUpdateDownloader downloader,
         IUpdateInstaller installer,
         Func<UpdateRelease, Task<bool>> prompt,
-        Action<string>? failureNotice = null)
+        Action<string>? failureNotice = null,
+        Action? shutdown = null)
     {
         _currentVersion = currentVersion;
         _currentExecutablePath = currentExecutablePath;
@@ -32,6 +34,7 @@ public sealed class UpdateCoordinator
         _installer = installer;
         _prompt = prompt;
         _failureNotice = failureNotice;
+        _shutdown = shutdown;
     }
 
     public async Task CheckForUpdateAsync(CancellationToken cancellationToken = default)
@@ -65,7 +68,10 @@ public sealed class UpdateCoordinator
             {
                 DeleteIfPresent(downloadedPath);
                 _failureNotice?.Invoke("The update could not be started. You can download the latest release manually.");
+                return;
             }
+
+            _shutdown?.Invoke();
         }
         catch (OperationCanceledException)
         {

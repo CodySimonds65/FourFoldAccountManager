@@ -147,7 +147,8 @@ public partial class MainWindow : Window
                 new UpdateDownloader(httpClient),
                 new UpdateInstaller(),
                 PromptForUpdateAsync,
-                ShowUpdateFailure);
+                ShowUpdateFailure,
+                () => Application.Current.Shutdown());
 
             await coordinator.CheckForUpdateAsync();
         }
