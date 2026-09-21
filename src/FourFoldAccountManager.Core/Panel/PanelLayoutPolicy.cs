@@ -4,7 +4,7 @@ namespace FourFoldAccountManager.Core.Panel;
 
 public static class PanelLayoutPolicy
 {
-    private const int SlotCount = 4;
+    private const int SlotCount = 5;
 
     public static GridDimensions GetDimensions(PanelLayout layout) =>
         layout switch
@@ -12,14 +12,22 @@ public static class PanelLayoutPolicy
             PanelLayout.OneByTwo => new GridDimensions(1, 2),
             PanelLayout.TwoByOne => new GridDimensions(2, 1),
             PanelLayout.TwoByTwo => new GridDimensions(2, 2),
+            PanelLayout.TwoByThree => new GridDimensions(2, 3),
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
 
-    public static int GetVisibleSlotCount(PanelLayout layout)
-    {
-        var dimensions = GetDimensions(layout);
-        return dimensions.Rows * dimensions.Columns;
-    }
+    public static IReadOnlyList<int> GetSlotsPerRow(PanelLayout layout) =>
+        layout switch
+        {
+            PanelLayout.OneByTwo => new[] { 2 },
+            PanelLayout.TwoByOne => new[] { 1, 1 },
+            PanelLayout.TwoByTwo => new[] { 2, 2 },
+            PanelLayout.TwoByThree => new[] { 2, 3 },
+            _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
+        };
+
+    public static int GetVisibleSlotCount(PanelLayout layout) =>
+        GetSlotsPerRow(layout).Sum();
 
     public static PanelSettings WithLayout(PanelSettings settings, PanelLayout layout)
     {
@@ -29,6 +37,7 @@ public static class PanelLayoutPolicy
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             GameViewportSizes = settings.GameViewportSizes
         };
     }
@@ -38,12 +47,12 @@ public static class PanelLayoutPolicy
         ArgumentNullException.ThrowIfNull(settings);
         if (slotIndex is < 0 or >= SlotCount)
         {
-            throw new ArgumentOutOfRangeException(nameof(slotIndex), slotIndex, "Slot index must be between 0 and 3.");
+            throw new ArgumentOutOfRangeException(nameof(slotIndex), slotIndex, "Slot index must be between 0 and 4.");
         }
 
         if (settings.SlotAccountIds.Count != SlotCount)
         {
-            throw new ArgumentException("Panel settings must contain exactly four slot assignments.", nameof(settings));
+            throw new ArgumentException("Panel settings must contain exactly five slot assignments.", nameof(settings));
         }
 
         if (accountId == Guid.Empty)
@@ -68,6 +77,7 @@ public static class PanelLayoutPolicy
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             GameViewportSizes = settings.GameViewportSizes
         };
     }
@@ -82,7 +92,7 @@ public static class PanelLayoutPolicy
 
         if (settings.SlotAccountIds.Count != SlotCount)
         {
-            throw new ArgumentException("Panel settings must contain exactly four slot assignments.", nameof(settings));
+            throw new ArgumentException("Panel settings must contain exactly five slot assignments.", nameof(settings));
         }
 
         var assignments = settings.SlotAccountIds
@@ -94,6 +104,7 @@ public static class PanelLayoutPolicy
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             GameViewportSizes = viewportSizes
         };
     }

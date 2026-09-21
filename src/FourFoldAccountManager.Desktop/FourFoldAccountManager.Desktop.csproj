@@ -14,6 +14,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets\FourFold.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\FourFold.png" />
+    <Resource Include="Assets\FourFold.ico" />
+  </ItemGroup>
 
 </Project>
