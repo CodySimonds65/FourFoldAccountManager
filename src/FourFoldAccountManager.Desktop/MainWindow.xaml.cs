@@ -1508,7 +1508,15 @@ public partial class MainWindow : Window
                 _accounts.Add(account);
             }
 
-            _panelSettings = await _settingsStore.LoadAsync();
+            await _settingsMutationGate.WaitAsync();
+            try
+            {
+                _panelSettings = await _settingsStore.LoadAsync();
+            }
+            finally
+            {
+                _settingsMutationGate.Release();
+            }
             LayoutPicker.SelectedValue = _panelSettings.Layout;
             await RebuildPanelAsync(closeExistingViews: true);
             UpdateAccountActions();
