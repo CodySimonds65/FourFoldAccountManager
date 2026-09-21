@@ -16,7 +16,7 @@ public sealed record PanelSettings
 
     public IReadOnlyList<Guid?> SlotAccountIds { get; init; }
 
-    public bool FillGameToPanel { get; init; } = true;
+    public bool FillGameToPanel { get; init; } = false;
 
     public bool ShowFullScreenExitButton { get; init; } = true;
 

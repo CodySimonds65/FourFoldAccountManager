@@ -37,7 +37,7 @@
                     <StackPanel Margin="8,-2,0,0">
                         <TextBlock Text="Fit entire game" FontWeight="SemiBold" />
                         <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
-                                   Text="Keep the whole game visible. Black bars appear when the panel has a different shape." />
+                                   Text="Keep the whole game visible. Black bars appear when the panel has a different shape. (Default)" />
                     </StackPanel>
                 </RadioButton>
             </Border>
