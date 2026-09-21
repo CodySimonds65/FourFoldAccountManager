@@ -14,6 +14,7 @@ public static class PanelLayoutPolicy
             PanelLayout.TwoByTwo => new GridDimensions(2, 2),
             PanelLayout.TwoByThree => new GridDimensions(2, 3),
             PanelLayout.OneByTwoVertical => new GridDimensions(2, 2),
+            PanelLayout.OneByOne => new GridDimensions(1, 1),
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
 
@@ -53,6 +54,10 @@ public static class PanelLayoutPolicy
                 new PanelSlotPlacement(0, 0, 2),
                 new PanelSlotPlacement(0, 1),
                 new PanelSlotPlacement(1, 1)
+            },
+            PanelLayout.OneByOne => new[]
+            {
+                new PanelSlotPlacement(0, 0)
             },
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
