@@ -13,6 +13,7 @@ public static class PanelLayoutPolicy
             PanelLayout.TwoByOne => new GridDimensions(2, 1),
             PanelLayout.TwoByTwo => new GridDimensions(2, 2),
             PanelLayout.TwoByThree => new GridDimensions(2, 3),
+            PanelLayout.OneByTwoVertical => new GridDimensions(2, 2),
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
 
@@ -23,11 +24,49 @@ public static class PanelLayoutPolicy
             PanelLayout.TwoByOne => new[] { 1, 1 },
             PanelLayout.TwoByTwo => new[] { 2, 2 },
             PanelLayout.TwoByThree => new[] { 2, 3 },
+            PanelLayout.OneByTwoVertical => new[] { 2, 2 },
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
 
     public static int GetVisibleSlotCount(PanelLayout layout) =>
-        GetSlotsPerRow(layout).Sum();
+        GetSlotPlacements(layout).Count;
+
+    public static IReadOnlyList<PanelSlotPlacement> GetSlotPlacements(PanelLayout layout) =>
+        layout switch
+        {
+            PanelLayout.OneByTwo => new[]
+            {
+                new PanelSlotPlacement(0, 0),
+                new PanelSlotPlacement(0, 1)
+            },
+            PanelLayout.TwoByOne => new[]
+            {
+                new PanelSlotPlacement(0, 0),
+                new PanelSlotPlacement(1, 0)
+            },
+            PanelLayout.TwoByTwo => new[]
+            {
+                new PanelSlotPlacement(0, 0),
+                new PanelSlotPlacement(0, 1),
+                new PanelSlotPlacement(1, 0),
+                new PanelSlotPlacement(1, 1)
+            },
+            PanelLayout.TwoByThree => new[]
+            {
+                new PanelSlotPlacement(0, 0),
+                new PanelSlotPlacement(0, 1),
+                new PanelSlotPlacement(1, 0),
+                new PanelSlotPlacement(1, 1),
+                new PanelSlotPlacement(1, 2)
+            },
+            PanelLayout.OneByTwoVertical => new[]
+            {
+                new PanelSlotPlacement(0, 0, 2),
+                new PanelSlotPlacement(0, 1),
+                new PanelSlotPlacement(1, 1)
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
+        };
 
     public static PanelSettings WithLayout(PanelSettings settings, PanelLayout layout)
     {

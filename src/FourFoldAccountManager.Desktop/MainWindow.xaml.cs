@@ -61,7 +61,8 @@ public partial class MainWindow : Window
             new LayoutChoice(PanelLayout.OneByTwo, "1 × 2 · Side by side"),
             new LayoutChoice(PanelLayout.TwoByOne, "2 × 1 · Stacked"),
             new LayoutChoice(PanelLayout.TwoByTwo, "2 × 2 · Grid"),
-            new LayoutChoice(PanelLayout.TwoByThree, "2 × 3 · Five clients")
+            new LayoutChoice(PanelLayout.TwoByThree, "2 × 3 · Five clients"),
+            new LayoutChoice(PanelLayout.OneByTwoVertical, "1 × 2 · Vertical split")
         };
 
         LayoutPicker.SelectedValuePath = nameof(LayoutChoice.Layout);
@@ -865,6 +866,7 @@ public partial class MainWindow : Window
 
         var slotsPerRow = PanelLayoutPolicy.GetSlotsPerRow(_panelSettings.Layout);
         var hasAdjustableRowSplit = _panelSettings.Layout == PanelLayout.TwoByThree;
+        var hasVerticalSplit = _panelSettings.Layout == PanelLayout.OneByTwoVertical;
         RowDefinition? topRow = null;
         RowDefinition? bottomRow = null;
 
@@ -934,6 +936,13 @@ public partial class MainWindow : Window
             Grid.SetRow(splitter, 0);
             PanelGridHost.Children.Add(splitter);
         }
+        else if (hasVerticalSplit)
+        {
+            PanelGridHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            PanelGridHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            PanelGridHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            PanelGridHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        }
         else
         {
             for (var row = 0; row < slotsPerRow.Count; row++)
@@ -943,21 +952,38 @@ public partial class MainWindow : Window
         }
 
         var slotIndex = 0;
-        for (var rowIndex = 0; rowIndex < slotsPerRow.Count; rowIndex++)
+        if (hasVerticalSplit)
         {
-            var rowGrid = new Grid();
-            for (var column = 0; column < slotsPerRow[rowIndex]; column++)
+            foreach (var placement in PanelLayoutPolicy.GetSlotPlacements(_panelSettings.Layout))
             {
-                rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
                 var card = CreatePanelSlot(slotIndex);
-                Grid.SetColumn(card.Root, column);
-                rowGrid.Children.Add(card.Root);
+                Grid.SetRow(card.Root, placement.Row);
+                Grid.SetColumn(card.Root, placement.Column);
+                Grid.SetRowSpan(card.Root, placement.RowSpan);
+                Grid.SetColumnSpan(card.Root, placement.ColumnSpan);
+                PanelGridHost.Children.Add(card.Root);
                 _slotCards.Add(card);
                 slotIndex++;
             }
+        }
+        else
+        {
+            for (var rowIndex = 0; rowIndex < slotsPerRow.Count; rowIndex++)
+            {
+                var rowGrid = new Grid();
+                for (var column = 0; column < slotsPerRow[rowIndex]; column++)
+                {
+                    rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                    var card = CreatePanelSlot(slotIndex);
+                    Grid.SetColumn(card.Root, column);
+                    rowGrid.Children.Add(card.Root);
+                    _slotCards.Add(card);
+                    slotIndex++;
+                }
 
-            Grid.SetRow(rowGrid, rowIndex);
-            PanelGridHost.Children.Add(rowGrid);
+                Grid.SetRow(rowGrid, rowIndex);
+                PanelGridHost.Children.Add(rowGrid);
+            }
         }
 
         if (!closeExistingViews)
@@ -1645,6 +1671,7 @@ public partial class MainWindow : Window
         PanelLayout.TwoByOne => "2 × 1",
         PanelLayout.TwoByTwo => "2 × 2",
         PanelLayout.TwoByThree => "2 × 3",
+        PanelLayout.OneByTwoVertical => "1 × 2 vertical",
         _ => "Unknown"
     };
 
