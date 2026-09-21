@@ -16,5 +16,12 @@ public sealed record PanelSettings
 
     public IReadOnlyList<Guid?> SlotAccountIds { get; init; }
 
+    public bool FillGameToPanel { get; init; } = true;
+
+    public bool ShowFullScreenExitButton { get; init; } = true;
+
+    public IReadOnlyDictionary<Guid, GameViewportSize> GameViewportSizes { get; init; } =
+        new Dictionary<Guid, GameViewportSize>();
+
     public static PanelSettings Default => new(PanelLayout.TwoByTwo, new Guid?[4]);
 }

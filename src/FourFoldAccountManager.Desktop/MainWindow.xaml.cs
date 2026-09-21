@@ -23,11 +23,13 @@ public partial class MainWindow : Window
     private readonly WindowsCredentialStore _credentialStore;
     private readonly AccountBrowserSessionService _browserSessions;
     private readonly List<PanelSlotCard> _slotCards = [];
+    private readonly SemaphoreSlim _viewportSaveGate = new(1, 1);
     private PanelSettings _panelSettings = PanelSettings.Default;
     private bool _isReady;
     private bool _batchLaunchInProgress;
     private bool _accountsPanelVisible = true;
     private bool _slotManagementVisible = true;
+    private bool _viewAdjustmentVisible;
     private bool _isFullScreen;
     private WindowState _previousWindowState;
     private WindowStyle _previousWindowStyle;
@@ -49,6 +51,7 @@ public partial class MainWindow : Window
 
         AccountsListBox.ItemsSource = _accounts;
         AddAccountButton.IsEnabled = false;
+        SettingsButton.IsEnabled = false;
         LayoutPicker.IsEnabled = false;
         LaunchVisibleButton.IsEnabled = false;
         LayoutPicker.ItemsSource = new[]
@@ -76,8 +79,14 @@ public partial class MainWindow : Window
             }
 
             _panelSettings = await _settingsStore.LoadAsync();
+            foreach (var (accountId, size) in _panelSettings.GameViewportSizes)
+            {
+                await _browserSessions.SetGameViewportSizeAsync(accountId, size);
+            }
+            await _browserSessions.SetGameScalingAsync(_panelSettings.FillGameToPanel);
             _isReady = true;
             AddAccountButton.IsEnabled = true;
+            SettingsButton.IsEnabled = true;
             LayoutPicker.IsEnabled = true;
             LaunchVisibleButton.IsEnabled = true;
             LayoutPicker.SelectedValue = _panelSettings.Layout;
@@ -89,6 +98,7 @@ public partial class MainWindow : Window
         catch (InvalidDataException exception)
         {
             AddAccountButton.IsEnabled = false;
+            SettingsButton.IsEnabled = false;
             LayoutPicker.IsEnabled = false;
             LaunchVisibleButton.IsEnabled = false;
             GlobalStatusText.Text = "Account data could not be loaded. The original local files were left unchanged.";
@@ -98,6 +108,7 @@ public partial class MainWindow : Window
         catch
         {
             AddAccountButton.IsEnabled = false;
+            SettingsButton.IsEnabled = false;
             LayoutPicker.IsEnabled = false;
             LaunchVisibleButton.IsEnabled = false;
             GlobalStatusText.Text = "The manager could not load local profile data.";
@@ -424,6 +435,81 @@ public partial class MainWindow : Window
         UpdateManageSlotsButton();
     }
 
+    private void AdjustViews_Click(object sender, RoutedEventArgs e)
+    {
+        _viewAdjustmentVisible = !_viewAdjustmentVisible;
+        UpdateAllSlotPresentations();
+        UpdateManageSlotsButton();
+    }
+
+    private async void Settings_Click(object sender, RoutedEventArgs e)
+    {
+        var dialog = new SettingsDialog(
+            _panelSettings.FillGameToPanel,
+            _panelSettings.ShowFullScreenExitButton)
+        {
+            Owner = this
+        };
+        if (dialog.ShowDialog() != true ||
+            (dialog.FillGameToPanel == _panelSettings.FillGameToPanel &&
+             dialog.ShowFullScreenExitButton == _panelSettings.ShowFullScreenExitButton))
+        {
+            return;
+        }
+
+        var previousSettings = _panelSettings;
+        var nextSettings = _panelSettings with
+        {
+            FillGameToPanel = dialog.FillGameToPanel,
+            ShowFullScreenExitButton = dialog.ShowFullScreenExitButton
+        };
+        var scalingChanged = nextSettings.FillGameToPanel != previousSettings.FillGameToPanel;
+        SettingsButton.IsEnabled = false;
+        try
+        {
+            if (scalingChanged)
+            {
+                await _browserSessions.SetGameScalingAsync(nextSettings.FillGameToPanel);
+            }
+            await _settingsStore.SaveAsync(nextSettings);
+            _panelSettings = nextSettings;
+            if (!nextSettings.FillGameToPanel)
+            {
+                _viewAdjustmentVisible = false;
+                UpdateAllSlotPresentations();
+            }
+            UpdateManageSlotsButton();
+            GlobalStatusText.Text = scalingChanged
+                ? nextSettings.FillGameToPanel
+                    ? "Game scaling set to Fill panel."
+                    : "Game scaling set to Fit entire game."
+                : nextSettings.ShowFullScreenExitButton
+                    ? "Full-screen Exit button enabled."
+                    : "Full-screen Exit button hidden. Press Esc to leave full screen.";
+        }
+        catch
+        {
+            try
+            {
+                if (scalingChanged)
+                {
+                    await _browserSessions.SetGameScalingAsync(previousSettings.FillGameToPanel);
+                }
+            }
+            catch
+            {
+                // Preserve the original error message; the next launch reapplies the saved setting.
+            }
+
+            MessageBox.Show(this, "The settings could not be applied.",
+                "FourFold settings", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            SettingsButton.IsEnabled = true;
+        }
+    }
+
     private void FullScreen_Click(object sender, RoutedEventArgs e)
     {
         EnterFullScreen();
@@ -444,10 +530,10 @@ public partial class MainWindow : Window
     }
 
     private void FullScreenExit_MouseEnter(object sender, System.Windows.Input.MouseEventArgs e) =>
-        FullScreenExitButton.Opacity = 0.95;
+        FullScreenExitButton.Opacity = 1;
 
     private void FullScreenExit_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e) =>
-        FullScreenExitButton.Opacity = 0.35;
+        FullScreenExitButton.Opacity = 0.78;
 
     private void EnterFullScreen()
     {
@@ -472,8 +558,11 @@ public partial class MainWindow : Window
         PanelBorder.Padding = new Thickness(0);
         PanelBorder.CornerRadius = new CornerRadius(0);
         PanelBorder.BorderThickness = new Thickness(0);
-        FullScreenExitButton.Visibility = Visibility.Visible;
+        FullScreenExitButton.Visibility = _panelSettings.ShowFullScreenExitButton
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         UpdateAllSlotPresentations();
+        UpdateManageSlotsButton();
 
         WindowState = WindowState.Normal;
         WindowStyle = WindowStyle.None;
@@ -506,6 +595,7 @@ public partial class MainWindow : Window
         PanelBorder.BorderThickness = new Thickness(0);
         FullScreenExitButton.Visibility = Visibility.Collapsed;
         UpdateAllSlotPresentations();
+        UpdateManageSlotsButton();
 
         WindowState = _previousWindowState;
     }
@@ -517,6 +607,13 @@ public partial class MainWindow : Window
         ManageSlotsButton.ToolTip = _slotManagementVisible
             ? "Hide account selectors for started views."
             : "Show account selectors to change slot assignments.";
+        AdjustViewsButton.Visibility = _openAccountIds.Count > 0 && _panelSettings.FillGameToPanel && !_isFullScreen
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        AdjustViewsButton.Content = _viewAdjustmentVisible ? "Done adjusting" : "Adjust views";
+        AdjustViewsButton.ToolTip = _viewAdjustmentVisible
+            ? "Hide the per-client sizing controls."
+            : "Resize each active game within its account panel.";
     }
 
     private void UpdateAllSlotPresentations()
@@ -551,6 +648,10 @@ public partial class MainWindow : Window
         slot.Root.Padding = _isFullScreen ? new Thickness(0) : new Thickness(10);
         slot.Root.BorderThickness = _isFullScreen ? new Thickness(0) : new Thickness(1);
         slot.Root.CornerRadius = _isFullScreen ? new CornerRadius(0) : new CornerRadius(10);
+        slot.ViewAdjustmentOverlay.Visibility = _viewAdjustmentVisible && !_isFullScreen &&
+            _panelSettings.FillGameToPanel && isOpen
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     private async void LaunchVisible_Click(object sender, RoutedEventArgs e)
@@ -597,9 +698,9 @@ public partial class MainWindow : Window
             }
 
             var opened = outcomes.Count(result => result == AssignedAccountStartResult.Opened);
-            var manual = outcomes.Count(result => result == AssignedAccountStartResult.ManualSignInRequired);
+            var manual = outcomes.Count(result => result == AssignedAccountStartResult.ManualActionRequired);
             var failed = outcomes.Count(result => result == AssignedAccountStartResult.Failed);
-            GlobalStatusText.Text = $"Start complete: {opened} browser view(s) opened, {manual} need manual sign-in, {failed} failed.";
+            GlobalStatusText.Text = $"Start complete: {opened} game(s) opened, {manual} need manual action, {failed} failed.";
         }
         finally
         {
@@ -629,13 +730,13 @@ public partial class MainWindow : Window
         catch
         {
             SetSlotStatus(slot, "Saved login could not be read. Sign in manually in this slot.", StatusTone.Warning);
-            return AssignedAccountStartResult.ManualSignInRequired;
+            return AssignedAccountStartResult.ManualActionRequired;
         }
 
         if (credentials is null)
         {
             SetSlotStatus(slot, "Sign-in page ready. Add a saved login or sign in manually in this slot.", StatusTone.Warning);
-            return AssignedAccountStartResult.ManualSignInRequired;
+            return AssignedAccountStartResult.ManualActionRequired;
         }
 
         SetSlotStatus(slot, "Submitting this profile's saved login…", StatusTone.Info);
@@ -654,9 +755,22 @@ public partial class MainWindow : Window
             return AssignedAccountStartResult.Failed;
         }
 
-        SetSlotStatus(slot, "Browser game page opened. If FourFold did not accept the login, sign in manually here.",
-            StatusTone.Success);
-        return AssignedAccountStartResult.Opened;
+        SetSlotStatus(slot, "Selecting Play now for the browser game…", StatusTone.Info);
+        var playResult = await _browserSessions.SelectPlayInBrowserAsync(accountId);
+        if (playResult == PlayInBrowserResult.Activated)
+        {
+            SetSlotStatus(slot, "Play now selected. FourFold is loading in this account panel.", StatusTone.Success);
+            return AssignedAccountStartResult.Opened;
+        }
+
+        if (playResult is PlayInBrowserResult.ControlNotFound or PlayInBrowserResult.NotOnPlayPage)
+        {
+            SetSlotStatus(slot, "Select Play now under Play in browser to finish opening the game.", StatusTone.Warning);
+            return AssignedAccountStartResult.ManualActionRequired;
+        }
+
+        SetSlotStatus(slot, "The account view closed before Play now could be selected.", StatusTone.Error);
+        return AssignedAccountStartResult.Failed;
     }
 
     private void SetBatchLaunchMode(bool isActive)
@@ -666,6 +780,8 @@ public partial class MainWindow : Window
         LaunchVisibleButton.Content = isActive ? "Launching…" : "Launch accounts";
         LayoutPicker.IsEnabled = !isActive && _isReady;
         AddAccountButton.IsEnabled = !isActive && _isReady;
+        SettingsButton.IsEnabled = !isActive && _isReady;
+        AdjustViewsButton.IsEnabled = !isActive && _isReady;
         AccountsListBox.IsEnabled = !isActive;
         RenameAccountButton.IsEnabled = !isActive && SelectedAccount is not null;
         FavoriteAccountButton.IsEnabled = !isActive && SelectedAccount is not null;
@@ -915,12 +1031,192 @@ public partial class MainWindow : Window
         placeholder.Children.Add(emptyTitle);
         placeholder.Children.Add(emptyDescription);
         browserHost.Children.Add(placeholder);
+
+        var viewportSize = assignedId is { } accountId
+            ? PanelLayoutPolicy.GetGameViewportSize(_panelSettings, accountId)
+            : GameViewportSize.Default;
+        var adjustmentContent = new StackPanel();
+        var adjustmentHeader = new Grid { Margin = new Thickness(0, 0, 0, 9) };
+        adjustmentHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        adjustmentHeader.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        adjustmentHeader.Children.Add(new TextBlock
+        {
+            Text = "Game size",
+            Foreground = (Brush)FindResource("Brush.TextPrimary"),
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        var resetViewButton = new Button
+        {
+            Content = "Reset",
+            Height = 28,
+            Padding = new Thickness(9, 0, 9, 0),
+            Style = (Style)FindResource("AppButtonStyle")
+        };
+        Grid.SetColumn(resetViewButton, 1);
+        adjustmentHeader.Children.Add(resetViewButton);
+        adjustmentContent.Children.Add(adjustmentHeader);
+        adjustmentContent.Children.Add(CreateViewportAdjustmentRow(
+            "Width", "GameViewportWidth", viewportSize.WidthPercent, out var widthSlider, out var widthValue));
+        adjustmentContent.Children.Add(CreateViewportAdjustmentRow(
+            "Height", "GameViewportHeight", viewportSize.HeightPercent, out var heightSlider, out var heightValue));
+        var adjustmentOverlay = new Border
+        {
+            Tag = "GameViewportAdjustment",
+            MaxWidth = 310,
+            Padding = new Thickness(12),
+            Margin = new Thickness(12),
+            CornerRadius = new CornerRadius(9),
+            BorderThickness = new Thickness(1),
+            BorderBrush = (Brush)FindResource("Brush.BorderStrong"),
+            Background = (Brush)FindResource("Brush.Surface"),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Visibility = Visibility.Collapsed,
+            Child = adjustmentContent
+        };
+        Panel.SetZIndex(adjustmentOverlay, 100);
+        browserHost.Children.Add(adjustmentOverlay);
         Grid.SetRow(browserHost, 2);
         content.Children.Add(browserHost);
         var slot = new PanelSlotCard(slotIndex, root, header, accountPicker, accountLabel, status, browserHost,
-            placeholder, emptyTitle, emptyDescription);
+            placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider,
+            widthValue, heightValue);
+        widthSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
+        heightSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
+        resetViewButton.Click += (_, _) => SetViewportSliderValues(slot, GameViewportSize.Default);
+        slot.ViewportUpdateTimer.Tick += async (_, _) =>
+        {
+            slot.ViewportUpdateTimer.Stop();
+            await ApplyViewportSizeAsync(slot);
+        };
         UpdateSlotPresentation(slot);
         return slot;
+    }
+
+    private Grid CreateViewportAdjustmentRow(
+        string label,
+        string tag,
+        double initialValue,
+        out Slider slider,
+        out TextBlock valueText)
+    {
+        var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(48) });
+        row.Children.Add(new TextBlock
+        {
+            Text = label,
+            Foreground = (Brush)FindResource("Brush.TextSecondary"),
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        slider = new Slider
+        {
+            Tag = tag,
+            Minimum = GameViewportSize.MinimumPercent,
+            Maximum = GameViewportSize.MaximumPercent,
+            TickFrequency = 5,
+            IsSnapToTickEnabled = true,
+            IsMoveToPointEnabled = true,
+            Value = initialValue,
+            Margin = new Thickness(8, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        System.Windows.Automation.AutomationProperties.SetName(slider, $"Game {label.ToLowerInvariant()} percentage");
+        Grid.SetColumn(slider, 1);
+        row.Children.Add(slider);
+        valueText = new TextBlock
+        {
+            Text = $"{initialValue:0}%",
+            Foreground = (Brush)FindResource("Brush.TextPrimary"),
+            TextAlignment = TextAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        Grid.SetColumn(valueText, 2);
+        row.Children.Add(valueText);
+        return row;
+    }
+
+    private void ScheduleViewportSizeUpdate(PanelSlotCard slot)
+    {
+        slot.WidthValue.Text = $"{slot.WidthSlider.Value:0}%";
+        slot.HeightValue.Text = $"{slot.HeightSlider.Value:0}%";
+        if (!_isReady || slot.SuppressViewportEvents)
+        {
+            return;
+        }
+
+        slot.ViewportUpdateTimer.Stop();
+        slot.ViewportUpdateTimer.Start();
+    }
+
+    private async Task ApplyViewportSizeAsync(PanelSlotCard slot)
+    {
+        if (_panelSettings.SlotAccountIds[slot.SlotIndex] is not { } accountId)
+        {
+            return;
+        }
+
+        var nextSize = new GameViewportSize(slot.WidthSlider.Value, slot.HeightSlider.Value);
+        await _viewportSaveGate.WaitAsync();
+        try
+        {
+            var previousSize = PanelLayoutPolicy.GetGameViewportSize(_panelSettings, accountId);
+            if (nextSize == previousSize)
+            {
+                return;
+            }
+
+            var nextSettings = PanelLayoutPolicy.WithGameViewportSize(_panelSettings, accountId, nextSize);
+            try
+            {
+                await _browserSessions.SetGameViewportSizeAsync(accountId, nextSize);
+                await _settingsStore.SaveAsync(nextSettings);
+                _panelSettings = nextSettings;
+                GlobalStatusText.Text = $"{slot.AccountLabel.Text} game size set to {nextSize.WidthPercent:0}% × {nextSize.HeightPercent:0}%.";
+            }
+            catch
+            {
+                try
+                {
+                    await _browserSessions.SetGameViewportSizeAsync(accountId, previousSize);
+                }
+                catch
+                {
+                    // Preserve the original failure; reopening the app reapplies the saved value.
+                }
+
+                SetViewportSliderValues(slot, previousSize);
+                SetSlotStatus(slot, "The game size could not be saved.", StatusTone.Error);
+            }
+        }
+        finally
+        {
+            _viewportSaveGate.Release();
+        }
+    }
+
+    private void SetViewportSliderValues(PanelSlotCard slot, GameViewportSize size)
+    {
+        slot.SuppressViewportEvents = true;
+        try
+        {
+            slot.WidthSlider.Value = size.WidthPercent;
+            slot.HeightSlider.Value = size.HeightPercent;
+            slot.WidthValue.Text = $"{size.WidthPercent:0}%";
+            slot.HeightValue.Text = $"{size.HeightPercent:0}%";
+        }
+        finally
+        {
+            slot.SuppressViewportEvents = false;
+        }
+
+        if (_isReady)
+        {
+            slot.ViewportUpdateTimer.Stop();
+            slot.ViewportUpdateTimer.Start();
+        }
     }
 
     private IReadOnlyList<SlotAccountChoice> CreateSlotChoices()
@@ -950,7 +1246,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AttachBrowserView(PanelSlotCard slot, WebView2 view)
+    private void AttachBrowserView(PanelSlotCard slot, WebView2CompositionControl view)
     {
         if (!ReferenceEquals(view.Parent, slot.BrowserHost))
         {
@@ -1000,7 +1296,7 @@ public partial class MainWindow : Window
         view.CoreWebView2.ProcessFailed += slot.ProcessFailedHandler;
     }
 
-    private static void DetachBrowserView(WebView2 view)
+    private static void DetachBrowserView(WebView2CompositionControl view)
     {
         switch (view.Parent)
         {
@@ -1056,6 +1352,7 @@ public partial class MainWindow : Window
 
     private static void DetachSlotEventHandlers(PanelSlotCard slot)
     {
+        slot.ViewportUpdateTimer.Stop();
         if (slot.View?.CoreWebView2 is not { } coreWebView)
         {
             return;
@@ -1225,7 +1522,7 @@ public partial class MainWindow : Window
     private enum AssignedAccountStartResult
     {
         Opened,
-        ManualSignInRequired,
+        ManualActionRequired,
         Failed
     }
 
@@ -1249,7 +1546,12 @@ public partial class MainWindow : Window
         Grid browserHost,
         FrameworkElement placeholder,
         TextBlock emptyTitle,
-        TextBlock emptyDescription)
+        TextBlock emptyDescription,
+        Border viewAdjustmentOverlay,
+        Slider widthSlider,
+        Slider heightSlider,
+        TextBlock widthValue,
+        TextBlock heightValue)
     {
         public int SlotIndex { get; } = slotIndex;
         public Border Root { get; } = root;
@@ -1261,8 +1563,15 @@ public partial class MainWindow : Window
         public FrameworkElement Placeholder { get; } = placeholder;
         public TextBlock EmptyTitle { get; } = emptyTitle;
         public TextBlock EmptyDescription { get; } = emptyDescription;
+        public Border ViewAdjustmentOverlay { get; } = viewAdjustmentOverlay;
+        public Slider WidthSlider { get; } = widthSlider;
+        public Slider HeightSlider { get; } = heightSlider;
+        public TextBlock WidthValue { get; } = widthValue;
+        public TextBlock HeightValue { get; } = heightValue;
+        public DispatcherTimer ViewportUpdateTimer { get; } = new() { Interval = TimeSpan.FromMilliseconds(120) };
+        public bool SuppressViewportEvents { get; set; }
         public StatusTone Tone { get; set; }
-        public WebView2? View { get; set; }
+        public WebView2CompositionControl? View { get; set; }
         public EventHandler<CoreWebView2NavigationCompletedEventArgs>? NavigationCompletedHandler { get; set; }
         public EventHandler<CoreWebView2ProcessFailedEventArgs>? ProcessFailedHandler { get; set; }
     }

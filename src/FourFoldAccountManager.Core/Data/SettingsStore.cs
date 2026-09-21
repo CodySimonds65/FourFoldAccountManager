@@ -113,6 +113,17 @@ public sealed class SettingsStore
             throw new InvalidDataException("Panel settings contain an empty or duplicated account ID.");
         }
 
-        return new PanelSettings(settings.Layout, settings.SlotAccountIds);
+        if (settings.GameViewportSizes is null ||
+            settings.GameViewportSizes.Any(entry => entry.Key == Guid.Empty || entry.Value is null || !entry.Value.IsValid))
+        {
+            throw new InvalidDataException("Panel settings contain an invalid game viewport size.");
+        }
+
+        return new PanelSettings(settings.Layout, settings.SlotAccountIds)
+        {
+            FillGameToPanel = settings.FillGameToPanel,
+            ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            GameViewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes)
+        };
     }
 }

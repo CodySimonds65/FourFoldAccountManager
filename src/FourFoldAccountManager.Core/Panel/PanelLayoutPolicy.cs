@@ -25,7 +25,12 @@ public static class PanelLayoutPolicy
     {
         ArgumentNullException.ThrowIfNull(settings);
         _ = GetDimensions(layout);
-        return new PanelSettings(layout, settings.SlotAccountIds);
+        return new PanelSettings(layout, settings.SlotAccountIds)
+        {
+            FillGameToPanel = settings.FillGameToPanel,
+            ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            GameViewportSizes = settings.GameViewportSizes
+        };
     }
 
     public static PanelSettings Assign(PanelSettings settings, int slotIndex, Guid? accountId)
@@ -59,7 +64,12 @@ public static class PanelLayoutPolicy
         }
 
         assignments[slotIndex] = accountId;
-        return new PanelSettings(settings.Layout, assignments);
+        return new PanelSettings(settings.Layout, assignments)
+        {
+            FillGameToPanel = settings.FillGameToPanel,
+            ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            GameViewportSizes = settings.GameViewportSizes
+        };
     }
 
     public static PanelSettings ClearAccount(PanelSettings settings, Guid accountId)
@@ -78,6 +88,50 @@ public static class PanelLayoutPolicy
         var assignments = settings.SlotAccountIds
             .Select(assignedId => assignedId == accountId ? null : assignedId)
             .ToArray();
-        return new PanelSettings(settings.Layout, assignments);
+        var viewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes);
+        viewportSizes.Remove(accountId);
+        return new PanelSettings(settings.Layout, assignments)
+        {
+            FillGameToPanel = settings.FillGameToPanel,
+            ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            GameViewportSizes = viewportSizes
+        };
+    }
+
+    public static GameViewportSize GetGameViewportSize(PanelSettings settings, Guid accountId)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (accountId == Guid.Empty)
+        {
+            throw new ArgumentException("An account ID is required.", nameof(accountId));
+        }
+
+        return settings.GameViewportSizes.TryGetValue(accountId, out var size)
+            ? size
+            : GameViewportSize.Default;
+    }
+
+    public static PanelSettings WithGameViewportSize(
+        PanelSettings settings,
+        Guid accountId,
+        GameViewportSize size)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(size);
+        if (accountId == Guid.Empty)
+        {
+            throw new ArgumentException("An account ID is required.", nameof(accountId));
+        }
+
+        if (!size.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(size), "Viewport dimensions must be between 25% and 100%.");
+        }
+
+        var viewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes)
+        {
+            [accountId] = size
+        };
+        return settings with { GameViewportSizes = viewportSizes };
     }
 }

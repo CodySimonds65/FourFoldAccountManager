@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using FourFoldAccountManager.Core.Data;
+using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Navigation;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -22,7 +23,9 @@ public sealed class AccountBrowserSessionService
     private readonly Dispatcher _dispatcher;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly Dictionary<Guid, SessionView> _views = [];
+    private readonly Dictionary<Guid, GameViewportSize> _gameViewportSizes = [];
     private Task<CoreWebView2Environment>? _environmentTask;
+    private bool _fillGameToPanel = true;
 
     public AccountBrowserSessionService(LocalDataPaths paths)
     {
@@ -37,7 +40,7 @@ public sealed class AccountBrowserSessionService
     /// </summary>
     public event EventHandler<NavigationBlockedEventArgs>? NavigationBlocked;
 
-    public Task<WebView2> CreateViewAsync(
+    public Task<WebView2CompositionControl> CreateViewAsync(
         Guid accountId,
         Panel host,
         CancellationToken cancellationToken = default) =>
@@ -55,8 +58,22 @@ public sealed class AccountBrowserSessionService
         CancellationToken cancellationToken = default) =>
         InvokeOnDispatcherAsync(() => SubmitSavedLoginCoreAsync(accountId, credentials, cancellationToken), cancellationToken);
 
+    public Task<PlayInBrowserResult> SelectPlayInBrowserAsync(
+        Guid accountId,
+        CancellationToken cancellationToken = default) =>
+        InvokeOnDispatcherAsync(() => SelectPlayInBrowserCoreAsync(accountId, cancellationToken), cancellationToken);
+
     public Task CloseViewAsync(Guid accountId) =>
         InvokeOnDispatcherAsync(() => CloseViewCoreAsync(accountId), CancellationToken.None);
+
+    public Task SetGameScalingAsync(bool fillGameToPanel, CancellationToken cancellationToken = default) =>
+        InvokeOnDispatcherAsync(() => SetGameScalingCoreAsync(fillGameToPanel, cancellationToken), cancellationToken);
+
+    public Task SetGameViewportSizeAsync(
+        Guid accountId,
+        GameViewportSize size,
+        CancellationToken cancellationToken = default) =>
+        InvokeOnDispatcherAsync(() => SetGameViewportSizeCoreAsync(accountId, size, cancellationToken), cancellationToken);
 
     public Task ClearProfileAsync(
         Guid accountId,
@@ -64,7 +81,7 @@ public sealed class AccountBrowserSessionService
         CancellationToken cancellationToken = default) =>
         InvokeOnDispatcherAsync(() => ClearProfileCoreAsync(accountId, temporaryViewHost, cancellationToken), cancellationToken);
 
-    private async Task<WebView2> CreateViewCoreAsync(
+    private async Task<WebView2CompositionControl> CreateViewCoreAsync(
         Guid accountId,
         Panel host,
         CancellationToken cancellationToken)
@@ -88,6 +105,22 @@ public sealed class AccountBrowserSessionService
             }
 
             var view = await CreateInitializedViewAsync(accountId, host, cancellationToken);
+            string scalingScriptId;
+            try
+            {
+                var viewportSize = GetGameViewportSize(accountId);
+                scalingScriptId = await InstallGameScalingScriptAsync(
+                    view.CoreWebView2,
+                    _fillGameToPanel,
+                    viewportSize.WidthPercent,
+                    viewportSize.HeightPercent);
+            }
+            catch
+            {
+                DetachFromParent(view);
+                view.Dispose();
+                throw;
+            }
             EventHandler<CoreWebView2NavigationStartingEventArgs> navigationStarting = (sender, args) =>
             {
                 if (TryApprove(args.Uri, out _))
@@ -113,7 +146,7 @@ public sealed class AccountBrowserSessionService
 
             view.CoreWebView2.NavigationStarting += navigationStarting;
             view.CoreWebView2.NewWindowRequested += newWindowRequested;
-            _views.Add(accountId, new SessionView(view, navigationStarting, newWindowRequested));
+            _views.Add(accountId, new SessionView(view, navigationStarting, newWindowRequested, scalingScriptId));
             return view;
         }
         finally
@@ -121,6 +154,142 @@ public sealed class AccountBrowserSessionService
             _lifecycleGate.Release();
         }
     }
+
+    private async Task SetGameScalingCoreAsync(bool fillGameToPanel, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await _lifecycleGate.WaitAsync(cancellationToken);
+        try
+        {
+            _fillGameToPanel = fillGameToPanel;
+            foreach (var (accountId, session) in _views)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var core = session.View.CoreWebView2;
+                var viewportSize = GetGameViewportSize(accountId);
+                var replacementScriptId = await InstallGameScalingScriptAsync(
+                    core,
+                    fillGameToPanel,
+                    viewportSize.WidthPercent,
+                    viewportSize.HeightPercent);
+                core.RemoveScriptToExecuteOnDocumentCreated(session.ScalingScriptId);
+                session.ScalingScriptId = replacementScriptId;
+
+                if (TryApprove(core.Source, out _))
+                {
+                    core.Reload();
+                }
+            }
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    private async Task SetGameViewportSizeCoreAsync(
+        Guid accountId,
+        GameViewportSize size,
+        CancellationToken cancellationToken)
+    {
+        ValidateAccountId(accountId);
+        ArgumentNullException.ThrowIfNull(size);
+        if (!size.IsValid)
+        {
+            throw new ArgumentOutOfRangeException(nameof(size), "Viewport dimensions must be between 25% and 100%.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        await _lifecycleGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (!_views.TryGetValue(accountId, out var session))
+            {
+                _gameViewportSizes[accountId] = size;
+                return;
+            }
+
+            var core = session.View.CoreWebView2;
+            var replacementScriptId = await InstallGameScalingScriptAsync(
+                core,
+                _fillGameToPanel,
+                size.WidthPercent,
+                size.HeightPercent);
+            try
+            {
+                await core.ExecuteScriptAsync(BuildGameScalingScript(
+                    _fillGameToPanel,
+                    size.WidthPercent,
+                    size.HeightPercent));
+            }
+            catch
+            {
+                core.RemoveScriptToExecuteOnDocumentCreated(replacementScriptId);
+                throw;
+            }
+
+            core.RemoveScriptToExecuteOnDocumentCreated(session.ScalingScriptId);
+            session.ScalingScriptId = replacementScriptId;
+            _gameViewportSizes[accountId] = size;
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+    }
+
+    private static Task<string> InstallGameScalingScriptAsync(
+        CoreWebView2 core,
+        bool fillGameToPanel,
+        double widthPercent,
+        double heightPercent) =>
+        core.AddScriptToExecuteOnDocumentCreatedAsync(
+            BuildGameScalingScript(fillGameToPanel, widthPercent, heightPercent));
+
+    private static string BuildGameScalingScript(
+        bool fillGameToPanel,
+        double widthPercent,
+        double heightPercent)
+    {
+        var fillStyle = fillGameToPanel
+            ? $$"""
+              #unity-container {
+                width: {{widthPercent.ToString(System.Globalization.CultureInfo.InvariantCulture)}}vw !important;
+                height: {{heightPercent.ToString(System.Globalization.CultureInfo.InvariantCulture)}}vh !important;
+                max-width: none !important;
+                max-height: none !important;
+              }
+              #unity-canvas {
+                width: 100% !important;
+                height: 100% !important;
+              }
+              """
+            : string.Empty;
+        var serializedStyle = JsonSerializer.Serialize(fillStyle);
+        var script = $$"""
+            (() => {
+                if (location.protocol !== 'https:' || location.hostname !== 'fourfoldonline.com') return;
+                const style = document.createElement('style');
+                style.id = 'fourfold-account-manager-scaling';
+                style.textContent = {{serializedStyle}};
+                const install = () => {
+                    const target = document.head || document.documentElement;
+                    if (!target) return;
+                    const existing = document.getElementById(style.id);
+                    if (existing) existing.textContent = style.textContent;
+                    else target.appendChild(style);
+                };
+                if (document.head || document.documentElement) install();
+                else document.addEventListener('DOMContentLoaded', install, { once: true });
+            })();
+            """;
+        return script;
+    }
+
+    private GameViewportSize GetGameViewportSize(Guid accountId) =>
+        _gameViewportSizes.TryGetValue(accountId, out var size)
+            ? size
+            : GameViewportSize.Default;
 
     private async Task<BrowserNavigationResult> NavigateAndWaitCoreAsync(
         Guid accountId,
@@ -248,6 +417,73 @@ public sealed class AccountBrowserSessionService
         }
     }
 
+    private async Task<PlayInBrowserResult> SelectPlayInBrowserCoreAsync(
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        ValidateAccountId(accountId);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!_views.TryGetValue(accountId, out var session))
+        {
+            return PlayInBrowserResult.ViewNotOpen;
+        }
+
+        var core = session.View.CoreWebView2;
+        if (!IsSamePage(core.Source, FourFoldDestination.StartUri))
+        {
+            return PlayInBrowserResult.NotOnPlayPage;
+        }
+
+        var scriptResult = await SelectPlayInBrowserScriptAsync(core);
+        cancellationToken.ThrowIfCancellationRequested();
+        return string.Equals(scriptResult, "true", StringComparison.OrdinalIgnoreCase)
+            ? PlayInBrowserResult.Activated
+            : PlayInBrowserResult.ControlNotFound;
+    }
+
+    private static Task<string> SelectPlayInBrowserScriptAsync(CoreWebView2 core)
+    {
+        const string script = """
+            (() => {
+                const normalize = value => (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+                const heading = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+                    .find(candidate => normalize(candidate.textContent) === 'play in browser');
+                if (!heading) return false;
+
+                let scope = heading.parentElement;
+                while (scope && scope !== document.body) {
+                    const action = Array.from(scope.querySelectorAll(
+                        'a, button, input[type="button"], input[type="submit"]'))
+                        .find(candidate => {
+                            const label = candidate instanceof HTMLInputElement
+                                ? candidate.value
+                                : candidate.textContent;
+                            return normalize(label) === 'play now' &&
+                                !candidate.disabled &&
+                                candidate.getAttribute('aria-disabled') !== 'true' &&
+                                candidate.getClientRects().length > 0;
+                        });
+                    if (action) {
+                        if (action instanceof HTMLAnchorElement) {
+                            const destination = new URL(action.href, location.href);
+                            if (destination.origin !== location.origin) return false;
+                        }
+                        if (action instanceof HTMLButtonElement && action.form) {
+                            const destination = new URL(action.form.action || location.href, location.href);
+                            if (destination.origin !== location.origin) return false;
+                        }
+                        action.click();
+                        return true;
+                    }
+                    scope = scope.parentElement;
+                }
+                return false;
+            })()
+            """;
+
+        return core.ExecuteScriptAsync(script);
+    }
+
     private static Task<string> SubmitLoginFormScriptAsync(
         CoreWebView2 core,
         AccountCredentials credentials)
@@ -356,7 +592,7 @@ public sealed class AccountBrowserSessionService
         session.View.Dispose();
     }
 
-    private async Task<WebView2> CreateInitializedViewAsync(
+    private async Task<WebView2CompositionControl> CreateInitializedViewAsync(
         Guid accountId,
         Panel host,
         CancellationToken cancellationToken)
@@ -369,7 +605,7 @@ public sealed class AccountBrowserSessionService
         options.ProfileName = accountId.ToString("N");
         options.IsInPrivateModeEnabled = false;
 
-        var view = new WebView2();
+        var view = new WebView2CompositionControl();
         try
         {
             host.Children.Add(view);
@@ -453,7 +689,7 @@ public sealed class AccountBrowserSessionService
         }
     }
 
-    private static void DetachFromParent(WebView2 view)
+    private static void DetachFromParent(WebView2CompositionControl view)
     {
         switch (view.Parent)
         {
@@ -469,8 +705,15 @@ public sealed class AccountBrowserSessionService
         }
     }
 
-    private sealed record SessionView(
-        WebView2 View,
-        EventHandler<CoreWebView2NavigationStartingEventArgs> NavigationStarting,
-        EventHandler<CoreWebView2NewWindowRequestedEventArgs> NewWindowRequested);
+    private sealed class SessionView(
+        WebView2CompositionControl view,
+        EventHandler<CoreWebView2NavigationStartingEventArgs> navigationStarting,
+        EventHandler<CoreWebView2NewWindowRequestedEventArgs> newWindowRequested,
+        string scalingScriptId)
+    {
+        public WebView2CompositionControl View { get; } = view;
+        public EventHandler<CoreWebView2NavigationStartingEventArgs> NavigationStarting { get; } = navigationStarting;
+        public EventHandler<CoreWebView2NewWindowRequestedEventArgs> NewWindowRequested { get; } = newWindowRequested;
+        public string ScalingScriptId { get; set; } = scalingScriptId;
+    }
 }

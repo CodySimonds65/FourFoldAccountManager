@@ -33,6 +33,9 @@
                     <TextBlock Text="Account manager" Margin="0,1,0,0" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="SettingsButton" Content="Settings" Click="Settings_Click"
+                            Style="{StaticResource AppButtonStyle}" Height="34" Padding="14,0" Margin="0,0,8,0"
+                            ToolTip="Adjust how the game fits each account panel." />
                     <Button x:Name="FullScreenButton" Content="Full screen" Click="FullScreen_Click"
                             Style="{StaticResource AppButtonStyle}" Height="34" Padding="14,0"
                             ToolTip="Expand the client layout. Press Esc to return." />
@@ -161,6 +164,9 @@
                         <TextBlock Text="Your accounts, together." FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,3,0,0" />
                     </StackPanel>
                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button x:Name="AdjustViewsButton" Content="Adjust views" Click="AdjustViews_Click" Visibility="Collapsed"
+                                Style="{StaticResource AppButtonStyle}" Height="36" Padding="10,0" Margin="0,0,8,0"
+                                ToolTip="Resize each active game within its account panel" />
                         <Button x:Name="ManageSlotsButton" Content="Manage slots" Click="ManageSlots_Click" Visibility="Collapsed"
                                 Style="{StaticResource AppButtonStyle}" Height="36" Padding="10,0" Margin="0,0,8,0" ToolTip="Change account assignments" />
                         <ComboBox x:Name="LayoutPicker" Width="172" Height="36" Margin="0,0,8,0"
@@ -182,9 +188,9 @@
         </Grid>
         <Grid x:Name="MaintenanceWebViewHost" Width="2" Height="2" Opacity="0" IsHitTestVisible="False"
               HorizontalAlignment="Left" VerticalAlignment="Top" />
-        <Button x:Name="FullScreenExitButton" Grid.RowSpan="2" Width="74" Height="34" Margin="10"
+        <Button x:Name="FullScreenExitButton" Panel.ZIndex="1000" Grid.RowSpan="2" Width="74" Height="34" Margin="10"
                 HorizontalAlignment="Right" VerticalAlignment="Top" Content="Exit" Click="FullScreenExit_Click"
-                Visibility="Collapsed" Opacity="0.5" Style="{StaticResource AppButtonStyle}" ToolTip="Exit full screen (Esc)"
+                Visibility="Collapsed" Opacity="0.78" Style="{StaticResource AppButtonStyle}" ToolTip="Exit full screen (Esc)"
                 MouseEnter="FullScreenExit_MouseEnter" MouseLeave="FullScreenExit_MouseLeave" />
     </Grid>
 </Window>
