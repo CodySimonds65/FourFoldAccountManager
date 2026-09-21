@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -9,6 +11,7 @@ using FourFoldAccountManager.Core.Data;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Panel;
 using FourFoldAccountManager.Desktop.Services;
+using FourFoldAccountManager.Desktop.Updates;
 using FourFoldAccountManager.Desktop.Views;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -97,6 +100,7 @@ public partial class MainWindow : Window
             UpdateAccountActions();
             await RebuildPanelAsync(closeExistingViews: false);
             GlobalStatusText.Text = "Choose your layout, assign your accounts, and launch your party.";
+            _ = CheckForUpdatesAsync();
         }
         catch (InvalidDataException exception)
         {
@@ -118,6 +122,91 @@ public partial class MainWindow : Window
             MessageBox.Show(this, "The local account or panel settings could not be loaded.",
                 "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            var currentVersion = typeof(App).Assembly.GetName().Version ?? new Version(1, 1, 0);
+            var currentExecutablePath = Environment.ProcessPath;
+            if (string.IsNullOrWhiteSpace(currentExecutablePath))
+            {
+                return;
+            }
+
+            using var httpClient = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(5)
+            };
+            var coordinator = new UpdateCoordinator(
+                currentVersion,
+                currentExecutablePath,
+                Environment.ProcessId,
+                new GitHubReleaseClient(httpClient, currentVersion),
+                new UpdateDownloader(httpClient),
+                new UpdateInstaller(),
+                PromptForUpdateAsync,
+                ShowUpdateFailure);
+
+            await coordinator.CheckForUpdateAsync();
+        }
+        catch
+        {
+            // Startup updates are optional and must never prevent normal app use.
+        }
+    }
+
+    private Task<bool> PromptForUpdateAsync(UpdateRelease release)
+    {
+        var notes = string.IsNullOrWhiteSpace(release.Notes)
+            ? "A newer version is available."
+            : TruncatePlainText(release.Notes, 1200);
+        var message = $"FourFold Account Manager {release.Version} is available.\n\n{notes}\n\nDownload and restart now?";
+        var result = MessageBox.Show(
+            this,
+            message,
+            "Update available",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Information);
+        return Task.FromResult(result == MessageBoxResult.Yes);
+    }
+
+    private void ShowUpdateFailure(string message)
+    {
+        var result = MessageBox.Show(
+            this,
+            $"{message}\n\nWould you like to open the latest release page manually?",
+            "FourFold Account Manager update",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (result != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "https://github.com/CodySimonds65/FourFoldAccountManager/releases/latest",
+                UseShellExecute = true
+            });
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+        }
+    }
+
+    private static string TruncatePlainText(string value, int maximumLength)
+    {
+        var normalized = value.Replace("\r\n", "\n").Replace('\r', '\n').Trim();
+        return normalized.Length <= maximumLength
+            ? normalized
+            : normalized[..maximumLength].TrimEnd() + "…";
     }
 
     private async void AddAccount_Click(object sender, RoutedEventArgs e)
