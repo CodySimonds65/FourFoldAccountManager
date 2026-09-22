@@ -78,7 +78,13 @@ public sealed class XpTrackerStore
             await using var stream = File.OpenRead(_paths.XpTrackerFilePath);
             var data = await JsonSerializer.DeserializeAsync<TrackerFile>(stream, JsonOptions, cancellationToken);
             if (data is not { Version: 1, Accounts: not null } ||
-                data.Accounts.Any(account => account.AccountId == Guid.Empty || account.PlayerId <= 0 || account.Snapshot is null) ||
+                data.Accounts.Any(account => account is null || account.AccountId == Guid.Empty ||
+                    account.PlayerId <= 0 || account.Snapshot is null ||
+                    string.IsNullOrWhiteSpace(account.Snapshot.Username) ||
+                    account.Snapshot.Classes is null || account.Snapshot.InvalidClasses is null ||
+                    account.Snapshot.Classes.Any(pair => string.IsNullOrWhiteSpace(pair.Key) || pair.Value is null) ||
+                    account.Snapshot.InvalidClasses.Any(string.IsNullOrWhiteSpace) ||
+                    account.Intervals is null || account.Intervals.Any(interval => interval is null)) ||
                 data.Accounts.Select(account => account.AccountId).Distinct().Count() != data.Accounts.Count)
             {
                 return new Dictionary<Guid, XpStoredAccount>();

@@ -54,4 +54,23 @@ public class XpTrackerStoreTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    [Theory]
+    [InlineData("{\"version\":1,\"accounts\":[null]}")]
+    [InlineData("{\"version\":1,\"accounts\":[{\"accountId\":\"11111111-1111-1111-1111-111111111111\",\"playerId\":83,\"snapshot\":{\"username\":\"Desmond\",\"classes\":{},\"invalidClasses\":[]}}]}")]
+    [InlineData("{\"version\":1,\"accounts\":[{\"accountId\":\"11111111-1111-1111-1111-111111111111\",\"playerId\":83,\"snapshot\":{\"username\":\"Desmond\",\"classes\":{},\"invalidClasses\":[]},\"intervals\":[null]}]}")]
+    public async Task Structurally_malformed_cache_does_not_disable_future_saves(string json)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "fourfold-xp-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "xp-tracker.json"), json);
+            var store = new XpTrackerStore(new LocalDataPaths(root));
+            Assert.Empty(await store.LoadAsync());
+            await store.SaveAsync([Entry(Guid.NewGuid())], Now);
+            Assert.Single(await store.LoadAsync());
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
 }

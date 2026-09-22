@@ -3,6 +3,7 @@ namespace FourFoldAccountManager.Core.Tracking;
 public sealed class XpTrackingSession
 {
     private readonly XpRateWindow _window = new();
+    private bool _hasFailedPoll;
 
     public PlayerProgressSnapshot? LastSnapshot { get; private set; }
     public DateTimeOffset? LastSuccessfulAt { get; private set; }
@@ -25,11 +26,17 @@ public sealed class XpTrackingSession
         if (LastSuccessfulAt is { } previousTime && sampledAt <= previousTime)
             throw new ArgumentOutOfRangeException(nameof(sampledAt));
 
-        if (LastSnapshot is { } previous && LastSuccessfulAt is { } from)
+        if (_hasFailedPoll)
+        {
+            HasUncertainInterval = true;
+            RatePerHour = _window.GetRate(sampledAt);
+            _hasFailedPoll = false;
+        }
+        else if (LastSnapshot is { } previous && LastSuccessfulAt is { } from)
         {
             var gain = XpProgressCalculator.Calculate(previous, snapshot);
             HasUncertainInterval = gain.InvalidClasses.Count > 0;
-            if (gain.ValidGain > 0 || gain.InvalidClasses.Count < snapshot.Classes.Count + snapshot.InvalidClasses.Count)
+            if (gain.ValidClassCount > 0)
             {
                 _window.Add(from, sampledAt, gain.ValidGain);
                 RatePerHour = _window.GetRate(sampledAt);
@@ -43,7 +50,11 @@ public sealed class XpTrackingSession
 
     public void MarkFetchFailed(DateTimeOffset attemptedAt)
     {
-        if (!IsStopped) IsStale = true;
+        if (!IsStopped)
+        {
+            IsStale = true;
+            _hasFailedPoll = true;
+        }
     }
 
     public void Stop() => IsStopped = true;

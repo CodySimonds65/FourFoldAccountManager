@@ -16,7 +16,7 @@ The tracker matches each open account to its public FourFold username. It uses t
 
 While a client is open, the app checks the public ranking and player pages every two minutes. The first player snapshot establishes a baseline, so XP/hour appears after a second successful check. The rate covers measured gains over the trailing hour; session XP counts measured gains since that client was opened. Level-up calculations include XP remaining in the old level and XP earned in the new one. The active class's **XP to next level** comes directly from its current and target XP on the player page.
 
-If the public page cannot be refreshed, the row shows a stale status and the last successful update. Unexpected resets or changed level thresholds mark an interval uncertain instead of adding guessed XP. Moving an open account between panel slots keeps its tracking session; closing and reopening it starts a new baseline. The right panel and its space disappear in full screen and return afterward.
+If the public page cannot be refreshed, the row shows a stale status and the last successful update. The first successful check after a failed refresh sets a new baseline, so XP earned during the gap is excluded. Unexpected resets or changed level thresholds also mark an interval uncertain instead of adding guessed XP. Moving an open account between panel slots keeps its tracking session; closing and reopening it starts a new baseline. The right panel and its space disappear in full screen and return afterward.
 
 Requires Windows, the .NET 10 SDK, and the Microsoft Edge WebView2 Runtime.
 

@@ -53,8 +53,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         rankingUsername = rankingUsername?.Trim();
         if (_active.TryGetValue(accountId, out var previous))
         {
-            if (string.Equals(previous.Username, rankingUsername, StringComparison.OrdinalIgnoreCase) &&
-                previous.PlayerId == playerId)
+            if (previous.Identity.MatchesConfiguration(rankingUsername, playerId))
                 return;
             previous.Session.Stop();
         }
@@ -192,7 +191,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
             account.PlayerId = playerId;
             var sampledAt = DateTimeOffset.UtcNow;
             account.Session.ApplySnapshot(profile, sampledAt);
-            account.Status = account.Session.HasUncertainInterval ? "Partial interval; some classes reset" :
+            account.Status = account.Session.HasUncertainInterval ? "Partial interval; sample missed or class reset" :
                 account.Session.RatePerHour is null ? "Collecting baseline" : "Tracking";
             _stored[account.Id] = new XpStoredAccount(account.Id, playerId.Value, sampledAt, profile,
                 account.Session.Intervals.ToArray());
@@ -227,8 +226,9 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
     private sealed class TrackedAccount(Guid id, string? username, int? playerId)
     {
         public Guid Id { get; } = id;
-        public string? Username { get; } = username;
-        public int? PlayerId { get; set; } = playerId;
+        public TrackedPlayerIdentity Identity { get; } = new(username, playerId);
+        public string? Username => Identity.Username;
+        public int? PlayerId { get => Identity.ResolvedPlayerId; set => Identity.ResolvedPlayerId = value; }
         public XpTrackingSession Session { get; } = new();
         public string Status { get; set; } = "Collecting baseline";
     }

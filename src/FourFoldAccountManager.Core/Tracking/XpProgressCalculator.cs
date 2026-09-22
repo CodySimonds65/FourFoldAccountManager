@@ -2,7 +2,7 @@ using System.Numerics;
 
 namespace FourFoldAccountManager.Core.Tracking;
 
-public sealed record XpGainResult(long ValidGain, IReadOnlyList<string> InvalidClasses);
+public sealed record XpGainResult(long ValidGain, int ValidClassCount, IReadOnlyList<string> InvalidClasses);
 
 public static class XpProgressCalculator
 {
@@ -13,6 +13,7 @@ public static class XpProgressCalculator
         var invalid = new HashSet<string>(before.InvalidClasses, StringComparer.OrdinalIgnoreCase);
         invalid.UnionWith(after.InvalidClasses);
         long total = 0;
+        var validClassCount = 0;
 
         foreach (var (name, oldClass) in before.Classes)
         {
@@ -60,6 +61,7 @@ public static class XpProgressCalculator
                 }
 
                 total = checked(total + gain);
+                validClassCount++;
             }
             catch (OverflowException)
             {
@@ -75,7 +77,8 @@ public static class XpProgressCalculator
             }
         }
 
-        return new XpGainResult(total, invalid.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray());
+        return new XpGainResult(total, validClassCount,
+            invalid.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray());
     }
 
     private static long Cap(int level) => checked(5L * level * (level + 1L));

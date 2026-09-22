@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\FourFoldAccountManager.Core\FourFoldAccountManager.Core.csproj" />
+    <Compile Include="..\..\src\FourFoldAccountManager.Desktop\Services\FourFoldRankingClient.cs" Link="FourFoldRankingClient.cs" />
   </ItemGroup>
 
   <ItemGroup>
