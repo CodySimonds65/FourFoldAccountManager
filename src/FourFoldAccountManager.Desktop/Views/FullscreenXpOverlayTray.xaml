@@ -63,7 +63,8 @@
         </Border>
         <Button x:Name="EdgeTab" Grid.Column="1" Width="26" Height="76" Padding="0"
                 HorizontalAlignment="Right" VerticalAlignment="Center" Click="EdgeTab_Click"
-                MouseEnter="EdgeTab_MouseEnter" Style="{StaticResource AppButtonStyle}"
+                MouseEnter="EdgeTab_MouseEnter" MouseLeave="EdgeTab_MouseLeave"
+                Style="{StaticResource AppButtonStyle}"
                 ToolTip="Edit fullscreen XP overlays" AutomationProperties.Name="Edit XP overlays">
             <Path Data="M 8,2 L 3,7 L 8,12" Stroke="{DynamicResource Brush.AccentGold}"
                   StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round"

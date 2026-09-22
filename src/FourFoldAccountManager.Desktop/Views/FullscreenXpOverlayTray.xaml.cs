@@ -11,6 +11,7 @@ public partial class FullscreenXpOverlayTray : UserControl
     private XpOverlayAccountChoice? _dragChoice;
     private bool _isFullScreen;
     private bool _isEditing;
+    private bool _ignoreEdgeTabMouseEnterUntilLeave;
 
     public FullscreenXpOverlayTray()
     {
@@ -55,13 +56,25 @@ public partial class FullscreenXpOverlayTray : UserControl
 
     public void RevealEdgeTab()
     {
+        var pointerWasAlreadyOverTab = _isFullScreen &&
+            !_tabVisibilityState.IsVisible(_isFullScreen) && IsPointerOverEdgeTab();
         _tabVisibilityState.Reveal();
+        _ignoreEdgeTabMouseEnterUntilLeave = pointerWasAlreadyOverTab;
         UpdateEdgeTabVisibility();
     }
 
     private void EdgeTab_Click(object sender, RoutedEventArgs args) => RequestEdit();
 
-    private void EdgeTab_MouseEnter(object sender, MouseEventArgs args) => RequestEdit();
+    private void EdgeTab_MouseEnter(object sender, MouseEventArgs args)
+    {
+        if (!_ignoreEdgeTabMouseEnterUntilLeave)
+        {
+            RequestEdit();
+        }
+    }
+
+    private void EdgeTab_MouseLeave(object sender, MouseEventArgs args) =>
+        _ignoreEdgeTabMouseEnterUntilLeave = false;
 
     private void DoneButton_Click(object sender, RoutedEventArgs args)
     {
@@ -73,6 +86,20 @@ public partial class FullscreenXpOverlayTray : UserControl
         EdgeTab.Visibility = _tabVisibilityState.IsVisible(_isFullScreen)
             ? Visibility.Visible
             : Visibility.Collapsed;
+
+    private bool IsPointerOverEdgeTab()
+    {
+        if (ActualWidth <= 0 || ActualHeight <= 0)
+        {
+            return false;
+        }
+
+        var pointer = Mouse.GetPosition(this);
+        var left = ActualWidth - EdgeTab.Width;
+        var top = (ActualHeight - EdgeTab.Height) / 2d;
+        return pointer.X >= left && pointer.X <= ActualWidth &&
+            pointer.Y >= top && pointer.Y <= top + EdgeTab.Height;
+    }
 
     private void RequestEdit()
     {

@@ -249,7 +249,7 @@ public sealed class XpOverlayLayer : Canvas
         var normalizedPoint = new Point(
             Math.Clamp(location.X / ActualWidth, 0d, 1d),
             Math.Clamp(location.Y / ActualHeight, 0d, 1d));
-        AccountDropped?.Invoke(this, new XpOverlayAccountDroppedEventArgs(accountId, normalizedPoint));
+        AccountDropped?.Invoke(this, new XpOverlayAccountDroppedEventArgs(draggedAccountId, normalizedPoint));
         args.Effects = DragDropEffects.Move;
         args.Handled = true;
     }

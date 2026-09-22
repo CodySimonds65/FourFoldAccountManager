@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Data;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using FourFoldAccountManager.Core.Data;
@@ -22,6 +23,8 @@ namespace FourFoldAccountManager.Desktop;
 
 public partial class MainWindow : Window
 {
+    private const int WmHotkey = 0x0312;
+
     private readonly ObservableCollection<AccountProfile> _accounts = [];
     private readonly HashSet<Guid> _openAccountIds = [];
     private readonly HashSet<Guid> _failedAccountIds = [];
@@ -34,13 +37,17 @@ public partial class MainWindow : Window
     private readonly List<PanelSlotCard> _slotCards = [];
     private readonly SemaphoreSlim _settingsMutationGate = new(1, 1);
     private readonly SemaphoreSlim _viewportSaveGate = new(1, 1);
+    private HwndSource? _windowSource;
+    private GlobalHotkeyRegistrationCoordinator? _hotkeyCoordinator;
     private PanelSettings _panelSettings = PanelSettings.Default;
+    private bool _revealShortcutAvailable;
     private bool _isReady;
     private bool _batchLaunchInProgress;
     private bool _accountsPanelVisible = true;
     private bool _slotManagementVisible = true;
     private bool _viewAdjustmentVisible;
     private bool _isFullScreen;
+    private bool _xpOverlayEditing;
     private WindowState _previousWindowState;
     private WindowStyle _previousWindowStyle;
     private ResizeMode _previousResizeMode;
@@ -50,7 +57,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        SourceInitialized += (_, _) => WindowAppearance.Apply(this);
+        SourceInitialized += MainWindow_SourceInitialized;
 
         var paths = new LocalDataPaths();
         _accountStore = new AccountStore(paths);
@@ -59,6 +66,8 @@ public partial class MainWindow : Window
         _browserSessions = new AccountBrowserSessionService(paths);
         _xpTracker = new XpTrackerCoordinator(paths);
         _xpTracker.Changed += (_, _) => RefreshTrackerRows();
+        FullscreenXpOverlayTray.EditRequested += (_, _) => SetXpOverlayEditing(true);
+        FullscreenXpOverlayTray.DoneRequested += (_, _) => SetXpOverlayEditing(false);
         TrackerPanel.ItemsSource = _xpTrackerRows;
         TrackerPanel.LinkRequested += accountId =>
         {
@@ -99,6 +108,39 @@ public partial class MainWindow : Window
         Closing += MainWindow_Closing;
     }
 
+    private void MainWindow_SourceInitialized(object? sender, EventArgs e)
+    {
+        WindowAppearance.Apply(this);
+        var windowHandle = new WindowInteropHelper(this).Handle;
+        _windowSource = HwndSource.FromHwnd(windowHandle);
+        if (_windowSource is null)
+        {
+            return;
+        }
+
+        _windowSource.AddHook(MainWindow_HwndSourceHook);
+        _hotkeyCoordinator = new GlobalHotkeyRegistrationCoordinator(
+            new WindowsGlobalHotkeyRegistrar(windowHandle));
+    }
+
+    private IntPtr MainWindow_HwndSourceHook(
+        IntPtr windowHandle,
+        int message,
+        IntPtr wParam,
+        IntPtr lParam,
+        ref bool handled)
+    {
+        if (message == WmHotkey &&
+            _hotkeyCoordinator is { } coordinator &&
+            coordinator.IsCurrent(unchecked((int)wParam.ToInt64())))
+        {
+            FullscreenXpOverlayTray.RevealEdgeTab();
+            handled = true;
+        }
+
+        return IntPtr.Zero;
+    }
+
     private AccountProfile? SelectedAccount => AccountsListBox.SelectedItem as AccountProfile;
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -111,6 +153,8 @@ public partial class MainWindow : Window
             }
 
             _panelSettings = await _settingsStore.LoadAsync();
+            _revealShortcutAvailable =
+                _hotkeyCoordinator?.TryInitialize(_panelSettings.RevealXpOverlayTabShortcut) == true;
             foreach (var (accountId, size) in _panelSettings.GameViewportSizes)
             {
                 await _browserSessions.SetGameViewportSizeAsync(accountId, size);
@@ -542,6 +586,7 @@ public partial class MainWindow : Window
             await UpdateSettingsAsync(currentSettings =>
                 PanelLayoutPolicy.WithLayout(currentSettings, layout));
             await RebuildPanelAsync(closeExistingViews: false);
+            FullscreenXpOverlayTray.RevealEdgeTab();
             GlobalStatusText.Text = $"Layout changed to {FormatLayout(layout)}. Slot assignments were preserved.";
         }
         catch
@@ -582,14 +627,22 @@ public partial class MainWindow : Window
     {
         var dialog = new SettingsDialog(
             _panelSettings.FillGameToPanel,
-            _panelSettings.ShowFullScreenExitButton)
+            _panelSettings.ShowFullScreenExitButton,
+            _panelSettings.RevealXpOverlayTabShortcut,
+            _revealShortcutAvailable)
         {
             Owner = this
         };
-        if (dialog.ShowDialog() != true ||
-            (dialog.FillGameToPanel == _panelSettings.FillGameToPanel &&
-             dialog.ShowFullScreenExitButton == _panelSettings.ShowFullScreenExitButton &&
-             !dialog.ResetLayoutSizes))
+        if (dialog.ShowDialog() != true)
+        {
+            return;
+        }
+
+        var shortcutChanged = dialog.RevealXpOverlayTabShortcut != _panelSettings.RevealXpOverlayTabShortcut;
+        if (dialog.FillGameToPanel == _panelSettings.FillGameToPanel &&
+            dialog.ShowFullScreenExitButton == _panelSettings.ShowFullScreenExitButton &&
+            !shortcutChanged &&
+            !dialog.ResetLayoutSizes)
         {
             return;
         }
@@ -599,26 +652,57 @@ public partial class MainWindow : Window
         SettingsButton.IsEnabled = false;
         try
         {
-            nextSettings = await UpdateSettingsAsync(async currentSettings =>
+            async Task PersistDialogSettingsAsync()
             {
-                var candidate = dialog.ResetLayoutSizes
-                    ? PanelLayoutPolicy.ResetSplitStates(currentSettings)
-                    : currentSettings;
-                candidate = candidate with
+                nextSettings = await UpdateSettingsAsync(async currentSettings =>
                 {
-                    FillGameToPanel = dialog.FillGameToPanel,
-                    ShowFullScreenExitButton = dialog.ShowFullScreenExitButton
-                };
-                scalingChanged = candidate.FillGameToPanel != currentSettings.FillGameToPanel;
-                if (scalingChanged)
+                    var candidate = dialog.ResetLayoutSizes
+                        ? PanelLayoutPolicy.ResetSplitStates(currentSettings)
+                        : currentSettings;
+                    candidate = candidate with
+                    {
+                        FillGameToPanel = dialog.FillGameToPanel,
+                        ShowFullScreenExitButton = dialog.ShowFullScreenExitButton,
+                        RevealXpOverlayTabShortcut = dialog.RevealXpOverlayTabShortcut
+                    };
+                    scalingChanged = candidate.FillGameToPanel != currentSettings.FillGameToPanel;
+                    if (scalingChanged)
+                    {
+                        await _browserSessions.SetGameScalingAsync(candidate.FillGameToPanel);
+                    }
+
+                    return candidate;
+                }, previousSettings => scalingChanged
+                    ? _browserSessions.SetGameScalingAsync(previousSettings.FillGameToPanel)
+                    : Task.CompletedTask);
+            }
+
+            if (shortcutChanged)
+            {
+                var registered = _hotkeyCoordinator is not null &&
+                    await _hotkeyCoordinator.TryReplaceAsync(
+                        dialog.RevealXpOverlayTabShortcut,
+                        PersistDialogSettingsAsync);
+                if (!registered)
                 {
-                    await _browserSessions.SetGameScalingAsync(candidate.FillGameToPanel);
+                    MessageBox.Show(this,
+                        "Windows couldn't register the new shortcut. Your previous saved shortcut and any existing registration remain unchanged. Choose another combination and try again.",
+                        "XP overlay shortcut unavailable", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
                 }
 
-                return candidate;
-            }, previousSettings => scalingChanged
-                ? _browserSessions.SetGameScalingAsync(previousSettings.FillGameToPanel)
-                : Task.CompletedTask);
+                _revealShortcutAvailable = true;
+            }
+            else
+            {
+                await PersistDialogSettingsAsync();
+            }
+
+            if (nextSettings is null)
+            {
+                return;
+            }
+
             if (dialog.ResetLayoutSizes)
             {
                 await RebuildPanelAsync(closeExistingViews: false);
@@ -635,6 +719,8 @@ public partial class MainWindow : Window
                 ? nextSettings.FillGameToPanel
                     ? "Game scaling set to Fill panel."
                     : "Game scaling set to Fit entire game."
+                : shortcutChanged
+                ? "Full-screen XP overlay reveal shortcut updated."
                 : nextSettings.ShowFullScreenExitButton
                     ? "Full-screen Exit button enabled."
                     : "Full-screen Exit button hidden. Press Esc to leave full screen.";
@@ -686,6 +772,9 @@ public partial class MainWindow : Window
         _previousWindowStyle = WindowStyle;
         _previousResizeMode = ResizeMode;
         _isFullScreen = true;
+        _xpOverlayEditing = false;
+        FullscreenXpOverlayTray.SetFullscreen(true);
+        FullscreenXpOverlayTray.SetEditing(false);
 
         AppHeaderBorder.Visibility = Visibility.Collapsed;
         AppHeaderRow.Height = new GridLength(0);
@@ -709,6 +798,7 @@ public partial class MainWindow : Window
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
         WindowState = WindowState.Maximized;
+        RefreshTrackerRows();
     }
 
     private void ExitFullScreen()
@@ -722,6 +812,9 @@ public partial class MainWindow : Window
         WindowStyle = _previousWindowStyle;
         ResizeMode = _previousResizeMode;
 
+        _xpOverlayEditing = false;
+        FullscreenXpOverlayTray.SetEditing(false);
+        FullscreenXpOverlayTray.SetFullscreen(false);
         _isFullScreen = false;
         AppHeaderBorder.Visibility = Visibility.Visible;
         AppHeaderRow.Height = new GridLength(60);
@@ -738,8 +831,16 @@ public partial class MainWindow : Window
         FullScreenExitButton.Visibility = Visibility.Collapsed;
         UpdateAllSlotPresentations();
         UpdateManageSlotsButton();
+        RefreshTrackerRows();
 
         WindowState = _previousWindowState;
+    }
+
+    private void SetXpOverlayEditing(bool isEditing)
+    {
+        _xpOverlayEditing = _isFullScreen && isEditing;
+        FullscreenXpOverlayTray.SetEditing(_xpOverlayEditing);
+        RefreshTrackerRows();
     }
 
     private void UpdateManageSlotsButton()
@@ -761,17 +862,49 @@ public partial class MainWindow : Window
     private void RefreshTrackerRows()
     {
         var states = _xpTracker.GetStates().ToDictionary(state => state.AccountId);
+        var trayChoices = new List<XpOverlayAccountChoice>();
         _xpTrackerRows.Clear();
         foreach (var slot in _slotCards.OrderBy(slot => slot.SlotIndex))
         {
-            if (_panelSettings.SlotAccountIds[slot.SlotIndex] is not { } accountId ||
-                !_openAccountIds.Contains(accountId) || !states.TryGetValue(accountId, out var state))
-                continue;
+            var assignedAccountId = _panelSettings.SlotAccountIds[slot.SlotIndex];
+            var account = assignedAccountId is { } id
+                ? _accounts.FirstOrDefault(profile => profile.Id == id)
+                : null;
+            var label = account?.Label ?? "Account";
+            var isOpen = assignedAccountId is { } openAccountId &&
+                _openAccountIds.Contains(openAccountId) && slot.View is not null;
+            XpTrackerRow? trackerRow = null;
 
-            var label = _accounts.FirstOrDefault(account => account.Id == accountId)?.Label ?? "Account";
-            _xpTrackerRows.Add(XpTrackerRow.FromState(slot.SlotIndex + 1, label, state));
+            if (isOpen && assignedAccountId is { } trackedAccountId)
+            {
+                if (states.TryGetValue(trackedAccountId, out var state))
+                {
+                    trackerRow = XpTrackerRow.FromState(slot.SlotIndex + 1, label, state);
+                    _xpTrackerRows.Add(trackerRow);
+                }
+
+                if (account is not null)
+                {
+                    trayChoices.Add(new XpOverlayAccountChoice(
+                        trackedAccountId,
+                        label,
+                        trackerRow?.XpPerHourText ?? "— XP/hr"));
+                }
+            }
+
+            var overlayAccountId = _isFullScreen && isOpen ? assignedAccountId : null;
+            var overlayBounds = overlayAccountId is { } overlayId
+                ? PanelLayoutPolicy.GetXpOverlayBounds(_panelSettings, overlayId)
+                : null;
+            slot.XpOverlayLayer.SetSlot(
+                overlayAccountId,
+                label,
+                trackerRow?.XpPerHourText ?? "— XP/hr",
+                overlayBounds,
+                _isFullScreen && _xpOverlayEditing);
         }
 
+        FullscreenXpOverlayTray.SetChoices(trayChoices);
         UpdateTrackerPanelVisibility();
     }
 
@@ -781,6 +914,58 @@ public partial class MainWindow : Window
         TrackerPanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         TrackerGapColumn.Width = visible ? new GridLength(16) : new GridLength(0);
         TrackerColumn.Width = visible ? new GridLength(240) : new GridLength(0);
+    }
+
+    private async void XpOverlayLayer_AccountDropped(object? sender, XpOverlayAccountDroppedEventArgs args)
+    {
+        if (sender is not XpOverlayLayer layer || !_isFullScreen || !_xpOverlayEditing)
+        {
+            return;
+        }
+
+        var slot = _slotCards.FirstOrDefault(candidate => ReferenceEquals(candidate.XpOverlayLayer, layer));
+        if (slot is null || _panelSettings.SlotAccountIds[slot.SlotIndex] != args.AccountId ||
+            !_openAccountIds.Contains(args.AccountId) || slot.View is null)
+        {
+            return;
+        }
+
+        var bounds = layer.CreateDefaultBoundsAt(args.NormalizedDropPoint);
+        await SaveXpOverlayBoundsAsync(slot, args.AccountId, bounds);
+    }
+
+    private async void XpOverlayLayer_BoundsCommitted(object? sender, XpOverlayBoundsCommittedEventArgs args)
+    {
+        if (sender is not XpOverlayLayer layer || !_isFullScreen || !_xpOverlayEditing)
+        {
+            return;
+        }
+
+        var slot = _slotCards.FirstOrDefault(candidate => ReferenceEquals(candidate.XpOverlayLayer, layer));
+        if (slot is null || _panelSettings.SlotAccountIds[slot.SlotIndex] != args.AccountId ||
+            !_openAccountIds.Contains(args.AccountId) || slot.View is null)
+        {
+            return;
+        }
+
+        await SaveXpOverlayBoundsAsync(slot, args.AccountId, args.Bounds);
+    }
+
+    private async Task SaveXpOverlayBoundsAsync(PanelSlotCard slot, Guid accountId, XpOverlayBounds bounds)
+    {
+        try
+        {
+            await UpdateSettingsAsync(settings =>
+                PanelLayoutPolicy.WithXpOverlayBounds(settings, accountId, bounds));
+            RefreshTrackerRows();
+        }
+        catch
+        {
+            slot.XpOverlayLayer.RestoreSavedBounds();
+            MessageBox.Show(this,
+                "The XP overlay placement could not be saved. Its previous position was restored.",
+                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 
     private void UpdateAllSlotPresentations()
@@ -1634,6 +1819,9 @@ public partial class MainWindow : Window
         placeholder.Children.Add(emptyTitle);
         placeholder.Children.Add(emptyDescription);
         browserHost.Children.Add(placeholder);
+        var xpOverlayLayer = new XpOverlayLayer();
+        Panel.SetZIndex(xpOverlayLayer, 50);
+        browserHost.Children.Add(xpOverlayLayer);
 
         var viewportSize = assignedId is { } accountId
             ? PanelLayoutPolicy.GetGameViewportSize(_panelSettings, accountId)
@@ -1683,8 +1871,10 @@ public partial class MainWindow : Window
         Grid.SetRow(browserHost, 2);
         content.Children.Add(browserHost);
         var slot = new PanelSlotCard(slotIndex, root, header, relaunchButton, accountPicker, accountLabel, status, browserHost,
-            placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider,
+            xpOverlayLayer, placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider,
             widthValue, heightValue);
+        xpOverlayLayer.AccountDropped += XpOverlayLayer_AccountDropped;
+        xpOverlayLayer.BoundsCommitted += XpOverlayLayer_BoundsCommitted;
         widthSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
         heightSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
         resetViewButton.Click += (_, _) => SetViewportSliderValues(slot, GameViewportSize.Default);
@@ -1855,6 +2045,8 @@ public partial class MainWindow : Window
             slot.BrowserHost.Children.Add(view);
         }
 
+        Panel.SetZIndex(view, 0);
+
         slot.View = view;
         slot.Placeholder.Visibility = Visibility.Collapsed;
         UpdateSlotPresentation(slot);
@@ -1909,6 +2101,7 @@ public partial class MainWindow : Window
                 StatusTone.Error);
         }, DispatcherPriority.Background);
         view.CoreWebView2.ProcessFailed += slot.ProcessFailedHandler;
+        RefreshTrackerRows();
     }
 
     private static void DetachBrowserView(WebView2CompositionControl view)
@@ -2187,15 +2380,48 @@ public partial class MainWindow : Window
             }
             finally
             {
-                _allowClose = true;
-                Close();
+                CompleteShutdown();
             }
         }
         catch
         {
-            _allowClose = true;
-            Close();
+            CompleteShutdown();
         }
+    }
+
+    private void CompleteShutdown()
+    {
+        if (_allowClose)
+        {
+            return;
+        }
+
+        var hotkeyCoordinator = _hotkeyCoordinator;
+        _hotkeyCoordinator = null;
+        try
+        {
+            hotkeyCoordinator?.Dispose();
+        }
+        catch
+        {
+            // Native hotkey cleanup must not prevent the manager from closing.
+        }
+
+        if (_windowSource is { } windowSource)
+        {
+            _windowSource = null;
+            try
+            {
+                windowSource.RemoveHook(MainWindow_HwndSourceHook);
+            }
+            catch
+            {
+                // The source may already be shutting down with its window.
+            }
+        }
+
+        _allowClose = true;
+        Close();
     }
 
     private static string FormatLayout(PanelLayout layout) => layout switch
@@ -2239,6 +2465,7 @@ public partial class MainWindow : Window
         TextBlock accountLabel,
         TextBlock status,
         Grid browserHost,
+        XpOverlayLayer xpOverlayLayer,
         FrameworkElement placeholder,
         TextBlock emptyTitle,
         TextBlock emptyDescription,
@@ -2256,6 +2483,7 @@ public partial class MainWindow : Window
         public TextBlock AccountLabel { get; } = accountLabel;
         public TextBlock Status { get; } = status;
         public Grid BrowserHost { get; } = browserHost;
+        public XpOverlayLayer XpOverlayLayer { get; } = xpOverlayLayer;
         public FrameworkElement Placeholder { get; } = placeholder;
         public TextBlock EmptyTitle { get; } = emptyTitle;
         public TextBlock EmptyDescription { get; } = emptyDescription;

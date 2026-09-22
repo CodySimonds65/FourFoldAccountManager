@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace FourFoldAccountManager.Core.Models;
 
 [Flags]
@@ -17,6 +19,7 @@ public sealed record GlobalHotkeyChord(ushort VirtualKey, GlobalHotkeyModifiers 
     public static GlobalHotkeyChord DefaultRevealXpOverlayTab { get; } =
         new(0x4F, SupportedModifiers);
 
+    [JsonIgnore]
     public bool IsValid =>
         VirtualKey is >= 0x20 and <= 0xFE &&
         VirtualKey is not (0x5B or 0x5C or >= 0xA0 and <= 0xA5) &&
