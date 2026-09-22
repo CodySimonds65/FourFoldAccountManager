@@ -14,7 +14,9 @@ A Windows desktop app for managing FourFold accounts and opening them in separat
 
 The tracker matches each open account to its public FourFold username. Use the saved login username or set a separate **Ranking username**; players outside the top 200 can be linked with a verified player ID or URL.
 
-It polls every minute. The first sample sets the baseline; later samples show XP/hour, session XP, active class, and XP to next level. Failed polls show stale data and reset the baseline on the next success. Slot moves preserve tracking, closing a client resets it, and the panel is hidden in full screen.
+It polls every minute. The first sample sets the baseline; later samples show XP/hour, session XP, active class, XP to next level, and an active-class time-to-level estimate based on the current XP/hour. Level gains are calculated continuously across level transitions, so XP earned after a level-up remains part of the session total and rate. Failed polls show stale data and reset the baseline on the next success. Slot moves preserve tracking, closing a client resets it, and the panel is hidden in full screen.
+
+Right-click a tracker row for **Reset XP/hr** or **Reset all**. **Reset XP/hr** clears that row's rate intervals and baseline while preserving session XP; **Reset all** also clears the row's session XP and rate data.
 
 Requires Windows, the .NET 10 SDK, and the Microsoft Edge WebView2 Runtime.
 
