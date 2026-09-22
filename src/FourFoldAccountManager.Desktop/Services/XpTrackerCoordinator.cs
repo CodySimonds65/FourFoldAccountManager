@@ -48,6 +48,9 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         account.Session.HoursUntilNextLevel,
         account.Session.LastSuccessfulAt, account.Status, account.Session.IsStale)).ToArray();
 
+    internal XpTrackingSession? GetSessionForTesting(Guid accountId) =>
+        _active.TryGetValue(accountId, out var account) ? account.Session : null;
+
     public void Start(Guid accountId, string? rankingUsername, int? playerId)
     {
         _dispatcher.VerifyAccess();
