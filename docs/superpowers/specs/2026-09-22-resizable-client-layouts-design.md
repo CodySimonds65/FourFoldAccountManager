@@ -13,6 +13,7 @@ The screenshot supplied with the request is a visual reference for the context-m
 - Expanding one client or group shrinks neighboring clients in the same split group so regions never overlap.
 - Enforce a 30% minimum track size within each split group during and after a drag.
 - Persist split proportions independently for each layout and restore them after relaunch and layout switches.
+- Add a Settings dialog button that resets all saved layout split positions to their defaults.
 - Migrate the existing `TwoByThreeTopRowFraction` setting into the new split-state representation without losing the current saved 2×3 row split.
 - Save split state after drag completion and restore the previous valid state if saving fails.
 - Use explicit themed `ContextMenu` and `MenuItem` styling so the XP reset menu uses `Brush.SurfaceRaised`, `Brush.BorderStrong`, `Brush.TextPrimary`, `Brush.SurfaceHover`, and the gold accent consistently with the rest of the application.
@@ -21,6 +22,7 @@ The screenshot supplied with the request is a visual reference for the context-m
 ## Non-goals
 
 - Do not change the existing per-client game viewport sliders. Those sliders control the game's internal viewport size; this feature controls the space allocated to each client panel.
+- The Settings reset applies only to client layout split positions, not the existing per-client game viewport slider values.
 - Do not add arbitrary client overlap, floating panels, or free-form pixel positioning.
 - Do not change account assignment, browser-session lifecycle, full-screen behavior, XP calculations, or update functionality.
 
@@ -97,7 +99,13 @@ On splitter drag completion:
 
 Saving occurs once per completed drag rather than for every pointer movement. Layout rebuilds, layout selection changes, and application startup apply the saved state before the client views are restored.
 
-### 5. Context-menu styling
+### 5. Settings reset action
+
+Add a `Reset layout sizes` button to the existing Settings dialog in a new client-layout section. The button's copy must explain that it restores all client layout dividers to their defaults and does not change game scaling or per-client viewport sizes.
+
+The Settings dialog remains transactional: clicking the reset button marks the reset request in the dialog, and clicking `Save settings` commits the default split state together with any other settings changes. Clicking `Cancel` leaves the current split state untouched. The main window applies the reset through the same serialized settings update path, rebuilds the active layout, and reports that client layout sizes were restored. A confirmation prompt should be shown before marking the reset request so an accidental click does not discard all saved layout adjustments.
+
+### 6. Context-menu styling
 
 Add explicit application-level styles in `Theme.xaml` for `ContextMenu` and `MenuItem`. The styles must:
 
@@ -116,6 +124,7 @@ The XP tracker XAML should continue declaring the two existing menu items and sh
 - Existing settings files with a valid 2×3 fraction preserve that fraction.
 - Invalid persisted split data fails through `SettingsStore`'s current `InvalidDataException` path without overwriting the original settings file.
 - A failed save after a drag restores the previous in-memory layout and reports the failure using the current `GlobalStatusText`/message-box pattern.
+- A failed settings save for the reset action leaves all existing split state unchanged.
 - The 30% clamp handles very small client regions without producing negative, zero, NaN, or overlapping track sizes.
 - Empty slots still occupy their layout region and participate in shared resizing, matching the current panel behavior.
 
@@ -124,7 +133,8 @@ The XP tracker XAML should continue declaring the two existing menu items and sh
 Tests remain local under the ignored `tests/` directory:
 
 - Core tests cover every layout topology, default split state, normalized weights, two- and three-track 30% clamping, malformed persisted state, and legacy 2×3 migration.
-- Desktop tests cover rendered splitter counts/orientations for each layout, drag-state routing, save failure rollback, and rendered context-menu colors/hover state.
+- Core tests also cover restoring all layout split groups to defaults without modifying viewport-size state.
+- Desktop tests cover rendered splitter counts/orientations for each layout, drag-state routing, save failure rollback, the Settings reset confirmation/transaction flow, and rendered context-menu colors/hover state.
 - The production solution build verifies the repository remains buildable without tracked tests.
 - Manual smoke testing verifies each layout with active clients, dragging every visible boundary, switching layouts, relaunching, and confirming the XP reset menu visually matches the dark theme.
 
@@ -135,6 +145,7 @@ Tests remain local under the ignored `tests/` directory:
 - [ ] Enlarging one client shrinks only the neighboring clients required by its shared group.
 - [ ] Split proportions persist per layout and survive relaunch.
 - [ ] Existing 2×3 row proportions migrate correctly.
+- [ ] Settings can reset all layout split positions to defaults without changing viewport-size settings.
 - [ ] Failed settings writes roll back the drag.
 - [ ] XP reset context menu matches the application palette and remains functional.
 - [ ] Production build passes with zero warnings and errors.
