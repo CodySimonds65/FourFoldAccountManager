@@ -71,9 +71,18 @@ public sealed class XpTrackerExpansionTests
         session.ResetRate();
 
         Assert.Equal(100, session.SessionGain);
+        Assert.Empty(session.Intervals);
         Assert.Null(session.RatePerHour);
         Assert.Null(session.HoursUntilNextLevel);
         Assert.Equal(10, session.XpUntilNextLevel);
+
+        session.ApplySnapshot(Snapshot(13, 950, 910), Start.AddMinutes(4));
+        Assert.Equal(100, session.SessionGain);
+        Assert.Empty(session.Intervals);
+
+        session.ApplySnapshot(Snapshot(13, 1000, 1050), Start.AddMinutes(6));
+        Assert.Equal(150, session.SessionGain);
+        Assert.Equal(1500, session.RatePerHour);
     }
 
     [Fact]
