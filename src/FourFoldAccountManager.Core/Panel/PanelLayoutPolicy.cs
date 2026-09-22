@@ -280,8 +280,7 @@ public static class PanelLayoutPolicy
         }
 
         var normalized = PanelSplitMath.Normalize(state.Weights);
-        var clamped = PanelSplitMath.ClampToMinimum(normalized, MinimumSplitWeight);
-        if (normalized.Where((weight, index) => Math.Abs(weight - clamped[index]) > 0.0000000001).Any())
+        if (normalized.Any(weight => weight < MinimumSplitWeight))
         {
             throw new ArgumentException("Split state weights must satisfy the minimum track size.", nameof(state));
         }

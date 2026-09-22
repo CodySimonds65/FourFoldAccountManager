@@ -163,15 +163,28 @@ public sealed class SettingsStore
         {
             if (!suppliedStates.TryGetValue(defaultState.Id, out var suppliedState))
             {
-                return defaultState.Id == "2x3.rows"
-                    ? new PanelSplitState(
+                if (defaultState.Id == "2x3.rows")
+                {
+                    var legacyState = new PanelSplitState(
                         defaultState.Id,
                         Array.AsReadOnly(new[]
                         {
                             settings.TwoByThreeTopRowFraction,
                             Math.Round(1d - settings.TwoByThreeTopRowFraction, 12)
-                        }))
-                    : defaultState;
+                        }));
+                    try
+                    {
+                        _ = PanelLayoutPolicy.NormalizeAndValidateSplitState(legacyState, defaultState);
+                    }
+                    catch (ArgumentException exception)
+                    {
+                        throw new InvalidDataException("Panel settings contain invalid split state weights.", exception);
+                    }
+
+                    return legacyState;
+                }
+
+                return defaultState;
             }
 
             try
