@@ -125,15 +125,24 @@ public sealed class SettingsStore
             throw new InvalidDataException("Panel settings contain an invalid game viewport size.");
         }
 
+        if (settings.XpOverlayBoundsByAccount is null ||
+            settings.XpOverlayBoundsByAccount.Any(entry =>
+                entry.Key == Guid.Empty || entry.Value is null || !entry.Value.IsValid))
+        {
+            throw new InvalidDataException("Panel settings contain invalid XP overlay bounds.");
+        }
+
         var splitStates = ValidateSplitStates(settings);
         var assignments = settings.SlotAccountIds.Concat(new Guid?[5]).Take(5).ToArray();
+        var overlayBounds = new Dictionary<Guid, XpOverlayBounds>(settings.XpOverlayBoundsByAccount);
         return new PanelSettings(settings.Layout, assignments)
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = splitStates,
-            GameViewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes)
+            GameViewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes),
+            XpOverlayBoundsByAccount = overlayBounds
         };
     }
 

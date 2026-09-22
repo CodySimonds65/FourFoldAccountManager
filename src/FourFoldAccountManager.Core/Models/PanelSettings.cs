@@ -27,5 +27,8 @@ public sealed record PanelSettings
     public IReadOnlyDictionary<Guid, GameViewportSize> GameViewportSizes { get; init; } =
         new Dictionary<Guid, GameViewportSize>();
 
+    public IReadOnlyDictionary<Guid, XpOverlayBounds> XpOverlayBoundsByAccount { get; init; } =
+        new Dictionary<Guid, XpOverlayBounds>();
+
     public static PanelSettings Default => new(PanelLayout.TwoByTwo, new Guid?[5]);
 }

@@ -141,7 +141,8 @@ public static class PanelLayoutPolicy
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = settings.SplitStates,
-            GameViewportSizes = settings.GameViewportSizes
+            GameViewportSizes = settings.GameViewportSizes,
+            XpOverlayBoundsByAccount = settings.XpOverlayBoundsByAccount
         };
     }
 
@@ -182,7 +183,8 @@ public static class PanelLayoutPolicy
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = settings.SplitStates,
-            GameViewportSizes = settings.GameViewportSizes
+            GameViewportSizes = settings.GameViewportSizes,
+            XpOverlayBoundsByAccount = settings.XpOverlayBoundsByAccount
         };
     }
 
@@ -204,13 +206,16 @@ public static class PanelLayoutPolicy
             .ToArray();
         var viewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes);
         viewportSizes.Remove(accountId);
+        var overlayBounds = new Dictionary<Guid, XpOverlayBounds>(settings.XpOverlayBoundsByAccount);
+        overlayBounds.Remove(accountId);
         return new PanelSettings(settings.Layout, assignments)
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = settings.SplitStates,
-            GameViewportSizes = viewportSizes
+            GameViewportSizes = viewportSizes,
+            XpOverlayBoundsByAccount = overlayBounds
         };
     }
 
@@ -249,6 +254,43 @@ public static class PanelLayoutPolicy
             [accountId] = size
         };
         return settings with { GameViewportSizes = viewportSizes };
+    }
+
+    public static XpOverlayBounds? GetXpOverlayBounds(PanelSettings settings, Guid accountId)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (accountId == Guid.Empty)
+        {
+            throw new ArgumentException("An account ID is required.", nameof(accountId));
+        }
+
+        return settings.XpOverlayBoundsByAccount.TryGetValue(accountId, out var bounds)
+            ? bounds
+            : null;
+    }
+
+    public static PanelSettings WithXpOverlayBounds(
+        PanelSettings settings,
+        Guid accountId,
+        XpOverlayBounds bounds)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(bounds);
+        if (accountId == Guid.Empty)
+        {
+            throw new ArgumentException("An account ID is required.", nameof(accountId));
+        }
+
+        if (!bounds.IsValid)
+        {
+            throw new ArgumentException("Overlay bounds must be valid and within the normalized viewport.", nameof(bounds));
+        }
+
+        var overlayBounds = new Dictionary<Guid, XpOverlayBounds>(settings.XpOverlayBoundsByAccount)
+        {
+            [accountId] = bounds
+        };
+        return settings with { XpOverlayBoundsByAccount = overlayBounds };
     }
 
     private static PanelSlotNode Slot(int index) => new(index);
@@ -295,7 +337,8 @@ public static class PanelLayoutPolicy
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = Array.AsReadOnly(splitStates.Select(CloneSplitState).ToArray()),
-            GameViewportSizes = settings.GameViewportSizes
+            GameViewportSizes = settings.GameViewportSizes,
+            XpOverlayBoundsByAccount = settings.XpOverlayBoundsByAccount
         };
 
     private static PanelSplitState CloneSplitState(PanelSplitState state) =>
