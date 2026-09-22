@@ -31,3 +31,21 @@ The Release WPF app launched. Its existing local data contained one profile, but
 ## Commit
 
 `feat: add xp tracker reset menu` (includes the implementation, tests, and this report).
+
+---
+
+## Review follow-up: rendered DataTemplate coverage
+
+Added deterministic STA coverage in `XpTrackerRowAndPanelTests.Rendered_row_context_menu_has_reset_items_and_routes_the_clicked_row`.
+
+- The test creates the real WPF `App` and initializes its resource dictionaries, then constructs the real `XpTrackerPanel` rather than an uninitialized control.
+- It supplies two rows, hosts the panel in a real `Window`, realizes the generated DataTemplate, finds the second rendered row border, and inspects that row's actual `ContextMenu`.
+- It asserts exactly `Reset XP/hr` and `Reset all`, sets the actual template menu's placement target to the second rendered row, raises the real first menu item's click event, and verifies `ResetRateRequested` reports the second row's account ID.
+- The initial run was RED because the test harness had not initialized `App.xaml` resources, so panel XAML could not resolve `SidebarCardStyle`. Initializing the application resources was the only support change; no product/fullscreen code changed.
+
+### Follow-up verification
+
+- Focused rendered-template test — passed: 1 test.
+- Desktop tests — passed: 11 tests.
+- Core tests — passed: 8 tests.
+- `dotnet build FourFoldAccountManager.sln -c Release` — passed with 0 warnings and 0 errors.

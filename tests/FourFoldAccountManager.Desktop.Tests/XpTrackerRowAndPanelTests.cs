@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 using FourFoldAccountManager.Desktop.Services;
 using FourFoldAccountManager.Desktop.Views;
 
@@ -68,6 +69,46 @@ public sealed class XpTrackerRowAndPanelTests
         });
     }
 
+    [Fact]
+    public void Rendered_row_context_menu_has_reset_items_and_routes_the_clicked_row()
+    {
+        RunOnStaThread(() =>
+        {
+            var application = new FourFoldAccountManager.Desktop.App();
+            application.InitializeComponent();
+            var first = XpTrackerRow.FromState(1, "First", State(1));
+            var second = XpTrackerRow.FromState(2, "Second", State(2));
+            var panel = new XpTrackerPanel { ItemsSource = new[] { first, second } };
+            var window = new Window { Content = panel };
+            try
+            {
+                window.Show();
+                panel.UpdateLayout();
+                var rowBorder = FindVisualDescendant<Border>(panel, border =>
+                    ReferenceEquals(border.DataContext, second) && border.ContextMenu is not null);
+                Assert.NotNull(rowBorder);
+
+                var menu = rowBorder!.ContextMenu!;
+                var items = menu.Items.OfType<MenuItem>().ToArray();
+                Assert.Collection(items,
+                    item => Assert.Equal("Reset XP/hr", item.Header),
+                    item => Assert.Equal("Reset all", item.Header));
+
+                Guid? requested = null;
+                panel.ResetRateRequested += accountId => requested = accountId;
+                menu.PlacementTarget = rowBorder;
+                items[0].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+
+                Assert.Equal(second.AccountId, requested);
+            }
+            finally
+            {
+                window.Close();
+                application.Shutdown();
+            }
+        });
+    }
+
     private static XpTrackerState State(double? hoursUntilNextLevel) => new(
         Guid.NewGuid(), "Player", 1_000, 200, "Scout", 800, hoursUntilNextLevel,
         DateTimeOffset.UtcNow, "Tracking", false);
@@ -78,6 +119,20 @@ public sealed class XpTrackerRowAndPanelTests
 
     private static XpTrackerPanel CreatePanelForMenuHandlerTest() =>
         (XpTrackerPanel)RuntimeHelpers.GetUninitializedObject(typeof(XpTrackerPanel));
+
+    private static T? FindVisualDescendant<T>(DependencyObject parent, Func<T, bool> predicate)
+        where T : DependencyObject
+    {
+        for (var index = 0; index < VisualTreeHelper.GetChildrenCount(parent); index++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, index);
+            if (child is T typed && predicate(typed)) return typed;
+
+            if (FindVisualDescendant(child, predicate) is { } match) return match;
+        }
+
+        return null;
+    }
 
     private static void RunOnStaThread(Action action)
     {
