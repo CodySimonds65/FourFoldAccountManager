@@ -196,5 +196,7 @@
                 HorizontalAlignment="Right" VerticalAlignment="Top" Content="Exit" Click="FullScreenExit_Click"
                 Visibility="Collapsed" Opacity="0.78" Style="{StaticResource AppButtonStyle}" ToolTip="Exit full screen (Esc)"
                 MouseEnter="FullScreenExit_MouseEnter" MouseLeave="FullScreenExit_MouseLeave" />
+        <views:FullscreenXpOverlayTray x:Name="FullscreenXpOverlayTray" Grid.RowSpan="2" Panel.ZIndex="900"
+                                       HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,4,0" />
     </Grid>
 </Window>
