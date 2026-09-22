@@ -26,6 +26,8 @@ public partial class MainWindow : Window
     private readonly SettingsStore _settingsStore;
     private readonly WindowsCredentialStore _credentialStore;
     private readonly AccountBrowserSessionService _browserSessions;
+    private readonly XpTrackerCoordinator _xpTracker;
+    private readonly ObservableCollection<XpTrackerRow> _xpTrackerRows = [];
     private readonly List<PanelSlotCard> _slotCards = [];
     private readonly SemaphoreSlim _settingsMutationGate = new(1, 1);
     private readonly SemaphoreSlim _viewportSaveGate = new(1, 1);
@@ -52,6 +54,14 @@ public partial class MainWindow : Window
         _settingsStore = new SettingsStore(paths);
         _credentialStore = new WindowsCredentialStore();
         _browserSessions = new AccountBrowserSessionService(paths);
+        _xpTracker = new XpTrackerCoordinator(paths);
+        _xpTracker.Changed += (_, _) => RefreshTrackerRows();
+        TrackerPanel.ItemsSource = _xpTrackerRows;
+        TrackerPanel.LinkRequested += accountId =>
+        {
+            AccountsListBox.SelectedItem = _accounts.FirstOrDefault(account => account.Id == accountId);
+            RenameAccount_Click(TrackerPanel, new RoutedEventArgs());
+        };
         _browserSessions.NavigationBlocked += BrowserSessions_NavigationBlocked;
 
         AccountsListBox.ItemsSource = _accounts;
@@ -214,7 +224,8 @@ public partial class MainWindow : Window
 
     private async void AddAccount_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new AddAccountDialog("Add account", "Set a profile label and optional saved login.")
+        var dialog = new AddAccountDialog("Add account", "Set a profile label and optional saved login.",
+            verifyPlayer: _xpTracker.VerifyPlayerAsync)
         {
             Owner = this
         };
@@ -223,7 +234,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        var account = AccountProfile.Create(dialog.AccountLabel, _accounts.Count);
+        var account = AccountProfile.Create(dialog.AccountLabel, _accounts.Count) with
+        {
+            RankingUsername = dialog.RankingUsername,
+            RankingPlayerId = dialog.RankingPlayerId
+        };
         var credentials = dialog.Username.Length == 0
             ? null
             : new AccountCredentials(dialog.Username, dialog.Password);
@@ -312,7 +327,10 @@ public partial class MainWindow : Window
             "Update the label and optional saved login.",
             account.Label,
             storedCredentials?.Username ?? string.Empty,
-            storedCredentials?.Password ?? string.Empty)
+            storedCredentials?.Password ?? string.Empty,
+            account.RankingUsername,
+            account.RankingPlayerId,
+            _xpTracker.VerifyPlayerAsync)
         {
             Owner = this
         };
@@ -321,7 +339,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        var replacement = account with { Label = dialog.AccountLabel };
+        var replacement = account with
+        {
+            Label = dialog.AccountLabel,
+            RankingUsername = dialog.RankingUsername,
+            RankingPlayerId = dialog.RankingPlayerId
+        };
         var updatedCredentials = dialog.Username.Length == 0
             ? null
             : new AccountCredentials(dialog.Username, dialog.Password);
@@ -361,6 +384,10 @@ public partial class MainWindow : Window
         }
 
         await RefreshSlotPickersAsync();
+        if (_openAccountIds.Contains(account.Id))
+            _xpTracker.Start(account.Id, replacement.RankingUsername ??
+                (dialog.Username.Length > 0 ? dialog.Username : null), replacement.RankingPlayerId);
+        RefreshTrackerRows();
         GlobalStatusText.Text = $"Updated {replacement.Label}.";
     }
 
@@ -465,6 +492,7 @@ public partial class MainWindow : Window
             NormalizeSortOrder();
             await SaveAccountsAsync();
             await RebuildPanelAsync(closeExistingViews: false);
+            await _xpTracker.RemoveAccountDataAsync(account.Id);
             UpdateAccountActions();
             GlobalStatusText.Text = $"Removed {account.Label} and cleared its browser data.";
         }
@@ -641,6 +669,7 @@ public partial class MainWindow : Window
         AccountsPanel.Visibility = Visibility.Collapsed;
         AccountsColumn.Width = new GridLength(0);
         AccountsGapColumn.Width = new GridLength(0);
+        UpdateTrackerPanelVisibility();
         PanelToolbar.Visibility = Visibility.Collapsed;
         GlobalStatusText.Visibility = Visibility.Collapsed;
         PanelBorder.Padding = new Thickness(0);
@@ -676,6 +705,7 @@ public partial class MainWindow : Window
         AccountsPanel.Visibility = _accountsPanelVisible ? Visibility.Visible : Visibility.Collapsed;
         AccountsColumn.Width = _accountsPanelVisible ? new GridLength(232) : new GridLength(0);
         AccountsGapColumn.Width = _accountsPanelVisible ? new GridLength(16) : new GridLength(0);
+        UpdateTrackerPanelVisibility();
         PanelToolbar.Visibility = Visibility.Visible;
         GlobalStatusText.Visibility = Visibility.Visible;
         PanelBorder.Padding = new Thickness(0);
@@ -702,6 +732,31 @@ public partial class MainWindow : Window
         AdjustViewsButton.ToolTip = _viewAdjustmentVisible
             ? "Hide the per-client sizing controls."
             : "Resize each active game within its account panel.";
+    }
+
+    private void RefreshTrackerRows()
+    {
+        var states = _xpTracker.GetStates().ToDictionary(state => state.AccountId);
+        _xpTrackerRows.Clear();
+        foreach (var slot in _slotCards.OrderBy(slot => slot.SlotIndex))
+        {
+            if (_panelSettings.SlotAccountIds[slot.SlotIndex] is not { } accountId ||
+                !_openAccountIds.Contains(accountId) || !states.TryGetValue(accountId, out var state))
+                continue;
+
+            var label = _accounts.FirstOrDefault(account => account.Id == accountId)?.Label ?? "Account";
+            _xpTrackerRows.Add(XpTrackerRow.FromState(slot.SlotIndex + 1, label, state));
+        }
+
+        UpdateTrackerPanelVisibility();
+    }
+
+    private void UpdateTrackerPanelVisibility()
+    {
+        var visible = TrackerPanelPolicy.ShouldShow(_isFullScreen, _openAccountIds);
+        TrackerPanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        TrackerGapColumn.Width = visible ? new GridLength(16) : new GridLength(0);
+        TrackerColumn.Width = visible ? new GridLength(240) : new GridLength(0);
     }
 
     private void UpdateAllSlotPresentations()
@@ -801,6 +856,15 @@ public partial class MainWindow : Window
         SetSlotStatus(slot, "Opening FourFold sign in…", StatusTone.Info);
         var view = await _browserSessions.CreateViewAsync(accountId, slot.BrowserHost);
         _openAccountIds.Add(accountId);
+        var profile = _accounts.FirstOrDefault(account => account.Id == accountId);
+        string? rankingUsername = profile?.RankingUsername;
+        if (rankingUsername is null)
+        {
+            try { rankingUsername = _credentialStore.Read(accountId)?.Username; }
+            catch { /* The row will ask for a ranking username. */ }
+        }
+        _xpTracker.Start(accountId, rankingUsername, profile?.RankingPlayerId);
+        RefreshTrackerRows();
         AttachBrowserView(slot, view);
 
         var loginPageResult = await _browserSessions.NavigateAndWaitAsync(accountId, FourFoldDestination.LoginUri);
@@ -1061,6 +1125,10 @@ public partial class MainWindow : Window
 
         UpdateManageSlotsButton();
         UpdateAllSlotPresentations();
+        _xpTracker.RefreshActiveAccounts(_slotCards
+            .Select(slot => _panelSettings.SlotAccountIds[slot.SlotIndex])
+            .OfType<Guid>().Where(_openAccountIds.Contains).ToArray());
+        RefreshTrackerRows();
     }
 
     private async Task RestoreVisibleOpenViewsAsync()
@@ -1486,6 +1554,8 @@ public partial class MainWindow : Window
 
         await _browserSessions.CloseViewAsync(accountId);
         _openAccountIds.Remove(accountId);
+        _xpTracker.Stop(accountId);
+        RefreshTrackerRows();
         UpdateAllSlotPresentations();
         UpdateManageSlotsButton();
     }
@@ -1503,6 +1573,9 @@ public partial class MainWindow : Window
         }
 
         _openAccountIds.Clear();
+        foreach (var accountId in _xpTracker.GetStates().Select(state => state.AccountId).ToArray())
+            _xpTracker.Stop(accountId);
+        RefreshTrackerRows();
         foreach (var slot in _slotCards)
         {
             slot.View = null;
@@ -1719,6 +1792,7 @@ public partial class MainWindow : Window
             try
             {
                 await CloseAllOpenViewsAsync();
+                await _xpTracker.DisposeAsync();
             }
             finally
             {

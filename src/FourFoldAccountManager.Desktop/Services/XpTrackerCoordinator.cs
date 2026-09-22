@@ -35,6 +35,12 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
 
     public event EventHandler? Changed;
 
+    public async Task<bool> VerifyPlayerAsync(int playerId, string username)
+    {
+        var profile = await _client.GetProfileAsync(playerId, CancellationToken.None);
+        return string.Equals(profile.Username, username.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
     public IReadOnlyList<XpTrackerState> GetStates() => _active.Values.Select(account => new XpTrackerState(
         account.Id, account.Username, account.Session.RatePerHour, account.Session.SessionGain,
         account.Session.ActiveClassName, account.Session.XpUntilNextLevel,

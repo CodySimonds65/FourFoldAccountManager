@@ -1,0 +1,47 @@
+<UserControl x:Class="FourFoldAccountManager.Desktop.Views.XpTrackerPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border Style="{StaticResource SidebarCardStyle}" Padding="14">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <StackPanel Margin="2,2,2,16">
+                <TextBlock Text="XP TRACKER" FontSize="10" FontWeight="Bold"
+                           Foreground="{DynamicResource Brush.AccentGold}" />
+                <TextBlock Text="Active clients" FontSize="16" FontWeight="SemiBold" Margin="0,5,0,0" />
+            </StackPanel>
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <ItemsControl x:Name="RowsControl">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1"
+                                    Padding="2,12,2,14">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold"
+                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}" />
+                                    <TextBlock Text="{Binding SlotNumber, StringFormat=Slot {0}}" FontSize="10"
+                                               Foreground="{DynamicResource Brush.TextMuted}" Margin="0,2,0,9" />
+                                    <TextBlock Text="{Binding XpPerHourText}" FontSize="17" FontWeight="Bold"
+                                               Foreground="{DynamicResource Brush.AccentGold}" />
+                                    <TextBlock Text="{Binding SessionGainText}" FontSize="11" Margin="0,3,0,0" />
+                                    <TextBlock Text="{Binding ActiveClassText}" FontSize="11" Margin="0,9,0,0"
+                                               TextTrimming="CharacterEllipsis" ToolTip="{Binding ActiveClassText}" />
+                                    <TextBlock Text="{Binding XpUntilNextLevelText}" FontSize="11" Margin="0,3,0,0" />
+                                    <TextBlock Text="{Binding StatusText}" FontSize="10" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource Brush.TextMuted}" Margin="0,9,0,0" />
+                                    <TextBlock Text="{Binding LastUpdatedText}" FontSize="10"
+                                               Foreground="{DynamicResource Brush.TextMuted}" Margin="0,3,0,0" />
+                                    <Button Content="Edit player link" Tag="{Binding AccountId}" Click="LinkPlayer_Click"
+                                            Style="{StaticResource AppButtonStyle}" Height="28" Padding="8,0"
+                                            HorizontalAlignment="Left" Margin="0,8,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </Border>
+</UserControl>
