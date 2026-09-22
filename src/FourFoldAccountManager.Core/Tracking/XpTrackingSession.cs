@@ -4,6 +4,8 @@ public sealed class XpTrackingSession
 {
     private readonly XpRateWindow _window = new();
     private bool _hasFailedPoll;
+    private PlayerProgressSnapshot? _baselineSnapshot;
+    private DateTimeOffset? _baselineSampledAt;
 
     public PlayerProgressSnapshot? LastSnapshot { get; private set; }
     public DateTimeOffset? LastSuccessfulAt { get; private set; }
@@ -14,6 +16,10 @@ public sealed class XpTrackingSession
     public long? XpUntilNextLevel =>
         ActiveClassName is { } name && LastSnapshot?.Classes.TryGetValue(name, out var progress) == true
             ? progress.NextLevelXp - progress.CurrentXp
+            : null;
+    public double? HoursUntilNextLevel =>
+        XpUntilNextLevel is { } remaining && RatePerHour is { } rate && double.IsFinite(rate) && rate > 0
+            ? remaining / rate
             : null;
     public bool IsStale { get; private set; }
     public bool IsStopped { get; private set; }
@@ -29,22 +35,23 @@ public sealed class XpTrackingSession
         if (_hasFailedPoll)
         {
             HasUncertainInterval = true;
-            RatePerHour = _window.GetRate(sampledAt);
             _hasFailedPoll = false;
         }
-        else if (LastSnapshot is { } previous && LastSuccessfulAt is { } from)
+        else if (_baselineSnapshot is { } baseline && _baselineSampledAt is { } from)
         {
-            var gain = XpProgressCalculator.Calculate(previous, snapshot);
+            var gain = XpProgressCalculator.Calculate(baseline, snapshot);
             HasUncertainInterval = gain.InvalidClasses.Count > 0;
             if (gain.ValidClassCount > 0)
             {
                 _window.Add(from, sampledAt, gain.ValidGain);
-                RatePerHour = _window.GetRate(sampledAt);
             }
         }
 
+        RatePerHour = _window.GetRate(sampledAt);
         LastSnapshot = snapshot;
         LastSuccessfulAt = sampledAt;
+        _baselineSnapshot = snapshot;
+        _baselineSampledAt = sampledAt;
         IsStale = false;
     }
 
@@ -58,4 +65,20 @@ public sealed class XpTrackingSession
     }
 
     public void Stop() => IsStopped = true;
+
+    public void ResetRate()
+    {
+        _window.ClearIntervals();
+        _baselineSnapshot = null;
+        _baselineSampledAt = null;
+        _hasFailedPoll = false;
+        RatePerHour = null;
+        HasUncertainInterval = false;
+    }
+
+    public void ResetAll()
+    {
+        ResetRate();
+        _window.ResetSession();
+    }
 }

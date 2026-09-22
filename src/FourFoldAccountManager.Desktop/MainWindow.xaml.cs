@@ -62,6 +62,16 @@ public partial class MainWindow : Window
             AccountsListBox.SelectedItem = _accounts.FirstOrDefault(account => account.Id == accountId);
             RenameAccount_Click(TrackerPanel, new RoutedEventArgs());
         };
+        TrackerPanel.ResetRateRequested += accountId =>
+        {
+            _xpTracker.ResetRate(accountId);
+            RefreshTrackerRows();
+        };
+        TrackerPanel.ResetAllRequested += accountId =>
+        {
+            _xpTracker.ResetAll(accountId);
+            RefreshTrackerRows();
+        };
         _browserSessions.NavigationBlocked += BrowserSessions_NavigationBlocked;
 
         AccountsListBox.ItemsSource = _accounts;

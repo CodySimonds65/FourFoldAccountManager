@@ -18,6 +18,12 @@
                         <DataTemplate>
                             <Border BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1"
                                     Padding="2,12,2,14">
+                                <Border.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Reset XP/hr" Click="ResetRate_Click" />
+                                        <MenuItem Header="Reset all" Click="ResetAll_Click" />
+                                    </ContextMenu>
+                                </Border.ContextMenu>
                                 <StackPanel>
                                     <TextBlock Text="{Binding DisplayName}" FontSize="13" FontWeight="SemiBold"
                                                TextTrimming="CharacterEllipsis" ToolTip="{Binding DisplayName}" />
@@ -29,6 +35,8 @@
                                     <TextBlock Text="{Binding ActiveClassText}" FontSize="11" Margin="0,9,0,0"
                                                TextTrimming="CharacterEllipsis" ToolTip="{Binding ActiveClassText}" />
                                     <TextBlock Text="{Binding XpUntilNextLevelText}" FontSize="11" Margin="0,3,0,0" />
+                                    <TextBlock Text="{Binding TimeUntilNextLevelText}" FontSize="10" TextWrapping="Wrap"
+                                               Foreground="{DynamicResource Brush.TextMuted}" Margin="0,3,0,0" />
                                     <TextBlock Text="{Binding StatusText}" FontSize="10" TextWrapping="Wrap"
                                                Foreground="{DynamicResource Brush.TextMuted}" Margin="0,9,0,0" />
                                     <TextBlock Text="{Binding LastUpdatedText}" FontSize="10"

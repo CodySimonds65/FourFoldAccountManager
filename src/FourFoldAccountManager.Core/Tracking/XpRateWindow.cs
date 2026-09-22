@@ -45,6 +45,14 @@ public sealed class XpRateWindow
         return coveredSeconds > 0 ? gain / coveredSeconds * 3600 : null;
     }
 
+    public void ClearIntervals() => _intervals.Clear();
+
+    public void ResetSession()
+    {
+        ClearIntervals();
+        SessionGain = 0;
+    }
+
     private void Prune(DateTimeOffset now) =>
         _intervals.RemoveAll(interval => interval.To <= now - TimeSpan.FromHours(1));
 }

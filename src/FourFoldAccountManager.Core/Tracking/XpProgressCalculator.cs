@@ -37,28 +37,14 @@ public static class XpProgressCalculator
                     continue;
                 }
 
-                long gain;
-                if (newClass.Level == oldClass.Level)
+                var exact = AbsoluteProgress(newClass) - AbsoluteProgress(oldClass);
+                if (exact < 0 || exact > long.MaxValue)
                 {
-                    gain = newClass.CurrentXp - oldClass.CurrentXp;
-                    if (gain < 0)
-                    {
-                        invalid.Add(name);
-                        continue;
-                    }
+                    invalid.Add(name);
+                    continue;
                 }
-                else
-                {
-                    var crossed = SumCaps(oldClass.Level + 1L, newClass.Level - 1L);
-                    var exact = new BigInteger(oldClass.NextLevelXp - oldClass.CurrentXp) + crossed + newClass.CurrentXp;
-                    if (exact > long.MaxValue)
-                    {
-                        invalid.Add(name);
-                        continue;
-                    }
 
-                    gain = (long)exact;
-                }
+                var gain = (long)exact;
 
                 total = checked(total + gain);
                 validClassCount++;
@@ -81,17 +67,12 @@ public static class XpProgressCalculator
             invalid.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToArray());
     }
 
-    private static long Cap(int level) => checked(5L * level * (level + 1L));
+    private static BigInteger Cap(int level) => 5 * (BigInteger)level * (level + 1L);
 
-    private static BigInteger SumCaps(long first, long last)
-    {
-        if (last < first)
-        {
-            return BigInteger.Zero;
-        }
+    private static BigInteger AbsoluteProgress(ClassXpSnapshot value) =>
+        Prefix(value.Level - 1L) + value.CurrentXp;
 
-        static BigInteger Prefix(long level) =>
-            5 * (BigInteger)level * (level + 1) * (level + 2) / 3;
-        return Prefix(last) - Prefix(first - 1);
-    }
+    private static BigInteger Prefix(long level) => level <= 0
+        ? BigInteger.Zero
+        : 5 * (BigInteger)level * (level + 1) * (level + 2) / 3;
 }

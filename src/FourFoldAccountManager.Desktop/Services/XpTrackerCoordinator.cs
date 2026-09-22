@@ -12,6 +12,7 @@ public sealed record XpTrackerState(
     long SessionGain,
     string? ActiveClass,
     long? XpUntilNextLevel,
+    double? HoursUntilNextLevel,
     DateTimeOffset? LastUpdated,
     string Status,
     bool IsStale);
@@ -21,16 +22,21 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
     private readonly FourFoldRankingClient _client = new();
     private readonly XpTrackerStore _store;
     private readonly Dispatcher _dispatcher;
+    private readonly Func<CancellationToken, Task> _runPollingLoop;
     private readonly Dictionary<Guid, TrackedAccount> _active = [];
     private readonly Dictionary<Guid, XpStoredAccount> _stored = [];
     private CancellationTokenSource? _loopCancellation;
     private Task? _loopTask;
     private bool _loaded;
 
-    public XpTrackerCoordinator(LocalDataPaths paths)
+    public XpTrackerCoordinator(LocalDataPaths paths) : this(paths, null) { }
+
+    // Tests can replace the background loop while exercising the real account/reset lifecycle.
+    internal XpTrackerCoordinator(LocalDataPaths paths, Func<CancellationToken, Task>? runPollingLoop)
     {
         _store = new XpTrackerStore(paths);
         _dispatcher = Dispatcher.CurrentDispatcher;
+        _runPollingLoop = runPollingLoop ?? RunLoopAsync;
     }
 
     public event EventHandler? Changed;
@@ -44,7 +50,11 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
     public IReadOnlyList<XpTrackerState> GetStates() => _active.Values.Select(account => new XpTrackerState(
         account.Id, account.Username, account.Session.RatePerHour, account.Session.SessionGain,
         account.Session.ActiveClassName, account.Session.XpUntilNextLevel,
+        account.Session.HoursUntilNextLevel,
         account.Session.LastSuccessfulAt, account.Status, account.Session.IsStale)).ToArray();
+
+    internal XpTrackingSession? GetSessionForTesting(Guid accountId) =>
+        _active.TryGetValue(accountId, out var account) ? account.Session : null;
 
     public void Start(Guid accountId, string? rankingUsername, int? playerId)
     {
@@ -63,7 +73,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         if (_loopTask is null)
         {
             _loopCancellation = new CancellationTokenSource();
-            _loopTask = RunLoopAsync(_loopCancellation.Token);
+            _loopTask = _runPollingLoop(_loopCancellation.Token);
         }
     }
 
@@ -77,6 +87,26 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
             _loopCancellation?.Cancel();
             _loopTask = null;
             _loopCancellation = null;
+        }
+    }
+
+    public void ResetRate(Guid accountId)
+    {
+        _dispatcher.VerifyAccess();
+        if (_active.TryGetValue(accountId, out var account))
+        {
+            account.Session.ResetRate();
+            NotifyChanged();
+        }
+    }
+
+    public void ResetAll(Guid accountId)
+    {
+        _dispatcher.VerifyAccess();
+        if (_active.TryGetValue(accountId, out var account))
+        {
+            account.Session.ResetAll();
+            NotifyChanged();
         }
     }
 
