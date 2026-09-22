@@ -7,4 +7,7 @@ public static class AssignedAccountLaunchPolicy
 
     public static bool ShouldShowRelaunch(bool isAssigned, bool isOpen) =>
         isAssigned && isOpen;
+
+    public static bool IsCurrentView<TView>(TView? activeView, TView eventView)
+        where TView : class => ReferenceEquals(activeView, eventView);
 }

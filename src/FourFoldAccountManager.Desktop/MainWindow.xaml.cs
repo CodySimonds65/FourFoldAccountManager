@@ -1868,6 +1868,11 @@ public partial class MainWindow : Window
             var batchLaunchWasActive = _batchLaunchInProgress;
             Dispatcher.BeginInvoke(() =>
             {
+                if (!AssignedAccountLaunchPolicy.IsCurrentView(slot.View, view))
+                {
+                    return;
+                }
+
                 if (batchLaunchWasActive || _batchLaunchInProgress)
                 {
                     return;
@@ -1893,6 +1898,11 @@ public partial class MainWindow : Window
 
         slot.ProcessFailedHandler = (_, _) => Dispatcher.BeginInvoke(() =>
         {
+            if (!AssignedAccountLaunchPolicy.IsCurrentView(slot.View, view))
+            {
+                return;
+            }
+
             _failedAccountIds.Add(accountId);
             SetSlotStatus(slot, "Browser process failed. Use Launch accounts or relaunch this slot to recover it.",
                 StatusTone.Error);
