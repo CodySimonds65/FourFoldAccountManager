@@ -177,7 +177,7 @@
                                   SelectionChanged="LayoutPicker_SelectionChanged" AutomationProperties.Name="Panel layout" />
                         <Button x:Name="LaunchVisibleButton" MinWidth="144" Height="36" Padding="16,0"
                                 Content="Launch accounts" Click="LaunchVisible_Click" Style="{StaticResource PrimaryButtonStyle}"
-                                ToolTip="Sign in with each assigned profile's saved login, then open FourFold." />
+                                ToolTip="Starts missing or failed assigned sessions; healthy open sessions stay open." />
                     </StackPanel>
                 </Grid>
                 <Border x:Name="PanelBorder" Grid.Row="1" Padding="0" CornerRadius="0" BorderThickness="0"
