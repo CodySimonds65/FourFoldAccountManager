@@ -21,6 +21,7 @@ jobs:
     outputs:
       tag: ${{ steps.version.outputs.tag }}
       commit: ${{ steps.version.outputs.commit }}
+      previous_tag: ${{ steps.version.outputs.previous_tag }}
     env:
       PROJECT_PATH: src/FourFoldAccountManager.Desktop/FourFoldAccountManager.Desktop.csproj
       PROJECT_NAME: FourFold Account Manager
@@ -56,8 +57,19 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($tagCommit) -or $tagCommit -ne $env:GITHUB_SHA) {
               throw "Release tag '$tag' does not point to the checked-out commit."
           }
+          $currentVersion = [version]$tag.Substring(1)
+          $previous = git tag --list 'v*' | ForEach-Object {
+              if ($_ -match '^v(\d+)\.(\d+)\.(\d+)$') {
+                  $candidateVersion = [version]$_.Substring(1)
+                  if ($candidateVersion -lt $currentVersion) {
+                      [pscustomobject]@{ Tag = $_; Version = $candidateVersion }
+                  }
+              }
+          } | Sort-Object Version -Descending | Select-Object -First 1
+          $previousTag = if ($null -ne $previous) { [string]$previous.Tag } else { '' }
           "tag=$tag" >> $env:GITHUB_OUTPUT
           "commit=$env:GITHUB_SHA" >> $env:GITHUB_OUTPUT
+          "previous_tag=$previousTag" >> $env:GITHUB_OUTPUT
 
       - name: Build Windows release assets
         shell: pwsh
@@ -102,6 +114,7 @@ jobs:
     env:
       RELEASE_TAG: ${{ needs.build.outputs.tag }}
       RELEASE_TARGET: ${{ needs.build.outputs.commit }}
+      RELEASE_PREVIOUS_TAG: ${{ needs.build.outputs.previous_tag }}
 
     steps:
       - name: Download release assets
@@ -144,7 +157,18 @@ jobs:
               exit 0
           }
 
-          gh release create $env:RELEASE_TAG $assetPaths --repo $env:GITHUB_REPOSITORY --target $env:RELEASE_TARGET --title "$env:RELEASE_TAG" --generate-notes
+          $createArgs = @(
+              'release', 'create', $env:RELEASE_TAG
+          ) + $assetPaths + @(
+              '--repo', $env:GITHUB_REPOSITORY,
+              '--target', $env:RELEASE_TARGET,
+              '--title', $env:RELEASE_TAG,
+              '--generate-notes'
+          )
+          if (-not [string]::IsNullOrWhiteSpace($env:RELEASE_PREVIOUS_TAG)) {
+              $createArgs += @('--notes-start-tag', $env:RELEASE_PREVIOUS_TAG)
+          }
+          gh @createArgs
           if ($LASTEXITCODE -ne 0) {
               gh release create $env:RELEASE_TAG $assetPaths --repo $env:GITHUB_REPOSITORY --target $env:RELEASE_TARGET --title "$env:RELEASE_TAG" --notes "FourFold Account Manager $env:RELEASE_TAG"
               if ($LASTEXITCODE -ne 0) { throw "GitHub release creation failed for $env:RELEASE_TAG." }
