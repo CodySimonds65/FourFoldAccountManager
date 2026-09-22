@@ -5,9 +5,11 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
 using FourFoldAccountManager.Core.Data;
+using FourFoldAccountManager.Core.Launch;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Panel;
 using FourFoldAccountManager.Desktop.Services;
@@ -22,6 +24,7 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<AccountProfile> _accounts = [];
     private readonly HashSet<Guid> _openAccountIds = [];
+    private readonly HashSet<Guid> _failedAccountIds = [];
     private readonly AccountStore _accountStore;
     private readonly SettingsStore _settingsStore;
     private readonly WindowsCredentialStore _credentialStore;
@@ -791,7 +794,13 @@ public partial class MainWindow : Window
     {
         var assignedAccountId = _panelSettings.SlotAccountIds[slot.SlotIndex];
         var isOpen = assignedAccountId is { } accountId && _openAccountIds.Contains(accountId);
+        var hasAssignedAccount = assignedAccountId is not null;
         var account = assignedAccountId is { } id ? _accounts.FirstOrDefault(item => item.Id == id) : null;
+        slot.RelaunchButton.Visibility = AssignedAccountLaunchPolicy.ShouldShowRelaunch(
+            hasAssignedAccount, isOpen)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        slot.RelaunchButton.IsEnabled = _isReady && !_batchLaunchInProgress;
         slot.AccountLabel.Text = account?.Label ?? "Account view";
         slot.EmptyTitle.Text = account is null ? "An open spot in your party" : $"{account.Label} is ready";
         slot.EmptyDescription.Text = _isFullScreen
@@ -848,22 +857,39 @@ public partial class MainWindow : Window
                     continue;
                 }
 
+                if (!AssignedAccountLaunchPolicy.ShouldStart(
+                        _openAccountIds.Contains(accountId),
+                        _failedAccountIds.Contains(accountId)))
+                {
+                    outcomes.Add(AssignedAccountStartResult.AlreadyRunning);
+                    continue;
+                }
+
                 GlobalStatusText.Text = $"Starting account in slot {slot.SlotIndex + 1} of {assignedSlots.Length}…";
                 try
                 {
-                    outcomes.Add(await StartAssignedAccountAsync(slot, accountId));
+                    if (_openAccountIds.Contains(accountId) && _failedAccountIds.Contains(accountId))
+                    {
+                        await CloseAccountViewAsync(accountId, preserveFailure: true);
+                    }
+
+                    var outcome = await StartAssignedAccountAsync(slot, accountId);
+                    RecordAccountStartOutcome(accountId, outcome);
+                    outcomes.Add(outcome);
                 }
                 catch (Exception exception)
                 {
+                    _failedAccountIds.Add(accountId);
                     SetSlotStatus(slot, SafeBrowserError(exception), StatusTone.Error);
                     outcomes.Add(AssignedAccountStartResult.Failed);
                 }
             }
 
             var opened = outcomes.Count(result => result == AssignedAccountStartResult.Opened);
+            var alreadyRunning = outcomes.Count(result => result == AssignedAccountStartResult.AlreadyRunning);
             var manual = outcomes.Count(result => result == AssignedAccountStartResult.ManualActionRequired);
             var failed = outcomes.Count(result => result == AssignedAccountStartResult.Failed);
-            GlobalStatusText.Text = $"Start complete: {opened} game(s) opened, {manual} need manual action, {failed} failed.";
+            GlobalStatusText.Text = $"Start complete: {opened} game(s) opened, {alreadyRunning} already running, {manual} need manual action, {failed} failed.";
         }
         finally
         {
@@ -885,7 +911,7 @@ public partial class MainWindow : Window
         }
         _xpTracker.Start(accountId, rankingUsername, profile?.RankingPlayerId);
         RefreshTrackerRows();
-        AttachBrowserView(slot, view);
+        AttachBrowserView(slot, accountId, view);
 
         var loginPageResult = await _browserSessions.NavigateAndWaitAsync(accountId, FourFoldDestination.LoginUri);
         if (loginPageResult != BrowserNavigationResult.Navigated)
@@ -945,6 +971,17 @@ public partial class MainWindow : Window
         return AssignedAccountStartResult.Failed;
     }
 
+    private void RecordAccountStartOutcome(Guid accountId, AssignedAccountStartResult outcome)
+    {
+        if (outcome == AssignedAccountStartResult.Failed)
+        {
+            _failedAccountIds.Add(accountId);
+            return;
+        }
+
+        _failedAccountIds.Remove(accountId);
+    }
+
     private void SetBatchLaunchMode(bool isActive)
     {
         _batchLaunchInProgress = isActive;
@@ -964,6 +1001,46 @@ public partial class MainWindow : Window
         foreach (var slot in _slotCards)
         {
             slot.AccountPicker.IsEnabled = !isActive;
+            slot.RelaunchButton.IsEnabled = !isActive && _isReady;
+        }
+    }
+
+    private async void RelaunchAccount_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_isReady || _batchLaunchInProgress || sender is not Button { Tag: int slotIndex })
+        {
+            return;
+        }
+
+        var slot = _slotCards.FirstOrDefault(item => item.SlotIndex == slotIndex);
+        if (slot is null || slotIndex < 0 || slotIndex >= _panelSettings.SlotAccountIds.Count ||
+            _panelSettings.SlotAccountIds[slotIndex] is not { } accountId)
+        {
+            return;
+        }
+
+        SetBatchLaunchMode(true);
+        try
+        {
+            await CloseAccountViewAsync(accountId, preserveFailure: true);
+            var outcome = await StartAssignedAccountAsync(slot, accountId);
+            RecordAccountStartOutcome(accountId, outcome);
+            GlobalStatusText.Text = outcome switch
+            {
+                AssignedAccountStartResult.Opened => $"Relaunch complete: account in slot {slotIndex + 1} opened.",
+                AssignedAccountStartResult.ManualActionRequired => $"Relaunch ready: finish sign-in in slot {slotIndex + 1}.",
+                _ => $"Relaunch failed for account in slot {slotIndex + 1}. Check the slot status for details."
+            };
+        }
+        catch (Exception exception)
+        {
+            _failedAccountIds.Add(accountId);
+            SetSlotStatus(slot, SafeBrowserError(exception), StatusTone.Error);
+            GlobalStatusText.Text = $"Relaunch failed for account in slot {slotIndex + 1}. Check the slot status for details.";
+        }
+        finally
+        {
+            SetBatchLaunchMode(false);
         }
     }
 
@@ -1404,7 +1481,7 @@ public partial class MainWindow : Window
             try
             {
                 var view = await _browserSessions.CreateViewAsync(accountId, slot.BrowserHost);
-                AttachBrowserView(slot, view);
+                AttachBrowserView(slot, accountId, view);
                 SetSlotStatus(slot, "View kept open after the panel change.", StatusTone.Neutral);
             }
             catch (Exception exception)
@@ -1445,6 +1522,51 @@ public partial class MainWindow : Window
             }
         };
         header.Children.Add(badge);
+        var relaunchButton = new Button
+        {
+            Tag = slotIndex,
+            Width = 28,
+            Height = 28,
+            MinWidth = 0,
+            MinHeight = 0,
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            Focusable = true,
+            IsTabStop = true,
+            ToolTip = "Relaunch this account",
+            Content = new TextBlock
+            {
+                Text = "⟳",
+                FontFamily = new System.Windows.Media.FontFamily("Segoe UI Symbol"),
+                FontSize = 19,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            }
+        };
+        System.Windows.Automation.AutomationProperties.SetName(
+            relaunchButton, "Relaunch account in this slot");
+        var relaunchStyle = new Style(typeof(Button), (Style)FindResource("AppButtonStyle"));
+        relaunchStyle.Setters.Add(new Setter(UIElement.OpacityProperty, 0d));
+        relaunchStyle.Triggers.Add(new DataTrigger
+        {
+            Binding = new Binding(nameof(UIElement.IsMouseOver))
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(Grid), 1)
+            },
+            Value = true,
+            Setters = { new Setter(UIElement.OpacityProperty, 1d) }
+        });
+        relaunchStyle.Triggers.Add(new Trigger
+        {
+            Property = UIElement.IsKeyboardFocusedProperty,
+            Value = true,
+            Setters = { new Setter(UIElement.OpacityProperty, 1d) }
+        });
+        relaunchButton.Style = relaunchStyle;
+        Grid.SetColumn(relaunchButton, 0);
+        header.Children.Add(relaunchButton);
+        relaunchButton.Click += RelaunchAccount_Click;
         var accountPicker = new ComboBox
         {
             Tag = slotIndex, Height = 34, MinWidth = 100,
@@ -1559,7 +1681,7 @@ public partial class MainWindow : Window
         browserHost.Children.Add(adjustmentOverlay);
         Grid.SetRow(browserHost, 2);
         content.Children.Add(browserHost);
-        var slot = new PanelSlotCard(slotIndex, root, header, accountPicker, accountLabel, status, browserHost,
+        var slot = new PanelSlotCard(slotIndex, root, header, relaunchButton, accountPicker, accountLabel, status, browserHost,
             placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider,
             widthValue, heightValue);
         widthSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
@@ -1724,7 +1846,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AttachBrowserView(PanelSlotCard slot, WebView2CompositionControl view)
+    private void AttachBrowserView(PanelSlotCard slot, Guid accountId, WebView2CompositionControl view)
     {
         if (!ReferenceEquals(view.Parent, slot.BrowserHost))
         {
@@ -1746,6 +1868,11 @@ public partial class MainWindow : Window
             var batchLaunchWasActive = _batchLaunchInProgress;
             Dispatcher.BeginInvoke(() =>
             {
+                if (!AssignedAccountLaunchPolicy.IsCurrentView(slot.View, view))
+                {
+                    return;
+                }
+
                 if (batchLaunchWasActive || _batchLaunchInProgress)
                 {
                     return;
@@ -1757,6 +1884,7 @@ public partial class MainWindow : Window
                 }
                 else
                 {
+                    _failedAccountIds.Add(accountId);
                     SetSlotStatus(slot, "Page could not be loaded. Press Launch accounts to retry.", StatusTone.Error);
                 }
             }, DispatcherPriority.Background);
@@ -1768,9 +1896,17 @@ public partial class MainWindow : Window
             view.CoreWebView2.ProcessFailed -= slot.ProcessFailedHandler;
         }
 
-        slot.ProcessFailedHandler = (_, _) => Dispatcher.BeginInvoke(
-            () => SetSlotStatus(slot, "Browser process failed. Other slots remain available.", StatusTone.Error),
-            DispatcherPriority.Background);
+        slot.ProcessFailedHandler = (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            if (!AssignedAccountLaunchPolicy.IsCurrentView(slot.View, view))
+            {
+                return;
+            }
+
+            _failedAccountIds.Add(accountId);
+            SetSlotStatus(slot, "Browser process failed. Use Launch accounts or relaunch this slot to recover it.",
+                StatusTone.Error);
+        }, DispatcherPriority.Background);
         view.CoreWebView2.ProcessFailed += slot.ProcessFailedHandler;
     }
 
@@ -1790,17 +1926,23 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task CloseAccountViewAsync(Guid accountId)
+    private async Task CloseAccountViewAsync(Guid accountId, bool preserveFailure = false)
     {
         var slot = _slotCards.FirstOrDefault(item =>
             _panelSettings.SlotAccountIds[item.SlotIndex] == accountId);
         if (slot is not null)
         {
             DetachSlotEventHandlers(slot);
+            slot.View = null;
+            slot.Placeholder.Visibility = Visibility.Visible;
         }
 
         await _browserSessions.CloseViewAsync(accountId);
         _openAccountIds.Remove(accountId);
+        if (!preserveFailure)
+        {
+            _failedAccountIds.Remove(accountId);
+        }
         _xpTracker.Stop(accountId);
         RefreshTrackerRows();
         UpdateAllSlotPresentations();
@@ -1820,6 +1962,7 @@ public partial class MainWindow : Window
         }
 
         _openAccountIds.Clear();
+        _failedAccountIds.Clear();
         foreach (var accountId in _xpTracker.GetStates().Select(state => state.AccountId).ToArray())
             _xpTracker.Stop(accountId);
         RefreshTrackerRows();
@@ -2070,6 +2213,7 @@ public partial class MainWindow : Window
     private enum AssignedAccountStartResult
     {
         Opened,
+        AlreadyRunning,
         ManualActionRequired,
         Failed
     }
@@ -2088,6 +2232,7 @@ public partial class MainWindow : Window
         int slotIndex,
         Border root,
         Grid header,
+        Button relaunchButton,
         ComboBox accountPicker,
         TextBlock accountLabel,
         TextBlock status,
@@ -2104,6 +2249,7 @@ public partial class MainWindow : Window
         public int SlotIndex { get; } = slotIndex;
         public Border Root { get; } = root;
         public Grid Header { get; } = header;
+        public Button RelaunchButton { get; } = relaunchButton;
         public ComboBox AccountPicker { get; } = accountPicker;
         public TextBlock AccountLabel { get; } = accountLabel;
         public TextBlock Status { get; } = status;
