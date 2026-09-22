@@ -12,11 +12,9 @@ A Windows desktop app for managing FourFold accounts and opening them in separat
 
 ## XP tracker
 
-The tracker matches each open account to its public FourFold username. It uses the saved login username unless you set a separate **Ranking username** in Edit profile. If the player is outside the ranking's top 200, enter their public `player.php?id=...` URL or numeric player ID there as well; the app verifies that the page's username matches before saving the link.
+The tracker matches each open account to its public FourFold username. Use the saved login username or set a separate **Ranking username**; players outside the top 200 can be linked with a verified player ID or URL.
 
-While a client is open, the app checks the public ranking and player pages every two minutes. The first player snapshot establishes a baseline, so XP/hour appears after a second successful check. The rate covers measured gains over the trailing hour; session XP counts measured gains since that client was opened. Level-up calculations include XP remaining in the old level and XP earned in the new one. The active class's **XP to next level** comes directly from its current and target XP on the player page.
-
-If the public page cannot be refreshed, the row shows a stale status and the last successful update. The first successful check after a failed refresh sets a new baseline, so XP earned during the gap is excluded. Unexpected resets or changed level thresholds also mark an interval uncertain instead of adding guessed XP. Moving an open account between panel slots keeps its tracking session; closing and reopening it starts a new baseline. The right panel and its space disappear in full screen and return afterward.
+It polls every minute. The first sample sets the baseline; later samples show XP/hour, session XP, active class, and XP to next level. Failed polls show stale data and reset the baseline on the next success. Slot moves preserve tracking, closing a client resets it, and the panel is hidden in full screen.
 
 Requires Windows, the .NET 10 SDK, and the Microsoft Edge WebView2 Runtime.
 

@@ -98,7 +98,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
     {
         try
         {
-            using var timer = new PeriodicTimer(TimeSpan.FromMinutes(2));
+            using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
             do
             {
                 await PollOnceAsync(cancellationToken);
