@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
 using FourFoldAccountManager.Core.Data;
@@ -793,7 +794,13 @@ public partial class MainWindow : Window
     {
         var assignedAccountId = _panelSettings.SlotAccountIds[slot.SlotIndex];
         var isOpen = assignedAccountId is { } accountId && _openAccountIds.Contains(accountId);
+        var hasAssignedAccount = assignedAccountId is not null;
         var account = assignedAccountId is { } id ? _accounts.FirstOrDefault(item => item.Id == id) : null;
+        slot.RelaunchButton.Visibility = AssignedAccountLaunchPolicy.ShouldShowRelaunch(
+            hasAssignedAccount, isOpen)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        slot.RelaunchButton.IsEnabled = _isReady && !_batchLaunchInProgress;
         slot.AccountLabel.Text = account?.Label ?? "Account view";
         slot.EmptyTitle.Text = account is null ? "An open spot in your party" : $"{account.Label} is ready";
         slot.EmptyDescription.Text = _isFullScreen
@@ -994,6 +1001,46 @@ public partial class MainWindow : Window
         foreach (var slot in _slotCards)
         {
             slot.AccountPicker.IsEnabled = !isActive;
+            slot.RelaunchButton.IsEnabled = !isActive && _isReady;
+        }
+    }
+
+    private async void RelaunchAccount_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_isReady || _batchLaunchInProgress || sender is not Button { Tag: int slotIndex })
+        {
+            return;
+        }
+
+        var slot = _slotCards.FirstOrDefault(item => item.SlotIndex == slotIndex);
+        if (slot is null || slotIndex < 0 || slotIndex >= _panelSettings.SlotAccountIds.Count ||
+            _panelSettings.SlotAccountIds[slotIndex] is not { } accountId)
+        {
+            return;
+        }
+
+        SetBatchLaunchMode(true);
+        try
+        {
+            await CloseAccountViewAsync(accountId, preserveFailure: true);
+            var outcome = await StartAssignedAccountAsync(slot, accountId);
+            RecordAccountStartOutcome(accountId, outcome);
+            GlobalStatusText.Text = outcome switch
+            {
+                AssignedAccountStartResult.Opened => $"Relaunch complete: account in slot {slotIndex + 1} opened.",
+                AssignedAccountStartResult.ManualActionRequired => $"Relaunch ready: finish sign-in in slot {slotIndex + 1}.",
+                _ => $"Relaunch failed for account in slot {slotIndex + 1}. Check the slot status for details."
+            };
+        }
+        catch (Exception exception)
+        {
+            _failedAccountIds.Add(accountId);
+            SetSlotStatus(slot, SafeBrowserError(exception), StatusTone.Error);
+            GlobalStatusText.Text = $"Relaunch failed for account in slot {slotIndex + 1}. Check the slot status for details.";
+        }
+        finally
+        {
+            SetBatchLaunchMode(false);
         }
     }
 
@@ -1475,6 +1522,51 @@ public partial class MainWindow : Window
             }
         };
         header.Children.Add(badge);
+        var relaunchButton = new Button
+        {
+            Tag = slotIndex,
+            Width = 28,
+            Height = 28,
+            MinWidth = 0,
+            MinHeight = 0,
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Center,
+            Focusable = true,
+            IsTabStop = true,
+            ToolTip = "Relaunch this account",
+            Content = new TextBlock
+            {
+                Text = "⟳",
+                FontFamily = new System.Windows.Media.FontFamily("Segoe UI Symbol"),
+                FontSize = 19,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            }
+        };
+        System.Windows.Automation.AutomationProperties.SetName(
+            relaunchButton, "Relaunch account in this slot");
+        var relaunchStyle = new Style(typeof(Button), (Style)FindResource("AppButtonStyle"));
+        relaunchStyle.Setters.Add(new Setter(UIElement.OpacityProperty, 0d));
+        relaunchStyle.Triggers.Add(new DataTrigger
+        {
+            Binding = new Binding(nameof(UIElement.IsMouseOver))
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(Grid), 1)
+            },
+            Value = true,
+            Setters = { new Setter(UIElement.OpacityProperty, 1d) }
+        });
+        relaunchStyle.Triggers.Add(new Trigger
+        {
+            Property = UIElement.IsKeyboardFocusedProperty,
+            Value = true,
+            Setters = { new Setter(UIElement.OpacityProperty, 1d) }
+        });
+        relaunchButton.Style = relaunchStyle;
+        Grid.SetColumn(relaunchButton, 0);
+        header.Children.Add(relaunchButton);
+        relaunchButton.Click += RelaunchAccount_Click;
         var accountPicker = new ComboBox
         {
             Tag = slotIndex, Height = 34, MinWidth = 100,
@@ -1589,7 +1681,7 @@ public partial class MainWindow : Window
         browserHost.Children.Add(adjustmentOverlay);
         Grid.SetRow(browserHost, 2);
         content.Children.Add(browserHost);
-        var slot = new PanelSlotCard(slotIndex, root, header, accountPicker, accountLabel, status, browserHost,
+        var slot = new PanelSlotCard(slotIndex, root, header, relaunchButton, accountPicker, accountLabel, status, browserHost,
             placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider,
             widthValue, heightValue);
         widthSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
@@ -2130,6 +2222,7 @@ public partial class MainWindow : Window
         int slotIndex,
         Border root,
         Grid header,
+        Button relaunchButton,
         ComboBox accountPicker,
         TextBlock accountLabel,
         TextBlock status,
@@ -2146,6 +2239,7 @@ public partial class MainWindow : Window
         public int SlotIndex { get; } = slotIndex;
         public Border Root { get; } = root;
         public Grid Header { get; } = header;
+        public Button RelaunchButton { get; } = relaunchButton;
         public ComboBox AccountPicker { get; } = accountPicker;
         public TextBlock AccountLabel { get; } = accountLabel;
         public TextBlock Status { get; } = status;
