@@ -17,6 +17,8 @@ public static class PanelLayoutPolicy
         CreateSplitState("2x3.rows", 0.6, 0.4),
         CreateSplitState("2x3.top", 0.5, 0.5),
         CreateSplitState("2x3.bottom", 1d / 3, 1d / 3, 1d / 3),
+        CreateSplitState("1x3.rows", 0.6, 0.4),
+        CreateSplitState("1x3.bottom", 1d / 3, 1d / 3, 1d / 3),
         CreateSplitState("1x2v.columns", 0.5, 0.5),
         CreateSplitState("1x2v.right.rows", 0.5, 0.5)
     });
@@ -42,6 +44,11 @@ public static class PanelLayoutPolicy
                 Slot(0),
                 Split("1x2v.right.rows", PanelSplitOrientation.Vertical, Slot(1), Slot(2))),
             PanelLayout.OneByOne => Slot(0),
+            PanelLayout.OneByThree => Split(
+                "1x3.rows",
+                PanelSplitOrientation.Vertical,
+                Slot(0),
+                Split("1x3.bottom", PanelSplitOrientation.Horizontal, Slot(1), Slot(2), Slot(3))),
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
 
@@ -84,6 +91,7 @@ public static class PanelLayoutPolicy
             PanelLayout.TwoByThree => new GridDimensions(2, 6),
             PanelLayout.OneByTwoVertical => new GridDimensions(2, 2),
             PanelLayout.OneByOne => new GridDimensions(1, 1),
+            PanelLayout.OneByThree => new GridDimensions(2, 3),
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
 
@@ -127,6 +135,13 @@ public static class PanelLayoutPolicy
             PanelLayout.OneByOne => new[]
             {
                 new PanelSlotPlacement(0, 0)
+            },
+            PanelLayout.OneByThree => new[]
+            {
+                new PanelSlotPlacement(0, 0, ColumnSpan: 3),
+                new PanelSlotPlacement(1, 0),
+                new PanelSlotPlacement(1, 1),
+                new PanelSlotPlacement(1, 2)
             },
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
