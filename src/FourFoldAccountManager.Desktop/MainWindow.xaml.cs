@@ -584,7 +584,8 @@ public partial class MainWindow : Window
         };
         if (dialog.ShowDialog() != true ||
             (dialog.FillGameToPanel == _panelSettings.FillGameToPanel &&
-             dialog.ShowFullScreenExitButton == _panelSettings.ShowFullScreenExitButton))
+             dialog.ShowFullScreenExitButton == _panelSettings.ShowFullScreenExitButton &&
+             !dialog.ResetLayoutSizes))
         {
             return;
         }
@@ -596,7 +597,10 @@ public partial class MainWindow : Window
         {
             nextSettings = await UpdateSettingsAsync(async currentSettings =>
             {
-                var candidate = currentSettings with
+                var candidate = dialog.ResetLayoutSizes
+                    ? PanelLayoutPolicy.ResetSplitStates(currentSettings)
+                    : currentSettings;
+                candidate = candidate with
                 {
                     FillGameToPanel = dialog.FillGameToPanel,
                     ShowFullScreenExitButton = dialog.ShowFullScreenExitButton
@@ -611,13 +615,19 @@ public partial class MainWindow : Window
             }, previousSettings => scalingChanged
                 ? _browserSessions.SetGameScalingAsync(previousSettings.FillGameToPanel)
                 : Task.CompletedTask);
+            if (dialog.ResetLayoutSizes)
+            {
+                await RebuildPanelAsync(closeExistingViews: false);
+            }
             if (!nextSettings.FillGameToPanel)
             {
                 _viewAdjustmentVisible = false;
                 UpdateAllSlotPresentations();
             }
             UpdateManageSlotsButton();
-            GlobalStatusText.Text = scalingChanged
+            GlobalStatusText.Text = dialog.ResetLayoutSizes
+                ? "Client layout sizes restored to defaults."
+                : scalingChanged
                 ? nextSettings.FillGameToPanel
                     ? "Game scaling set to Fill panel."
                     : "Game scaling set to Fit entire game."
