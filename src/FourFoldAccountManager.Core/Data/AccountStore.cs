@@ -122,7 +122,13 @@ public sealed class AccountStore
             try
             {
                 var label = AccountProfileRules.NormalizeLabel(account.Label);
-                validated.Add(account with { Label = label });
+                var rankingUsername = account.RankingUsername?.Trim();
+                if (rankingUsername is { Length: 0 } || account.RankingPlayerId is <= 0)
+                {
+                    throw new ArgumentException("Ranking identity is invalid.");
+                }
+
+                validated.Add(account with { Label = label, RankingUsername = rankingUsername });
             }
             catch (ArgumentException exception)
             {
