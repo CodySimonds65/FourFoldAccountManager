@@ -6,6 +6,7 @@ namespace FourFoldAccountManager.Desktop.Views;
 
 public partial class FullscreenXpOverlayTray : UserControl
 {
+    private readonly FullscreenXpOverlayTabVisibilityState _tabVisibilityState = new();
     private Point? _dragStartPoint;
     private XpOverlayAccountChoice? _dragChoice;
     private bool _isFullScreen;
@@ -36,6 +37,7 @@ public partial class FullscreenXpOverlayTray : UserControl
         }
 
         Visibility = isFullScreen ? Visibility.Visible : Visibility.Collapsed;
+        UpdateEdgeTabVisibility();
     }
 
     public void SetEditing(bool isEditing)
@@ -44,15 +46,33 @@ public partial class FullscreenXpOverlayTray : UserControl
         TrayPanel.Visibility = _isEditing ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    public void DismissEdgeTab()
+    {
+        _tabVisibilityState.Dismiss();
+        SetEditing(false);
+        UpdateEdgeTabVisibility();
+    }
+
+    public void RevealEdgeTab()
+    {
+        _tabVisibilityState.Reveal();
+        UpdateEdgeTabVisibility();
+    }
+
     private void EdgeTab_Click(object sender, RoutedEventArgs args) => RequestEdit();
 
     private void EdgeTab_MouseEnter(object sender, MouseEventArgs args) => RequestEdit();
 
     private void DoneButton_Click(object sender, RoutedEventArgs args)
     {
-        SetEditing(false);
+        DismissEdgeTab();
         DoneRequested?.Invoke(this, EventArgs.Empty);
     }
+
+    private void UpdateEdgeTabVisibility() =>
+        EdgeTab.Visibility = _tabVisibilityState.IsVisible(_isFullScreen)
+            ? Visibility.Visible
+            : Visibility.Collapsed;
 
     private void RequestEdit()
     {
