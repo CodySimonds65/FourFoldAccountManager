@@ -94,12 +94,16 @@ public sealed class XpTrackerRowAndPanelTests
                     item => Assert.Equal("Reset XP/hr", item.Header),
                     item => Assert.Equal("Reset all", item.Header));
 
-                Guid? requested = null;
-                panel.ResetRateRequested += accountId => requested = accountId;
+                Guid? resetRateRequested = null;
+                Guid? resetAllRequested = null;
+                panel.ResetRateRequested += accountId => resetRateRequested = accountId;
+                panel.ResetAllRequested += accountId => resetAllRequested = accountId;
                 menu.PlacementTarget = rowBorder;
                 items[0].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                items[1].RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
 
-                Assert.Equal(second.AccountId, requested);
+                Assert.Equal(second.AccountId, resetRateRequested);
+                Assert.Equal(second.AccountId, resetAllRequested);
             }
             finally
             {

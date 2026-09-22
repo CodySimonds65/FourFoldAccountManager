@@ -20,6 +20,20 @@ Added `XpTrackerRowAndPanelTests` before implementation. The initial focused tes
 ## Verification
 
 - `dotnet build FourFoldAccountManager.sln -c Release` — passed with 0 warnings and 0 errors.
+
+---
+
+## Review follow-up round 2: rendered Reset all routing
+
+Extended the existing real-DataTemplate test so its actual second-row context menu raises both rendered menu-item click events. It now subscribes to `ResetRateRequested` and `ResetAllRequested`, sets the real menu's placement target to the second rendered row, raises `Reset XP/hr` and `Reset all`, and asserts that both events carry the second row's account ID. No production behavior or fullscreen logic changed.
+
+### Round 2 verification
+
+- Focused rendered-template test — passed: 1 test.
+- Desktop tests — passed: 11 tests.
+- Core tests — passed: 8 tests.
+- `dotnet build FourFoldAccountManager.sln -c Release` — passed with 0 warnings and 0 errors.
+- One initial full Desktop-suite attempt timed out in the unrelated coordinator polling test. The test passed in isolation and the complete Desktop-suite rerun passed; no timeout-related change was made.
 - `dotnet test tests\\FourFoldAccountManager.Core.Tests\\FourFoldAccountManager.Core.Tests.csproj -c Release` — passed: 8 tests.
 - `dotnet test tests\\FourFoldAccountManager.Desktop.Tests\\FourFoldAccountManager.Desktop.Tests.csproj -c Release` — passed: 10 tests.
 - `git diff --check` — no whitespace errors.
