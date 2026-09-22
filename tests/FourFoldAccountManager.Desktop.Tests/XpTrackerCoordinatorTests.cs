@@ -27,6 +27,14 @@ public sealed class XpTrackerCoordinatorTests
             var changed = 0;
             coordinator.Changed += (_, _) => changed++;
 
+            var beforeUnknown = coordinator.GetStates().ToDictionary(state => state.AccountId);
+            coordinator.ResetRate(Guid.NewGuid());
+            var afterUnknown = coordinator.GetStates().ToDictionary(state => state.AccountId);
+
+            Assert.Equal(0, changed);
+            Assert.Equal(beforeUnknown[reset], afterUnknown[reset]);
+            Assert.Equal(beforeUnknown[untouched], afterUnknown[untouched]);
+
             coordinator.ResetRate(reset);
 
             var states = coordinator.GetStates().ToDictionary(state => state.AccountId);
