@@ -108,6 +108,11 @@ public sealed class SettingsStore
             throw new InvalidDataException("Panel settings must contain four or five slot assignments.");
         }
 
+        if (settings.RevealXpOverlayTabShortcut is null || !settings.RevealXpOverlayTabShortcut.IsValid)
+        {
+            throw new InvalidDataException("Panel settings contain an invalid XP overlay reveal shortcut.");
+        }
+
         if (settings.TwoByThreeTopRowFraction is < 0.2 or > 0.8)
         {
             throw new InvalidDataException("The 2 × 3 top-row height must be between 20% and 80%.");
@@ -125,15 +130,25 @@ public sealed class SettingsStore
             throw new InvalidDataException("Panel settings contain an invalid game viewport size.");
         }
 
+        if (settings.XpOverlayBoundsByAccount is null ||
+            settings.XpOverlayBoundsByAccount.Any(entry =>
+                entry.Key == Guid.Empty || entry.Value is null || !entry.Value.IsValid))
+        {
+            throw new InvalidDataException("Panel settings contain invalid XP overlay bounds.");
+        }
+
         var splitStates = ValidateSplitStates(settings);
         var assignments = settings.SlotAccountIds.Concat(new Guid?[5]).Take(5).ToArray();
+        var overlayBounds = new Dictionary<Guid, XpOverlayBounds>(settings.XpOverlayBoundsByAccount);
         return new PanelSettings(settings.Layout, assignments)
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = splitStates,
-            GameViewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes)
+            GameViewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes),
+            XpOverlayBoundsByAccount = overlayBounds
         };
     }
 

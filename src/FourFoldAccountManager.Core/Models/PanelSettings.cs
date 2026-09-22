@@ -20,12 +20,18 @@ public sealed record PanelSettings
 
     public bool ShowFullScreenExitButton { get; init; } = true;
 
+    public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =
+        GlobalHotkeyChord.DefaultRevealXpOverlayTab;
+
     public double TwoByThreeTopRowFraction { get; init; } = 0.6;
 
     public IReadOnlyList<PanelSplitState> SplitStates { get; init; } = Array.Empty<PanelSplitState>();
 
     public IReadOnlyDictionary<Guid, GameViewportSize> GameViewportSizes { get; init; } =
         new Dictionary<Guid, GameViewportSize>();
+
+    public IReadOnlyDictionary<Guid, XpOverlayBounds> XpOverlayBoundsByAccount { get; init; } =
+        new Dictionary<Guid, XpOverlayBounds>();
 
     public static PanelSettings Default => new(PanelLayout.TwoByTwo, new Guid?[5]);
 }

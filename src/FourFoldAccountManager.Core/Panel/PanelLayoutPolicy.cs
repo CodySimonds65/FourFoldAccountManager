@@ -17,6 +17,8 @@ public static class PanelLayoutPolicy
         CreateSplitState("2x3.rows", 0.6, 0.4),
         CreateSplitState("2x3.top", 0.5, 0.5),
         CreateSplitState("2x3.bottom", 1d / 3, 1d / 3, 1d / 3),
+        CreateSplitState("1x3.rows", 0.6, 0.4),
+        CreateSplitState("1x3.bottom", 1d / 3, 1d / 3, 1d / 3),
         CreateSplitState("1x2v.columns", 0.5, 0.5),
         CreateSplitState("1x2v.right.rows", 0.5, 0.5)
     });
@@ -42,6 +44,11 @@ public static class PanelLayoutPolicy
                 Slot(0),
                 Split("1x2v.right.rows", PanelSplitOrientation.Vertical, Slot(1), Slot(2))),
             PanelLayout.OneByOne => Slot(0),
+            PanelLayout.OneByThree => Split(
+                "1x3.rows",
+                PanelSplitOrientation.Vertical,
+                Slot(0),
+                Split("1x3.bottom", PanelSplitOrientation.Horizontal, Slot(1), Slot(2), Slot(3))),
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
 
@@ -84,6 +91,7 @@ public static class PanelLayoutPolicy
             PanelLayout.TwoByThree => new GridDimensions(2, 6),
             PanelLayout.OneByTwoVertical => new GridDimensions(2, 2),
             PanelLayout.OneByOne => new GridDimensions(1, 1),
+            PanelLayout.OneByThree => new GridDimensions(2, 3),
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
 
@@ -128,6 +136,13 @@ public static class PanelLayoutPolicy
             {
                 new PanelSlotPlacement(0, 0)
             },
+            PanelLayout.OneByThree => new[]
+            {
+                new PanelSlotPlacement(0, 0, ColumnSpan: 3),
+                new PanelSlotPlacement(1, 0),
+                new PanelSlotPlacement(1, 1),
+                new PanelSlotPlacement(1, 2)
+            },
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
 
@@ -139,9 +154,11 @@ public static class PanelLayoutPolicy
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = settings.SplitStates,
-            GameViewportSizes = settings.GameViewportSizes
+            GameViewportSizes = settings.GameViewportSizes,
+            XpOverlayBoundsByAccount = settings.XpOverlayBoundsByAccount
         };
     }
 
@@ -180,9 +197,11 @@ public static class PanelLayoutPolicy
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = settings.SplitStates,
-            GameViewportSizes = settings.GameViewportSizes
+            GameViewportSizes = settings.GameViewportSizes,
+            XpOverlayBoundsByAccount = settings.XpOverlayBoundsByAccount
         };
     }
 
@@ -204,13 +223,17 @@ public static class PanelLayoutPolicy
             .ToArray();
         var viewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes);
         viewportSizes.Remove(accountId);
+        var overlayBounds = new Dictionary<Guid, XpOverlayBounds>(settings.XpOverlayBoundsByAccount);
+        overlayBounds.Remove(accountId);
         return new PanelSettings(settings.Layout, assignments)
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = settings.SplitStates,
-            GameViewportSizes = viewportSizes
+            GameViewportSizes = viewportSizes,
+            XpOverlayBoundsByAccount = overlayBounds
         };
     }
 
@@ -249,6 +272,43 @@ public static class PanelLayoutPolicy
             [accountId] = size
         };
         return settings with { GameViewportSizes = viewportSizes };
+    }
+
+    public static XpOverlayBounds? GetXpOverlayBounds(PanelSettings settings, Guid accountId)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (accountId == Guid.Empty)
+        {
+            throw new ArgumentException("An account ID is required.", nameof(accountId));
+        }
+
+        return settings.XpOverlayBoundsByAccount.TryGetValue(accountId, out var bounds)
+            ? bounds
+            : null;
+    }
+
+    public static PanelSettings WithXpOverlayBounds(
+        PanelSettings settings,
+        Guid accountId,
+        XpOverlayBounds bounds)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(bounds);
+        if (accountId == Guid.Empty)
+        {
+            throw new ArgumentException("An account ID is required.", nameof(accountId));
+        }
+
+        if (!bounds.IsValid)
+        {
+            throw new ArgumentException("Overlay bounds must be valid and within the normalized viewport.", nameof(bounds));
+        }
+
+        var overlayBounds = new Dictionary<Guid, XpOverlayBounds>(settings.XpOverlayBoundsByAccount)
+        {
+            [accountId] = bounds
+        };
+        return settings with { XpOverlayBoundsByAccount = overlayBounds };
     }
 
     private static PanelSlotNode Slot(int index) => new(index);
@@ -293,9 +353,11 @@ public static class PanelLayoutPolicy
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = Array.AsReadOnly(splitStates.Select(CloneSplitState).ToArray()),
-            GameViewportSizes = settings.GameViewportSizes
+            GameViewportSizes = settings.GameViewportSizes,
+            XpOverlayBoundsByAccount = settings.XpOverlayBoundsByAccount
         };
 
     private static PanelSplitState CloneSplitState(PanelSplitState state) =>
