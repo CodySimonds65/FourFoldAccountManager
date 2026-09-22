@@ -37,34 +37,52 @@ public static class PanelSplitMath
         double minimum)
     {
         var result = normalized.ToArray();
-        var fixedTrackCount = 0;
-        var flexibleWeightTotal = 0d;
+        var isFlexible = Enumerable.Repeat(true, result.Length).ToArray();
+        var remainingWeight = 1d;
+        var flexibleWeightTotal = normalized.Sum();
 
-        for (var index = 0; index < result.Length; index++)
+        while (true)
         {
-            if (result[index] <= minimum + 1e-12)
+            var fixedAnyTrack = false;
+            for (var index = 0; index < result.Length; index++)
             {
-                result[index] = minimum;
-                fixedTrackCount++;
+                if (!isFlexible[index])
+                {
+                    continue;
+                }
+
+                var candidate = normalized[index] / flexibleWeightTotal * remainingWeight;
+                if (candidate < minimum)
+                {
+                    isFlexible[index] = false;
+                    result[index] = minimum;
+                    remainingWeight -= minimum;
+                    flexibleWeightTotal -= normalized[index];
+                    fixedAnyTrack = true;
+                }
             }
-            else
+
+            if (!fixedAnyTrack)
             {
-                flexibleWeightTotal += result[index];
+                break;
             }
         }
 
-        if (fixedTrackCount == 0 || fixedTrackCount == result.Length)
-        {
-            return Array.AsReadOnly(result);
-        }
-
-        var remainingWeight = 1d - (fixedTrackCount * minimum);
+        var lastFlexibleIndex = -1;
         for (var index = 0; index < result.Length; index++)
         {
-            if (result[index] > minimum)
+            if (isFlexible[index])
             {
-                result[index] = normalized[index] / flexibleWeightTotal * remainingWeight;
+                result[index] = Math.Round(
+                    normalized[index] / flexibleWeightTotal * remainingWeight,
+                    12);
+                lastFlexibleIndex = index;
             }
+        }
+
+        if (lastFlexibleIndex >= 0)
+        {
+            result[lastFlexibleIndex] += 1d - result.Sum();
         }
 
         return Array.AsReadOnly(result);
@@ -96,8 +114,8 @@ public static class PanelSplitMath
         var rightIndex = boundaryIndex + 1;
         var boundedDelta = Math.Clamp(
             deltaFraction,
-            minimum - adjusted[leftIndex],
-            adjusted[rightIndex] - minimum);
+            -adjusted[leftIndex],
+            adjusted[rightIndex]);
         adjusted[leftIndex] += boundedDelta;
         adjusted[rightIndex] -= boundedDelta;
 
