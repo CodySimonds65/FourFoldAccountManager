@@ -8,6 +8,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using FourFoldAccountManager.Core.Data;
+using FourFoldAccountManager.Core.Launch;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Panel;
 using FourFoldAccountManager.Desktop.Services;
@@ -22,6 +23,7 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<AccountProfile> _accounts = [];
     private readonly HashSet<Guid> _openAccountIds = [];
+    private readonly HashSet<Guid> _failedAccountIds = [];
     private readonly AccountStore _accountStore;
     private readonly SettingsStore _settingsStore;
     private readonly WindowsCredentialStore _credentialStore;
@@ -848,22 +850,39 @@ public partial class MainWindow : Window
                     continue;
                 }
 
+                if (!AssignedAccountLaunchPolicy.ShouldStart(
+                        _openAccountIds.Contains(accountId),
+                        _failedAccountIds.Contains(accountId)))
+                {
+                    outcomes.Add(AssignedAccountStartResult.AlreadyRunning);
+                    continue;
+                }
+
                 GlobalStatusText.Text = $"Starting account in slot {slot.SlotIndex + 1} of {assignedSlots.Length}…";
                 try
                 {
-                    outcomes.Add(await StartAssignedAccountAsync(slot, accountId));
+                    if (_openAccountIds.Contains(accountId) && _failedAccountIds.Contains(accountId))
+                    {
+                        await CloseAccountViewAsync(accountId, preserveFailure: true);
+                    }
+
+                    var outcome = await StartAssignedAccountAsync(slot, accountId);
+                    RecordAccountStartOutcome(accountId, outcome);
+                    outcomes.Add(outcome);
                 }
                 catch (Exception exception)
                 {
+                    _failedAccountIds.Add(accountId);
                     SetSlotStatus(slot, SafeBrowserError(exception), StatusTone.Error);
                     outcomes.Add(AssignedAccountStartResult.Failed);
                 }
             }
 
             var opened = outcomes.Count(result => result == AssignedAccountStartResult.Opened);
+            var alreadyRunning = outcomes.Count(result => result == AssignedAccountStartResult.AlreadyRunning);
             var manual = outcomes.Count(result => result == AssignedAccountStartResult.ManualActionRequired);
             var failed = outcomes.Count(result => result == AssignedAccountStartResult.Failed);
-            GlobalStatusText.Text = $"Start complete: {opened} game(s) opened, {manual} need manual action, {failed} failed.";
+            GlobalStatusText.Text = $"Start complete: {opened} game(s) opened, {alreadyRunning} already running, {manual} need manual action, {failed} failed.";
         }
         finally
         {
@@ -885,7 +904,7 @@ public partial class MainWindow : Window
         }
         _xpTracker.Start(accountId, rankingUsername, profile?.RankingPlayerId);
         RefreshTrackerRows();
-        AttachBrowserView(slot, view);
+        AttachBrowserView(slot, accountId, view);
 
         var loginPageResult = await _browserSessions.NavigateAndWaitAsync(accountId, FourFoldDestination.LoginUri);
         if (loginPageResult != BrowserNavigationResult.Navigated)
@@ -943,6 +962,17 @@ public partial class MainWindow : Window
 
         SetSlotStatus(slot, "The account view closed before Play now could be selected.", StatusTone.Error);
         return AssignedAccountStartResult.Failed;
+    }
+
+    private void RecordAccountStartOutcome(Guid accountId, AssignedAccountStartResult outcome)
+    {
+        if (outcome == AssignedAccountStartResult.Failed)
+        {
+            _failedAccountIds.Add(accountId);
+            return;
+        }
+
+        _failedAccountIds.Remove(accountId);
     }
 
     private void SetBatchLaunchMode(bool isActive)
@@ -1404,7 +1434,7 @@ public partial class MainWindow : Window
             try
             {
                 var view = await _browserSessions.CreateViewAsync(accountId, slot.BrowserHost);
-                AttachBrowserView(slot, view);
+                AttachBrowserView(slot, accountId, view);
                 SetSlotStatus(slot, "View kept open after the panel change.", StatusTone.Neutral);
             }
             catch (Exception exception)
@@ -1724,7 +1754,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AttachBrowserView(PanelSlotCard slot, WebView2CompositionControl view)
+    private void AttachBrowserView(PanelSlotCard slot, Guid accountId, WebView2CompositionControl view)
     {
         if (!ReferenceEquals(view.Parent, slot.BrowserHost))
         {
@@ -1757,6 +1787,7 @@ public partial class MainWindow : Window
                 }
                 else
                 {
+                    _failedAccountIds.Add(accountId);
                     SetSlotStatus(slot, "Page could not be loaded. Press Launch accounts to retry.", StatusTone.Error);
                 }
             }, DispatcherPriority.Background);
@@ -1768,9 +1799,12 @@ public partial class MainWindow : Window
             view.CoreWebView2.ProcessFailed -= slot.ProcessFailedHandler;
         }
 
-        slot.ProcessFailedHandler = (_, _) => Dispatcher.BeginInvoke(
-            () => SetSlotStatus(slot, "Browser process failed. Other slots remain available.", StatusTone.Error),
-            DispatcherPriority.Background);
+        slot.ProcessFailedHandler = (_, _) => Dispatcher.BeginInvoke(() =>
+        {
+            _failedAccountIds.Add(accountId);
+            SetSlotStatus(slot, "Browser process failed. Use Launch accounts or relaunch this slot to recover it.",
+                StatusTone.Error);
+        }, DispatcherPriority.Background);
         view.CoreWebView2.ProcessFailed += slot.ProcessFailedHandler;
     }
 
@@ -1790,17 +1824,23 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task CloseAccountViewAsync(Guid accountId)
+    private async Task CloseAccountViewAsync(Guid accountId, bool preserveFailure = false)
     {
         var slot = _slotCards.FirstOrDefault(item =>
             _panelSettings.SlotAccountIds[item.SlotIndex] == accountId);
         if (slot is not null)
         {
             DetachSlotEventHandlers(slot);
+            slot.View = null;
+            slot.Placeholder.Visibility = Visibility.Visible;
         }
 
         await _browserSessions.CloseViewAsync(accountId);
         _openAccountIds.Remove(accountId);
+        if (!preserveFailure)
+        {
+            _failedAccountIds.Remove(accountId);
+        }
         _xpTracker.Stop(accountId);
         RefreshTrackerRows();
         UpdateAllSlotPresentations();
@@ -1820,6 +1860,7 @@ public partial class MainWindow : Window
         }
 
         _openAccountIds.Clear();
+        _failedAccountIds.Clear();
         foreach (var accountId in _xpTracker.GetStates().Select(state => state.AccountId).ToArray())
             _xpTracker.Stop(accountId);
         RefreshTrackerRows();
@@ -2070,6 +2111,7 @@ public partial class MainWindow : Window
     private enum AssignedAccountStartResult
     {
         Opened,
+        AlreadyRunning,
         ManualActionRequired,
         Failed
     }
