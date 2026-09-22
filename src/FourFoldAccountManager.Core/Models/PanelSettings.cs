@@ -22,6 +22,8 @@ public sealed record PanelSettings
 
     public double TwoByThreeTopRowFraction { get; init; } = 0.6;
 
+    public IReadOnlyList<PanelSplitState> SplitStates { get; init; } = Array.Empty<PanelSplitState>();
+
     public IReadOnlyDictionary<Guid, GameViewportSize> GameViewportSizes { get; init; } =
         new Dictionary<Guid, GameViewportSize>();
 

@@ -584,7 +584,8 @@ public partial class MainWindow : Window
         };
         if (dialog.ShowDialog() != true ||
             (dialog.FillGameToPanel == _panelSettings.FillGameToPanel &&
-             dialog.ShowFullScreenExitButton == _panelSettings.ShowFullScreenExitButton))
+             dialog.ShowFullScreenExitButton == _panelSettings.ShowFullScreenExitButton &&
+             !dialog.ResetLayoutSizes))
         {
             return;
         }
@@ -596,7 +597,10 @@ public partial class MainWindow : Window
         {
             nextSettings = await UpdateSettingsAsync(async currentSettings =>
             {
-                var candidate = currentSettings with
+                var candidate = dialog.ResetLayoutSizes
+                    ? PanelLayoutPolicy.ResetSplitStates(currentSettings)
+                    : currentSettings;
+                candidate = candidate with
                 {
                     FillGameToPanel = dialog.FillGameToPanel,
                     ShowFullScreenExitButton = dialog.ShowFullScreenExitButton
@@ -611,13 +615,19 @@ public partial class MainWindow : Window
             }, previousSettings => scalingChanged
                 ? _browserSessions.SetGameScalingAsync(previousSettings.FillGameToPanel)
                 : Task.CompletedTask);
+            if (dialog.ResetLayoutSizes)
+            {
+                await RebuildPanelAsync(closeExistingViews: false);
+            }
             if (!nextSettings.FillGameToPanel)
             {
                 _viewAdjustmentVisible = false;
                 UpdateAllSlotPresentations();
             }
             UpdateManageSlotsButton();
-            GlobalStatusText.Text = scalingChanged
+            GlobalStatusText.Text = dialog.ResetLayoutSizes
+                ? "Client layout sizes restored to defaults."
+                : scalingChanged
                 ? nextSettings.FillGameToPanel
                     ? "Game scaling set to Fill panel."
                     : "Game scaling set to Fit entire game."
@@ -1029,104 +1039,8 @@ public partial class MainWindow : Window
         PanelGridHost.RowDefinitions.Clear();
         PanelGridHost.ColumnDefinitions.Clear();
 
-        var layout = _panelSettings.Layout;
-        var dimensions = PanelLayoutPolicy.GetDimensions(layout);
-        var hasAdjustableRowSplit = layout == PanelLayout.TwoByThree;
-        RowDefinition? topRow = null;
-        RowDefinition? bottomRow = null;
-
-        if (hasAdjustableRowSplit)
-        {
-            var topFraction = _panelSettings.TwoByThreeTopRowFraction;
-            topRow = new RowDefinition
-            {
-                Height = new GridLength(topFraction, GridUnitType.Star),
-                MinHeight = 120
-            };
-            bottomRow = new RowDefinition
-            {
-                Height = new GridLength(1 - topFraction, GridUnitType.Star),
-                MinHeight = 120
-            };
-            PanelGridHost.RowDefinitions.Add(topRow);
-            PanelGridHost.RowDefinitions.Add(bottomRow);
-
-            var splitter = new GridSplitter
-            {
-                Height = 10,
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                VerticalAlignment = VerticalAlignment.Bottom,
-                ResizeDirection = GridResizeDirection.Rows,
-                ResizeBehavior = GridResizeBehavior.CurrentAndNext,
-                ShowsPreview = false,
-                Background = Brushes.Transparent,
-                Cursor = System.Windows.Input.Cursors.SizeNS,
-                Margin = new Thickness(4, 0, 4, -5)
-            };
-            Panel.SetZIndex(splitter, 100);
-            Grid.SetColumnSpan(splitter, dimensions.Columns);
-            splitter.DragCompleted += async (_, _) =>
-            {
-                if (!_isReady || _panelSettings.Layout != PanelLayout.TwoByThree ||
-                    topRow.ActualHeight + bottomRow.ActualHeight <= 0)
-                {
-                    return;
-                }
-
-                var nextFraction = Math.Clamp(
-                    topRow.ActualHeight / (topRow.ActualHeight + bottomRow.ActualHeight),
-                    0.2,
-                    0.8);
-                topRow.Height = new GridLength(nextFraction, GridUnitType.Star);
-                bottomRow.Height = new GridLength(1 - nextFraction, GridUnitType.Star);
-                if (Math.Abs(nextFraction - _panelSettings.TwoByThreeTopRowFraction) < 0.001)
-                {
-                    return;
-                }
-
-                try
-                {
-                    await UpdateSettingsAsync(currentSettings =>
-                        currentSettings with { TwoByThreeTopRowFraction = nextFraction });
-                    GlobalStatusText.Text = "The 2 × 3 row heights were saved.";
-                }
-                catch
-                {
-                    var savedFraction = _panelSettings.TwoByThreeTopRowFraction;
-                    topRow.Height = new GridLength(savedFraction, GridUnitType.Star);
-                    bottomRow.Height = new GridLength(1 - savedFraction, GridUnitType.Star);
-                    MessageBox.Show(this, "The row heights could not be saved.", "FourFold Account Manager",
-                        MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            };
-            Grid.SetRow(splitter, 0);
-            PanelGridHost.Children.Add(splitter);
-        }
-        else
-        {
-            for (var row = 0; row < dimensions.Rows; row++)
-            {
-                PanelGridHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            }
-        }
-
-        for (var column = 0; column < dimensions.Columns; column++)
-        {
-            PanelGridHost.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        }
-
-        var slotIndex = 0;
-        foreach (var placement in PanelLayoutPolicy.GetSlotPlacements(layout))
-        {
-            var card = CreatePanelSlot(slotIndex);
-            Grid.SetRow(card.Root, placement.Row);
-            Grid.SetColumn(card.Root, placement.Column);
-            Grid.SetRowSpan(card.Root, placement.RowSpan);
-            Grid.SetColumnSpan(card.Root, placement.ColumnSpan);
-            PanelGridHost.Children.Add(card.Root);
-            _slotCards.Add(card);
-            slotIndex++;
-        }
+        PanelGridHost.Children.Add(BuildLayoutNode(
+            PanelLayoutPolicy.GetLayoutTree(_panelSettings.Layout)));
 
         if (!closeExistingViews)
         {
@@ -1140,6 +1054,329 @@ public partial class MainWindow : Window
             .OfType<Guid>().Where(_openAccountIds.Contains).ToArray());
         RefreshTrackerRows();
     }
+
+    private FrameworkElement BuildLayoutNode(PanelLayoutNode node) =>
+        BuildLayoutNode(
+            node,
+            _panelSettings,
+            BuildSlotElement,
+            async state =>
+            {
+                await UpdateSettingsAsync(currentSettings =>
+                    PanelLayoutPolicy.WithSplitState(currentSettings, state));
+                GlobalStatusText.Text = "The layout sizes were saved.";
+            },
+            () => MessageBox.Show(this, "The row heights could not be saved.", "FourFold Account Manager",
+                MessageBoxButton.OK, MessageBoxImage.Error));
+
+    internal static FrameworkElement BuildLayoutNode(
+        PanelLayoutNode node,
+        PanelSettings settings,
+        Func<int, FrameworkElement> buildSlot,
+        Func<PanelSplitState, Task> persistSplitState,
+        Action reportSaveFailure)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(buildSlot);
+        ArgumentNullException.ThrowIfNull(persistSplitState);
+        ArgumentNullException.ThrowIfNull(reportSaveFailure);
+
+        return node switch
+        {
+            PanelSlotNode slot => buildSlot(slot.SlotIndex),
+            PanelSplitNode split => BuildSplitElement(
+                split, settings, buildSlot, persistSplitState, reportSaveFailure),
+            _ => throw new ArgumentOutOfRangeException(nameof(node))
+        };
+    }
+
+    private FrameworkElement BuildSlotElement(int slotIndex)
+    {
+        var card = CreatePanelSlot(slotIndex);
+        _slotCards.Add(card);
+        return card.Root;
+    }
+
+    private static Grid BuildSplitElement(
+        PanelSplitNode split,
+        PanelSettings settings,
+        Func<int, FrameworkElement> buildSlot,
+        Func<PanelSplitState, Task> persistSplitState,
+        Action reportSaveFailure)
+    {
+        const double minimumWeight = 0.30;
+        var group = new Grid();
+        var weights = PanelSplitMath.ClampToMinimum(
+            PanelLayoutPolicy.GetSplitState(settings, split.Id).Weights,
+            minimumWeight).ToArray();
+
+        for (var index = 0; index < split.Children.Count; index++)
+        {
+            if (split.Orientation == PanelSplitOrientation.Horizontal)
+            {
+                group.ColumnDefinitions.Add(new ColumnDefinition
+                {
+                    Width = new GridLength(weights[index], GridUnitType.Star)
+                });
+            }
+            else
+            {
+                group.RowDefinitions.Add(new RowDefinition
+                {
+                    Height = new GridLength(weights[index], GridUnitType.Star)
+                });
+            }
+
+            var child = BuildLayoutNode(
+                split.Children[index], settings, buildSlot, persistSplitState, reportSaveFailure);
+            if (split.Orientation == PanelSplitOrientation.Horizontal)
+            {
+                Grid.SetColumn(child, index);
+            }
+            else
+            {
+                Grid.SetRow(child, index);
+            }
+
+            group.Children.Add(child);
+        }
+
+        var splitters = new List<GridSplitter>();
+        for (var boundaryIndex = 0; boundaryIndex < split.Children.Count - 1; boundaryIndex++)
+        {
+            var splitter = CreateGridSplitter(split.Orientation, boundaryIndex);
+            splitters.Add(splitter);
+            group.Children.Add(splitter);
+        }
+
+        ApplyTrackMinimums(group, split.Orientation, minimumWeight);
+        group.SizeChanged += (_, _) => ApplyTrackMinimums(group, split.Orientation, minimumWeight);
+
+        foreach (var (splitter, boundaryIndex) in splitters.Select((splitter, index) => (splitter, index)))
+        {
+            IReadOnlyList<double>? dragStartWeights = null;
+
+            splitter.DragStarted += (_, _) =>
+            {
+                dragStartWeights = ReadDefinitionWeights(group, split.Orientation, minimumWeight);
+                weights = dragStartWeights.ToArray();
+            };
+            splitter.DragDelta += (_, eventArgs) =>
+            {
+                if (dragStartWeights is null)
+                {
+                    return;
+                }
+
+                var groupLength = split.Orientation == PanelSplitOrientation.Horizontal
+                    ? group.ActualWidth
+                    : group.ActualHeight;
+                if (!IsUsableGroupLength(groupLength))
+                {
+                    return;
+                }
+
+                var deltaPixels = split.Orientation == PanelSplitOrientation.Horizontal
+                    ? eventArgs.HorizontalChange
+                    : eventArgs.VerticalChange;
+                var pairWeight = weights[boundaryIndex] + weights[boundaryIndex + 1];
+                if (!double.IsFinite(deltaPixels) || pairWeight <= 0)
+                {
+                    return;
+                }
+
+                var pairMinimum = Math.Min(0.5, minimumWeight / pairWeight);
+                var adjustedPair = PanelSplitMath.AdjustBoundary(
+                    new[] { weights[boundaryIndex], weights[boundaryIndex + 1] },
+                    0,
+                    deltaPixels / groupLength / pairWeight,
+                    pairMinimum);
+                var adjustedWeights = weights.ToArray();
+                adjustedWeights[boundaryIndex] = adjustedPair[0] * pairWeight;
+                adjustedWeights[boundaryIndex + 1] = adjustedPair[1] * pairWeight;
+                weights = adjustedWeights;
+                ApplyTrackWeights(group, split.Orientation, weights);
+                group.UpdateLayout();
+            };
+            splitter.DragCompleted += async (_, eventArgs) =>
+            {
+                if (dragStartWeights is null)
+                {
+                    return;
+                }
+
+                var previousWeights = dragStartWeights;
+                dragStartWeights = null;
+                if (eventArgs.Canceled)
+                {
+                    weights = previousWeights.ToArray();
+                    ApplyTrackWeights(group, split.Orientation, weights);
+                    return;
+                }
+
+                group.UpdateLayout();
+                var completedWeights = ReadActualWeights(group, split.Orientation, minimumWeight);
+                if (completedWeights is null)
+                {
+                    weights = previousWeights.ToArray();
+                    ApplyTrackWeights(group, split.Orientation, weights);
+                    return;
+                }
+
+                weights = completedWeights.ToArray();
+                ApplyTrackWeights(group, split.Orientation, weights);
+                if (WeightsEqual(previousWeights, weights))
+                {
+                    return;
+                }
+
+                foreach (var groupSplitter in splitters)
+                {
+                    groupSplitter.IsEnabled = false;
+                }
+
+                try
+                {
+                    await persistSplitState(new PanelSplitState(
+                        split.Id,
+                        Array.AsReadOnly(weights.ToArray())));
+                }
+                catch
+                {
+                    weights = previousWeights.ToArray();
+                    ApplyTrackWeights(group, split.Orientation, weights);
+                    group.UpdateLayout();
+                    reportSaveFailure();
+                }
+                finally
+                {
+                    foreach (var groupSplitter in splitters)
+                    {
+                        groupSplitter.IsEnabled = true;
+                    }
+                }
+            };
+        }
+
+        return group;
+    }
+
+    private static GridSplitter CreateGridSplitter(PanelSplitOrientation orientation, int boundaryIndex)
+    {
+        var splitter = new GridSplitter
+        {
+            ResizeBehavior = GridResizeBehavior.CurrentAndNext,
+            ShowsPreview = false,
+            Background = Brushes.Transparent,
+            Focusable = false
+        };
+
+        if (orientation == PanelSplitOrientation.Horizontal)
+        {
+            splitter.Width = 10;
+            splitter.HorizontalAlignment = HorizontalAlignment.Right;
+            splitter.VerticalAlignment = VerticalAlignment.Stretch;
+            splitter.ResizeDirection = GridResizeDirection.Columns;
+            splitter.Cursor = System.Windows.Input.Cursors.SizeWE;
+            splitter.Margin = new Thickness(0, 4, -5, 4);
+            Grid.SetColumn(splitter, boundaryIndex);
+        }
+        else
+        {
+            splitter.Height = 10;
+            splitter.HorizontalAlignment = HorizontalAlignment.Stretch;
+            splitter.VerticalAlignment = VerticalAlignment.Bottom;
+            splitter.ResizeDirection = GridResizeDirection.Rows;
+            splitter.Cursor = System.Windows.Input.Cursors.SizeNS;
+            splitter.Margin = new Thickness(4, 0, 4, -5);
+            Grid.SetRow(splitter, boundaryIndex);
+        }
+
+        Panel.SetZIndex(splitter, 100);
+        return splitter;
+    }
+
+    private static void ApplyTrackMinimums(
+        Grid group,
+        PanelSplitOrientation orientation,
+        double minimumWeight)
+    {
+        var groupLength = orientation == PanelSplitOrientation.Horizontal
+            ? group.ActualWidth
+            : group.ActualHeight;
+        var minimumLength = double.IsFinite(groupLength) && groupLength > 0
+            ? groupLength * minimumWeight
+            : 0;
+
+        if (orientation == PanelSplitOrientation.Horizontal)
+        {
+            foreach (var column in group.ColumnDefinitions)
+            {
+                column.MinWidth = minimumLength;
+            }
+        }
+        else
+        {
+            foreach (var row in group.RowDefinitions)
+            {
+                row.MinHeight = minimumLength;
+            }
+        }
+    }
+
+    private static IReadOnlyList<double> ReadDefinitionWeights(
+        Grid group,
+        PanelSplitOrientation orientation,
+        double minimumWeight)
+    {
+        var values = orientation == PanelSplitOrientation.Horizontal
+            ? group.ColumnDefinitions.Select(column => column.Width.Value).ToArray()
+            : group.RowDefinitions.Select(row => row.Height.Value).ToArray();
+        return PanelSplitMath.ClampToMinimum(values, minimumWeight);
+    }
+
+    private static IReadOnlyList<double>? ReadActualWeights(
+        Grid group,
+        PanelSplitOrientation orientation,
+        double minimumWeight)
+    {
+        var values = orientation == PanelSplitOrientation.Horizontal
+            ? group.ColumnDefinitions.Select(column => column.ActualWidth).ToArray()
+            : group.RowDefinitions.Select(row => row.ActualHeight).ToArray();
+        return IsUsableGroupLength(values.Sum()) &&
+               values.All(value => double.IsFinite(value) && value > 0)
+            ? PanelSplitMath.ClampToMinimum(values, minimumWeight)
+            : null;
+    }
+
+    private static bool IsUsableGroupLength(double value) =>
+        double.IsFinite(value) && value >= 1;
+
+    private static void ApplyTrackWeights(
+        Grid group,
+        PanelSplitOrientation orientation,
+        IReadOnlyList<double> weights)
+    {
+        if (orientation == PanelSplitOrientation.Horizontal)
+        {
+            for (var index = 0; index < group.ColumnDefinitions.Count; index++)
+            {
+                group.ColumnDefinitions[index].Width = new GridLength(weights[index], GridUnitType.Star);
+            }
+        }
+        else
+        {
+            for (var index = 0; index < group.RowDefinitions.Count; index++)
+            {
+                group.RowDefinitions[index].Height = new GridLength(weights[index], GridUnitType.Star);
+            }
+        }
+    }
+
+    private static bool WeightsEqual(IReadOnlyList<double> left, IReadOnlyList<double> right) =>
+        left.Count == right.Count &&
+        left.Zip(right).All(pair => Math.Abs(pair.First - pair.Second) < 1e-9);
 
     private async Task RestoreVisibleOpenViewsAsync()
     {

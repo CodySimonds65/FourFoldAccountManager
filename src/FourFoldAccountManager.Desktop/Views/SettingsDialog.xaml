@@ -56,12 +56,25 @@
                     </StackPanel>
                 </CheckBox>
             </Border>
+            <TextBlock Text="CLIENT LAYOUT" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}"
+                       Margin="0,20,0,9" />
+            <Border Padding="14" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}"
+                    Background="{DynamicResource Brush.Surface}">
+                <StackPanel>
+                    <TextBlock Text="Restore divider positions" FontWeight="SemiBold" />
+                    <TextBlock Margin="0,4,0,12" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
+                               Text="Restore all client layout dividers to their defaults. Game scaling and per-client viewport sizes will not change." />
+                    <Button x:Name="ResetLayoutSizesButton" Content="Reset layout sizes"
+                            Width="146" Height="34" HorizontalAlignment="Left"
+                            Click="ResetLayoutSizes_Click" Style="{StaticResource AppButtonStyle}" />
+                </StackPanel>
+            </Border>
         </StackPanel>
 
         <StackPanel Grid.Row="2" Margin="0,22,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Width="78" Height="36" Margin="0,0,8,0" IsCancel="True" Content="Cancel"
+            <Button x:Name="CancelSettingsButton" Width="78" Height="36" Margin="0,0,8,0" IsCancel="True" Content="Cancel"
                     Style="{StaticResource AppButtonStyle}" />
-            <Button Width="106" Height="36" IsDefault="True" Click="Save_Click" Content="Save settings"
+            <Button x:Name="SaveSettingsButton" Width="106" Height="36" IsDefault="True" Click="Save_Click" Content="Save settings"
                     Padding="10,0" Style="{StaticResource PrimaryButtonStyle}" />
         </StackPanel>
     </Grid>

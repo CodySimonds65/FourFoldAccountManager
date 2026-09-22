@@ -5,6 +5,74 @@ namespace FourFoldAccountManager.Core.Panel;
 public static class PanelLayoutPolicy
 {
     private const int SlotCount = 5;
+    private const double MinimumSplitWeight = 0.30;
+
+    private static readonly IReadOnlyList<PanelSplitState> DefaultSplitStates = Array.AsReadOnly(new[]
+    {
+        CreateSplitState("1x2.columns", 0.5, 0.5),
+        CreateSplitState("2x1.rows", 0.5, 0.5),
+        CreateSplitState("2x2.rows", 0.5, 0.5),
+        CreateSplitState("2x2.top", 0.5, 0.5),
+        CreateSplitState("2x2.bottom", 0.5, 0.5),
+        CreateSplitState("2x3.rows", 0.6, 0.4),
+        CreateSplitState("2x3.top", 0.5, 0.5),
+        CreateSplitState("2x3.bottom", 1d / 3, 1d / 3, 1d / 3),
+        CreateSplitState("1x2v.columns", 0.5, 0.5),
+        CreateSplitState("1x2v.right.rows", 0.5, 0.5)
+    });
+
+    public static PanelLayoutNode GetLayoutTree(PanelLayout layout) =>
+        layout switch
+        {
+            PanelLayout.OneByTwo => Split("1x2.columns", PanelSplitOrientation.Horizontal, Slot(0), Slot(1)),
+            PanelLayout.TwoByOne => Split("2x1.rows", PanelSplitOrientation.Vertical, Slot(0), Slot(1)),
+            PanelLayout.TwoByTwo => Split(
+                "2x2.rows",
+                PanelSplitOrientation.Vertical,
+                Split("2x2.top", PanelSplitOrientation.Horizontal, Slot(0), Slot(1)),
+                Split("2x2.bottom", PanelSplitOrientation.Horizontal, Slot(2), Slot(3))),
+            PanelLayout.TwoByThree => Split(
+                "2x3.rows",
+                PanelSplitOrientation.Vertical,
+                Split("2x3.top", PanelSplitOrientation.Horizontal, Slot(0), Slot(1)),
+                Split("2x3.bottom", PanelSplitOrientation.Horizontal, Slot(2), Slot(3), Slot(4))),
+            PanelLayout.OneByTwoVertical => Split(
+                "1x2v.columns",
+                PanelSplitOrientation.Horizontal,
+                Slot(0),
+                Split("1x2v.right.rows", PanelSplitOrientation.Vertical, Slot(1), Slot(2))),
+            PanelLayout.OneByOne => Slot(0),
+            _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
+        };
+
+    public static IReadOnlyList<PanelSplitState> GetDefaultSplitStates() => DefaultSplitStates;
+
+    public static PanelSplitState GetSplitState(PanelSettings settings, string id)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        var defaultState = GetDefaultSplitState(id);
+        var state = settings.SplitStates?.SingleOrDefault(candidate => candidate.Id == id);
+        return state is null ? defaultState : state;
+    }
+
+    public static PanelSettings WithSplitState(PanelSettings settings, PanelSplitState state)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(state);
+        var normalizedState = NormalizeAndValidateSplitState(state, GetDefaultSplitState(state.Id));
+        var states = (settings.SplitStates ?? Array.Empty<PanelSplitState>())
+            .Where(existing => existing.Id != state.Id)
+            .Append(normalizedState)
+            .ToArray();
+
+        return CopySettings(settings, states);
+    }
+
+    public static PanelSettings ResetSplitStates(PanelSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return CopySettings(settings, GetDefaultSplitStates());
+    }
 
     public static GridDimensions GetDimensions(PanelLayout layout) =>
         layout switch
@@ -72,6 +140,7 @@ public static class PanelLayoutPolicy
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
+            SplitStates = settings.SplitStates,
             GameViewportSizes = settings.GameViewportSizes
         };
     }
@@ -112,6 +181,7 @@ public static class PanelLayoutPolicy
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
+            SplitStates = settings.SplitStates,
             GameViewportSizes = settings.GameViewportSizes
         };
     }
@@ -139,6 +209,7 @@ public static class PanelLayoutPolicy
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
+            SplitStates = settings.SplitStates,
             GameViewportSizes = viewportSizes
         };
     }
@@ -179,4 +250,54 @@ public static class PanelLayoutPolicy
         };
         return settings with { GameViewportSizes = viewportSizes };
     }
+
+    private static PanelSlotNode Slot(int index) => new(index);
+
+    private static PanelSplitNode Split(
+        string id,
+        PanelSplitOrientation orientation,
+        params PanelLayoutNode[] children) => new(id, orientation, children);
+
+    private static PanelSplitState CreateSplitState(string id, params double[] weights) =>
+        new(id, Array.AsReadOnly(weights));
+
+    private static PanelSplitState GetDefaultSplitState(string id)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        return DefaultSplitStates.SingleOrDefault(state => state.Id == id)
+            ?? throw new ArgumentOutOfRangeException(nameof(id), id, "Unknown split state ID.");
+    }
+
+    internal static PanelSplitState NormalizeAndValidateSplitState(PanelSplitState state, PanelSplitState expectedState)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(expectedState);
+        ArgumentException.ThrowIfNullOrWhiteSpace(state.Id);
+        ArgumentNullException.ThrowIfNull(state.Weights);
+        if (state.Weights.Count != expectedState.Weights.Count)
+        {
+            throw new ArgumentException("Split state has the wrong track count.", nameof(state));
+        }
+
+        var normalized = PanelSplitMath.Normalize(state.Weights);
+        if (normalized.Any(weight => weight < MinimumSplitWeight))
+        {
+            throw new ArgumentException("Split state weights must satisfy the minimum track size.", nameof(state));
+        }
+
+        return new PanelSplitState(state.Id, Array.AsReadOnly(normalized.ToArray()));
+    }
+
+    private static PanelSettings CopySettings(PanelSettings settings, IReadOnlyList<PanelSplitState> splitStates) =>
+        new(settings.Layout, settings.SlotAccountIds)
+        {
+            FillGameToPanel = settings.FillGameToPanel,
+            ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
+            SplitStates = Array.AsReadOnly(splitStates.Select(CloneSplitState).ToArray()),
+            GameViewportSizes = settings.GameViewportSizes
+        };
+
+    private static PanelSplitState CloneSplitState(PanelSplitState state) =>
+        new(state.Id, Array.AsReadOnly(state.Weights.ToArray()));
 }
