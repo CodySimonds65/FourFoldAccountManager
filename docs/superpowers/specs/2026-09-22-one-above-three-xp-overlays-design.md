@@ -1,6 +1,6 @@
 # One-Above-Three Layout and Fullscreen XP Overlays
 
-**Status:** Design approved; awaiting written-spec review before implementation planning.
+**Status:** Design and implementation plan approved; implementation in progress.
 
 ## Goal
 
