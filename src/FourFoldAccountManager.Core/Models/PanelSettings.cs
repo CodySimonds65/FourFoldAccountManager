@@ -20,6 +20,9 @@ public sealed record PanelSettings
 
     public bool ShowFullScreenExitButton { get; init; } = true;
 
+    public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =
+        GlobalHotkeyChord.DefaultRevealXpOverlayTab;
+
     public double TwoByThreeTopRowFraction { get; init; } = 0.6;
 
     public IReadOnlyList<PanelSplitState> SplitStates { get; init; } = Array.Empty<PanelSplitState>();

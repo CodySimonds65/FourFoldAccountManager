@@ -154,6 +154,7 @@ public static class PanelLayoutPolicy
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = settings.SplitStates,
             GameViewportSizes = settings.GameViewportSizes,
@@ -196,6 +197,7 @@ public static class PanelLayoutPolicy
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = settings.SplitStates,
             GameViewportSizes = settings.GameViewportSizes,
@@ -227,6 +229,7 @@ public static class PanelLayoutPolicy
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = settings.SplitStates,
             GameViewportSizes = viewportSizes,
@@ -350,6 +353,7 @@ public static class PanelLayoutPolicy
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = Array.AsReadOnly(splitStates.Select(CloneSplitState).ToArray()),
             GameViewportSizes = settings.GameViewportSizes,

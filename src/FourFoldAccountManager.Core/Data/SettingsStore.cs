@@ -108,6 +108,11 @@ public sealed class SettingsStore
             throw new InvalidDataException("Panel settings must contain four or five slot assignments.");
         }
 
+        if (settings.RevealXpOverlayTabShortcut is null || !settings.RevealXpOverlayTabShortcut.IsValid)
+        {
+            throw new InvalidDataException("Panel settings contain an invalid XP overlay reveal shortcut.");
+        }
+
         if (settings.TwoByThreeTopRowFraction is < 0.2 or > 0.8)
         {
             throw new InvalidDataException("The 2 × 3 top-row height must be between 20% and 80%.");
@@ -139,6 +144,7 @@ public sealed class SettingsStore
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = splitStates,
             GameViewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes),
