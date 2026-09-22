@@ -12,6 +12,7 @@ public sealed record XpTrackerState(
     long SessionGain,
     string? ActiveClass,
     long? XpUntilNextLevel,
+    double? HoursUntilNextLevel,
     DateTimeOffset? LastUpdated,
     string Status,
     bool IsStale);
@@ -44,6 +45,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
     public IReadOnlyList<XpTrackerState> GetStates() => _active.Values.Select(account => new XpTrackerState(
         account.Id, account.Username, account.Session.RatePerHour, account.Session.SessionGain,
         account.Session.ActiveClassName, account.Session.XpUntilNextLevel,
+        account.Session.HoursUntilNextLevel,
         account.Session.LastSuccessfulAt, account.Status, account.Session.IsStale)).ToArray();
 
     public void Start(Guid accountId, string? rankingUsername, int? playerId)
@@ -77,6 +79,26 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
             _loopCancellation?.Cancel();
             _loopTask = null;
             _loopCancellation = null;
+        }
+    }
+
+    public void ResetRate(Guid accountId)
+    {
+        _dispatcher.VerifyAccess();
+        if (_active.TryGetValue(accountId, out var account))
+        {
+            account.Session.ResetRate();
+            NotifyChanged();
+        }
+    }
+
+    public void ResetAll(Guid accountId)
+    {
+        _dispatcher.VerifyAccess();
+        if (_active.TryGetValue(accountId, out var account))
+        {
+            account.Session.ResetAll();
+            NotifyChanged();
         }
     }
 
