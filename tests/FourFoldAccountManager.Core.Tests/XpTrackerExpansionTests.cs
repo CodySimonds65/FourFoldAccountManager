@@ -120,6 +120,79 @@ public sealed class XpTrackerExpansionTests
         Assert.Equal(3000, untouched.RatePerHour);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Successful_sample_without_valid_interval_expires_rate_and_estimate(bool missingClass)
+    {
+        var session = new XpTrackingSession();
+        session.ApplySnapshot(Snapshot(13, 800, 910), Start);
+        session.ApplySnapshot(Snapshot(13, 900, 910), Start.AddMinutes(2));
+        Assert.Equal(3000, session.RatePerHour);
+        Assert.NotNull(session.HoursUntilNextLevel);
+
+        var snapshot = missingClass
+            ? new PlayerProgressSnapshot("Desmond", null, new Dictionary<string, ClassXpSnapshot>(), [])
+            : Snapshot(13, 100, 910);
+        session.ApplySnapshot(snapshot, Start.AddMinutes(62));
+
+        Assert.Null(session.RatePerHour);
+        Assert.Null(session.HoursUntilNextLevel);
+        Assert.Empty(session.Intervals);
+        Assert.Equal(100, session.SessionGain);
+        Assert.True(session.HasUncertainInterval);
+        Assert.False(session.IsStale);
+        Assert.Same(snapshot, session.LastSnapshot);
+        Assert.Equal(Start.AddMinutes(62), session.LastSuccessfulAt);
+    }
+
+    [Fact]
+    public void Invalid_sample_keeps_unexpired_rate_and_rebaselines_for_next_valid_gain()
+    {
+        var session = new XpTrackingSession();
+        session.ApplySnapshot(Snapshot(13, 800, 910), Start);
+        session.ApplySnapshot(Snapshot(13, 900, 910), Start.AddMinutes(2));
+        session.ApplySnapshot(Snapshot(13, 100, 910), Start.AddMinutes(61));
+
+        Assert.Equal(3000, session.RatePerHour);
+        Assert.Equal(810d / 3000d, session.HoursUntilNextLevel);
+        Assert.True(session.HasUncertainInterval);
+        Assert.Equal(100, session.SessionGain);
+
+        session.ApplySnapshot(Snapshot(13, 150, 910), Start.AddMinutes(63));
+
+        Assert.Equal(1500, session.RatePerHour);
+        Assert.Equal(150, session.SessionGain);
+        Assert.False(session.HasUncertainInterval);
+        Assert.Single(session.Intervals);
+    }
+
+    [Fact]
+    public void Valid_class_still_contributes_when_another_class_resets()
+    {
+        var session = new XpTrackingSession();
+        var before = Snapshot(13, 800, 910);
+        var after = Snapshot(13, 100, 910);
+        session.ApplySnapshot(before with
+        {
+            Classes = new Dictionary<string, ClassXpSnapshot>(before.Classes)
+            {
+                ["Mage"] = new(13, 100, 910, null)
+            }
+        }, Start);
+        session.ApplySnapshot(after with
+        {
+            Classes = new Dictionary<string, ClassXpSnapshot>(after.Classes)
+            {
+                ["Mage"] = new(13, 150, 910, null)
+            }
+        }, Start.AddMinutes(2));
+
+        Assert.Equal(50, session.SessionGain);
+        Assert.Equal(1500, session.RatePerHour);
+        Assert.True(session.HasUncertainInterval);
+    }
+
     private static PlayerProgressSnapshot Snapshot(
         int level,
         long currentXp,

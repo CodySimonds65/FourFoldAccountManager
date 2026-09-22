@@ -35,7 +35,6 @@ public sealed class XpTrackingSession
         if (_hasFailedPoll)
         {
             HasUncertainInterval = true;
-            RatePerHour = _window.GetRate(sampledAt);
             _hasFailedPoll = false;
         }
         else if (_baselineSnapshot is { } baseline && _baselineSampledAt is { } from)
@@ -45,10 +44,10 @@ public sealed class XpTrackingSession
             if (gain.ValidClassCount > 0)
             {
                 _window.Add(from, sampledAt, gain.ValidGain);
-                RatePerHour = _window.GetRate(sampledAt);
             }
         }
 
+        RatePerHour = _window.GetRate(sampledAt);
         LastSnapshot = snapshot;
         LastSuccessfulAt = sampledAt;
         _baselineSnapshot = snapshot;

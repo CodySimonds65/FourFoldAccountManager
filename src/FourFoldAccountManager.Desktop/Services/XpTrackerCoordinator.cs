@@ -22,16 +22,21 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
     private readonly FourFoldRankingClient _client = new();
     private readonly XpTrackerStore _store;
     private readonly Dispatcher _dispatcher;
+    private readonly Func<CancellationToken, Task> _runPollingLoop;
     private readonly Dictionary<Guid, TrackedAccount> _active = [];
     private readonly Dictionary<Guid, XpStoredAccount> _stored = [];
     private CancellationTokenSource? _loopCancellation;
     private Task? _loopTask;
     private bool _loaded;
 
-    public XpTrackerCoordinator(LocalDataPaths paths)
+    public XpTrackerCoordinator(LocalDataPaths paths) : this(paths, null) { }
+
+    // Tests can replace the background loop while exercising the real account/reset lifecycle.
+    internal XpTrackerCoordinator(LocalDataPaths paths, Func<CancellationToken, Task>? runPollingLoop)
     {
         _store = new XpTrackerStore(paths);
         _dispatcher = Dispatcher.CurrentDispatcher;
+        _runPollingLoop = runPollingLoop ?? RunLoopAsync;
     }
 
     public event EventHandler? Changed;
@@ -68,7 +73,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         if (_loopTask is null)
         {
             _loopCancellation = new CancellationTokenSource();
-            _loopTask = RunLoopAsync(_loopCancellation.Token);
+            _loopTask = _runPollingLoop(_loopCancellation.Token);
         }
     }
 
