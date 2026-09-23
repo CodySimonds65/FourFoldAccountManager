@@ -9,7 +9,6 @@ public sealed class LeaderboardSamplingService(
     LeaderboardCollectionOptions options,
     TimeProvider? timeProvider = null)
 {
-    private static readonly TimeSpan ActiveLease = TimeSpan.FromMinutes(3);
     private readonly SemaphoreSlim _runGate = new(1, 1);
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
 
@@ -21,14 +20,14 @@ public sealed class LeaderboardSamplingService(
         try
         {
             var start = _clock.GetTimestamp();
-            var active = await store.GetActiveProfilesAsync(now - ActiveLease, ct);
+            var active = await store.GetActiveProfilesAsync(now - options.ActiveLeaseDuration, ct);
             var fetched = false;
             foreach (var profile in active.GroupBy(x => x.PlayerId).Select(x => x.First()).OrderBy(x => x.PlayerId))
             {
                 ct.ThrowIfCancellationRequested();
                 if (fetched) await Task.Delay(options.MinimumSampleInterval, _clock, ct);
                 var observedAt = fetched ? now + _clock.GetElapsedTime(start) : now;
-                var currentActive = await store.GetActiveProfilesAsync(observedAt - ActiveLease, ct);
+                var currentActive = await store.GetActiveProfilesAsync(observedAt - options.ActiveLeaseDuration, ct);
                 var currentProfile = currentActive.FirstOrDefault(x => x.PlayerId == profile.PlayerId);
                 if (currentProfile is null) continue;
                 fetched = await SampleAsync(currentProfile.PlayerId, currentProfile.Username, observedAt, ct);

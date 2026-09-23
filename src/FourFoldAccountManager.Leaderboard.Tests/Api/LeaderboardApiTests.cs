@@ -309,6 +309,7 @@ public sealed class LeaderboardApiTests
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["ConnectionStrings:Leaderboard"] = "Host=127.0.0.1;Port=1;Database=unavailable;Username=none;Password=none;Timeout=1",
+                    ["Database:ApplyMigrationsOnStartup"] = "false",
                     ["RateLimiting:TrustCloudflareConnectingIp"] = trustCloudflareIp.ToString()
                 }));
             builder.ConfigureTestServices(services =>

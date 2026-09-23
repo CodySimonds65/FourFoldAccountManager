@@ -10,6 +10,15 @@ namespace FourFoldAccountManager.Leaderboard.Tests.Api;
 public sealed class LeaderboardReadinessTests
 {
     [Fact]
+    public void StartupFailsWhenMigrationsCannotReachPostgreSql()
+    {
+        using var fixture = new ConnectedApiFactory(
+            "Host=127.0.0.1;Port=1;Database=unavailable;Username=none;Password=none;Timeout=1");
+
+        Assert.ThrowsAny<Exception>(() => fixture.CreateClient());
+    }
+
+    [Fact]
     [Trait("RequiresDocker", "true")]
     public async Task ReadinessBecomesHealthyWhenPostgreSqlIsReachable()
     {

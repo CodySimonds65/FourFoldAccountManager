@@ -1,0 +1,10 @@
+.git
+.superpowers
+.env
+**/.env
+**/bin
+**/obj
+docs
+tests
+artifacts
+*.user

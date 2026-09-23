@@ -47,3 +47,42 @@ dotnet run --project src/FourFoldAccountManager.Desktop/FourFoldAccountManager.D
 ```
 
 Windows releases include a framework-dependent ZIP, standalone executable, and checksums file. The release workflow currently publishes `win-x64` assets only.
+
+## Shared XP leaderboard pilot
+
+The shared leaderboard is an opt-in feature under development. This repository contains a one-instance Render Free service blueprint and a Neon PostgreSQL setup path. No service URL is bundled with the desktop app. Until deployment is approved, the board displays a configuration status and makes no online leaderboard calls. Local XP tracking continues independently.
+
+### Data and scoring
+
+Enabling **Share linked accounts** sends a random installation ID, the sharing choice, each linked profile's public player ID and public ranking username, and the IDs of opted-in profiles whose game views are open. The desktop sends no saved game credentials, Windows credentials, local account GUIDs, local profile labels, or client-computed XP totals. A linked public profile is a user's enrollment choice; linking does not prove ownership of the game account. The host may process request IP addresses for normal web logs and rate limiting.
+
+The service reads public profiles only when collection has been separately enabled and an active signal is fresh. Desktop heartbeats renew once a minute while opted-in game views are open; active leases expire after three missed renewals (three minutes). One player ID is sampled once per approved interval across all installations. The first sample creates a zero-score baseline; failed, mismatched, and uncertain intervals add no gain. Daily periods start at 00:00 UTC, ISO weeks start Monday 00:00 UTC, and months start on the first day at 00:00 UTC. Period ends are exclusive. The API shows current periods only, with no historical archive. The service prunes score events older than 40 days daily while running. It retains the latest public XP snapshot for future baselines; opting out stops new sampling but does not erase gains already recorded in the current period. A deletion request requires the operator to remove stored data explicitly.
+
+### Hosting review and setup
+
+The proposed pilot uses one Render Free Docker web instance for the API and its background workers, plus one Neon Free PostgreSQL project. The Blueprint in `render.yaml` sets the service to one instance, turns automatic deploys off, and checks `/health/live`. On boot, EF Core applies migrations before the web server starts; a failed migration fails startup. `/health/ready` checks PostgreSQL connectivity. The Blueprint enables Cloudflare client IP rate limiting only for Render; the API also requires Render's `RENDER=true` runtime marker before trusting that header. There is no separate worker service or Render database. Render may sleep after 15 minutes without inbound traffic and take about a minute to wake; active client heartbeats and board reads are the only normal inbound wakeups. The desktop tolerates cold starts and caches the last board page.
+
+Before provisioning, obtain and record the game operator's permission or supported feed and the minimum allowed per-profile request interval. Collection remains `false`, its URL template empty, and its interval `00:00:00` until that decision. Source authorization is still pending. The template must be an approved HTTPS public-profile URL containing `{playerId}`. Do not configure a positive interval or enable collection merely to smoke test hosting.
+
+After approval to provision the free pilot:
+
+1. Create a Neon Free PostgreSQL project and a Render Blueprint from `render.yaml`. Keep exactly one web instance and disable paid upgrades or automatic paid usage in the provider account. Choose regions with acceptable database latency. Do not add a Render Postgres database.
+2. In Render, set the secret `ConnectionStrings__Leaderboard` to the Neon **direct** connection details in Npgsql form: `Host=<Neon host>;Database=<database>;Username=<user>;Password=<password>;SSL Mode=VerifyFull`. Store the actual value only in Render's secret environment variable. `sync: false` prompts for it at initial Blueprint creation; later changes must be made in the Render dashboard. Confirm the Neon certificate validates under `VerifyFull`; do not disable certificate checks to make a failed connection pass.
+3. Start with `Collection__Enabled=false` and `Collection__MinimumSampleInterval=00:00:00`. Check `/health/live` and `/health/ready`, the migration log, and anonymous read responses. The disabled collector makes no game-profile requests. Review quota usage and a database export before enabling anything.
+4. Only after source cadence and collection are approved, configure `Collection__ProfileUrlTemplate` and `Collection__MinimumSampleInterval` with the approved HTTPS route and minimum interval. Then set `Collection__Enabled=true` in Render. Keep the replica count at one. A restart is needed for these settings because the service binds collection options at startup.
+5. After the public HTTPS service URL is approved for desktop distribution, set `FOURFOLD_LEADERBOARD_URL` to that root URL when launching the desktop app or add the approved URL in a reviewed release change. The value is public, not secret. The desktop rejects HTTP, credentials in the URL, paths, queries, and fragments.
+
+Monitor Render's [750 free instance-hours per workspace per month, outbound bandwidth, and build pipeline minutes](https://render.com/docs/free). A Free instance can sleep when idle; exhausting hours suspends Free web services until the next month. Bandwidth/build overages can bill an account with a payment method, so check the account's billing controls before provisioning. Monitor Neon's [100 CU-hours per project per month and 0.5 GB of storage per project](https://neon.com/blog/neon-backend-is-ga); CU-hours measure compute size multiplied by active hours. If quotas or source limits are too tight, set `Collection__Enabled=false` and leave the pilot paused. No paid fallback is configured.
+
+### Export, restore, rollback, and deletion
+
+Use PostgreSQL 16 or newer client tools against Neon's **direct**, TLS-verified endpoint. Supply host, database, username, and password through the local PostgreSQL environment (`PGHOST`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE=verify-full`, `PGSSLROOTCERT=system`) so the password is not embedded in the command. Keep dump files private and encrypted; they contain installation IDs, public profile links, XP snapshots, and gain events.
+
+```powershell
+pg_dump --format=custom --no-owner --no-acl --file=leaderboard.dump
+pg_restore --list leaderboard.dump
+```
+
+To restore, first pause collection and desktop participation, create a new empty Neon database or recovery branch, verify the dump, then run `pg_restore --no-owner --no-acl --dbname=<empty-database> leaderboard.dump` with credentials for that target. Check the table counts and `/health/ready` before directing the service to the restored database. Do not restore over the active database. Take a fresh export before schema changes; a code rollback alone cannot reverse a database migration. To roll back collection immediately, set `Collection__Enabled=false`, restart the one service instance, and keep the previous database intact. To roll back a release, deploy the previous compatible image only after checking its schema compatibility; restore a pre-change dump to a separate database if the migration is incompatible.
+
+For a request to erase all service data, disable collection and disconnect desktop clients first. Export only if the requester has authorized retaining a backup, then purge the four application tables (`installation_profile`, `installation_participation`, `player_sample_state`, `xp_gain_event`) in a controlled database operation; also delete any snapshots, branches, dumps, and provider backups containing the data according to their retention policies. Keep `__EFMigrationsHistory` only if the service database will be reused. Deleting the entire Neon project is the simplest full erasure when the pilot is retired. Local desktop leaderboard caches on each installation must be removed there as well.

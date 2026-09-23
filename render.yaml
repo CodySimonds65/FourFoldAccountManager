@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: fourfold-shared-xp-leaderboard
+    runtime: docker
+    plan: free
+    numInstances: 1
+    autoDeployTrigger: off
+    dockerContext: .
+    dockerfilePath: src/FourFoldAccountManager.Leaderboard.Service/Dockerfile
+    healthCheckPath: /health/live
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ConnectionStrings__Leaderboard
+        sync: false
+      - key: Collection__Enabled
+        value: "false"
+      - key: Collection__MinimumSampleInterval
+        value: "00:00:00"
+      - key: Collection__ProfileUrlTemplate
+        value: ""
+      - key: Collection__ActiveLeaseDuration
+        value: "00:03:00"
+      - key: Collection__RetentionDays
+        value: "40"
+      - key: RateLimiting__TrustCloudflareConnectingIp
+        value: "true"

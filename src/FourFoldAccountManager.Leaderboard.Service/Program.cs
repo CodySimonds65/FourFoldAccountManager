@@ -8,6 +8,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 var collection = new LeaderboardCollectionOptions();
 builder.Configuration.GetSection(LeaderboardCollectionOptions.SectionName).Bind(collection);
+if (collection.RetentionDays is < 1 or > 40)
+    throw new InvalidOperationException("Collection:RetentionDays must be between 1 and 40.");
+if (collection.ActiveLeaseDuration != TimeSpan.FromMinutes(3))
+    throw new InvalidOperationException("Collection:ActiveLeaseDuration must be three minutes.");
 builder.Services.AddSingleton(collection);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddDbContext<LeaderboardDbContext>(options =>
@@ -18,6 +22,7 @@ builder.Services.AddSingleton<ILeaderboardPublicProfileSource>(services =>
     new FourFoldPublicProfileSource(services.GetRequiredService<LeaderboardCollectionOptions>()));
 builder.Services.AddScoped<LeaderboardSamplingService>();
 builder.Services.AddHostedService<LeaderboardSamplingWorker>();
+builder.Services.AddHostedService<LeaderboardRetentionWorker>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -36,6 +41,13 @@ builder.Services.AddRateLimiter(options =>
 });
 
 var app = builder.Build();
+if (app.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<LeaderboardDbContext>();
+    await db.Database.MigrateAsync();
+}
+
 app.UseRateLimiter();
 app.MapParticipationEndpoints();
 app.MapLeaderboardEndpoints();
