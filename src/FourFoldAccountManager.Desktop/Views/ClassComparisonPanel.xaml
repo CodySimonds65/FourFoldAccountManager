@@ -62,7 +62,8 @@
                 <Border Background="{DynamicResource Brush.SurfaceRaised}" BorderBrush="{DynamicResource Brush.Border}"
                         BorderThickness="1" CornerRadius="7" Padding="8">
                     <StackPanel>
-                        <TextBlock Text="MEAN DELTA" FontSize="9" Foreground="{DynamicResource Brush.TextMuted}" />
+                        <TextBlock Text="MEAN DELTA" FontSize="8" TextWrapping="Wrap" TextAlignment="Center"
+                                   Foreground="{DynamicResource Brush.TextMuted}" />
                         <TextBlock x:Name="MeanText" Text="—" FontSize="18" FontWeight="Bold"
                                    Foreground="{DynamicResource Brush.AccentGold}" Margin="0,3,0,0" />
                     </StackPanel>
@@ -75,7 +76,7 @@
                 </Grid.RowDefinitions>
                 <Grid Margin="2,0,2,4">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" MinWidth="34" />
                         <ColumnDefinition Width="Auto" SharedSizeGroup="ProfileColumn" />
                         <ColumnDefinition Width="Auto" SharedSizeGroup="AverageColumn" />
                         <ColumnDefinition Width="Auto" SharedSizeGroup="DifferenceColumn" />
@@ -83,7 +84,7 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="STAT" Style="{StaticResource QuietTextStyle}" />
                     <TextBlock Grid.Column="1" Text="PROFILE" Style="{StaticResource QuietTextStyle}" HorizontalAlignment="Right" Margin="6,0,0,0" />
-                    <TextBlock Grid.Column="2" Text="AVERAGE" Style="{StaticResource QuietTextStyle}" HorizontalAlignment="Right" Margin="6,0,0,0" />
+                    <TextBlock Grid.Column="2" Text="AVG" Style="{StaticResource QuietTextStyle}" HorizontalAlignment="Right" Margin="6,0,0,0" />
                     <TextBlock Grid.Column="3" Text="DELTA" Style="{StaticResource QuietTextStyle}" HorizontalAlignment="Right" Margin="6,0,0,0" />
                     <TextBlock Grid.Column="4" Text="%" Style="{StaticResource QuietTextStyle}" HorizontalAlignment="Right" Margin="6,0,0,0" />
                 </Grid>
@@ -94,7 +95,7 @@
                                 <Border BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1" Padding="2,9">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" MinWidth="34" />
                                             <ColumnDefinition Width="Auto" SharedSizeGroup="ProfileColumn" />
                                             <ColumnDefinition Width="Auto" SharedSizeGroup="AverageColumn" />
                                             <ColumnDefinition Width="Auto" SharedSizeGroup="DifferenceColumn" />
