@@ -181,6 +181,15 @@ public partial class LeaderboardPanel : UserControl
                 ? "No XP gains have been recorded for this period yet."
                 : string.Empty;
         }
+        if (page.PendingBaselineProfiles > 0)
+        {
+            var count = page.PendingBaselineProfiles;
+            var baselineStatus = $"{count:N0} enrolled {(count == 1 ? "profile has" : "profiles have")} no measured XP gain yet. " +
+                                 "The first valid sample establishes a baseline; later measured gains appear in the ranking.";
+            StateText.Text = string.IsNullOrEmpty(StateText.Text)
+                ? baselineStatus
+                : $"{StateText.Text} {baselineStatus}";
+        }
         UpdatePaging();
     }
 

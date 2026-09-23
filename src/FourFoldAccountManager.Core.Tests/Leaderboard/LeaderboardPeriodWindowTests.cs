@@ -112,6 +112,7 @@ public sealed class LeaderboardPeriodWindowTests
         Assert.Equal([277], heartbeat.ActivePlayerIds);
         Assert.Equal(LeaderboardPeriod.Daily, page.Period);
         Assert.Equal(entry, Assert.Single(page.Entries));
+        Assert.Equal(0, page.PendingBaselineProfiles);
     }
 
     private static DateTimeOffset Utc(int year, int month, int day) =>

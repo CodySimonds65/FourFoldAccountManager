@@ -5,8 +5,16 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FourFoldAccountManager.Leaderboard.Service.Data;
 
-public sealed class EfLeaderboardStore(LeaderboardDbContext db) : ILeaderboardStore
+public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapacityOptions? capacity = null) : ILeaderboardStore
 {
+    private readonly LeaderboardCapacityOptions _capacity = capacity ?? new LeaderboardCapacityOptions();
+    private const int PlayerLockNamespace = 20260923;
+    private const long EnrollmentLockKey = 2026092301;
+
+    private async Task LockPlayerAsync(int playerId, CancellationToken ct) =>
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({PlayerLockNamespace}, {playerId})", ct);
+
     public async Task ApplyHeartbeatAsync(ParticipationHeartbeat heartbeat, DateTimeOffset receivedAtUtc, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(heartbeat);
@@ -31,6 +39,9 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db) : ILeaderboardSt
 
         var now = receivedAtUtc.ToUniversalTime();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        // Global enrollment lock makes both capacity counts and cleanup atomic across instances.
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({EnrollmentLockKey})", ct);
         // Serialize replacements for this installation across service instances, including its first insert.
         var lockKey = BinaryPrimitives.ReadInt64BigEndian(
             SHA256.HashData(heartbeat.InstallationId.ToByteArray()));
@@ -39,6 +50,13 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db) : ILeaderboardSt
         var installation = await db.Installations.FindAsync([heartbeat.InstallationId], ct);
         if (installation is null)
         {
+            if (!heartbeat.SharingEnabled)
+            {
+                await transaction.CommitAsync(ct);
+                return;
+            }
+            if (await db.Installations.CountAsync(ct) >= _capacity.MaxInstallations)
+                throw new LeaderboardCapacityExceededException("The leaderboard installation limit has been reached.");
             installation = new InstallationParticipationEntity { InstallationId = heartbeat.InstallationId };
             db.Installations.Add(installation);
         }
@@ -47,8 +65,14 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db) : ILeaderboardSt
 
         var previous = await db.InstallationProfiles
             .Where(x => x.InstallationId == heartbeat.InstallationId).ToListAsync(ct);
+        var incomingLinks = heartbeat.SharingEnabled ? heartbeat.LinkedProfiles.Count : 0;
+        if (incomingLinks > previous.Count &&
+            await db.InstallationProfiles.CountAsync(ct) + incomingLinks - previous.Count > _capacity.MaxProfileLinks)
+            throw new LeaderboardCapacityExceededException("The leaderboard profile-link limit has been reached.");
         var affectedIds = previous.Where(x => x.IsActive).Select(x => x.PlayerId)
             .Concat(active).Distinct().ToArray();
+        foreach (var playerId in affectedIds.OrderBy(x => x))
+            await LockPlayerAsync(playerId, ct);
         var activeCutoff = now - TimeSpan.FromMinutes(3);
         var freshBefore = affectedIds.Length == 0 ? [] : await db.InstallationProfiles.AsNoTracking()
             .Where(x => affectedIds.Contains(x.PlayerId) && x.Installation.SharingEnabled &&
@@ -114,27 +138,62 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db) : ILeaderboardSt
             state.SnapshotJson, state.LastSampledAtUtc, state.NeedsBaseline);
     }
 
-    public async Task SaveObservationAsync(PlayerObservation observation, CancellationToken ct)
+    public async Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
+        TimeSpan activeLeaseDuration, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(observation);
         if (observation.PlayerId <= 0) throw new ArgumentOutOfRangeException(nameof(observation));
         if (string.IsNullOrWhiteSpace(observation.Username) || observation.Username.Length > 256)
             throw new ArgumentException("Public username is required.", nameof(observation));
         if (observation.ValidGain < 0) throw new ArgumentOutOfRangeException(nameof(observation));
+        if (activeLeaseDuration <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(activeLeaseDuration));
 
         var minimalSnapshotJson = XpSnapshotJson.Normalize(observation.SnapshotJson);
         var observedAt = observation.ObservedAtUtc.ToUniversalTime();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        var state = await db.PlayerSampleStates.FindAsync([observation.PlayerId], ct);
+        await LockPlayerAsync(observation.PlayerId, ct);
+        var active = await db.InstallationProfiles.AsNoTracking().AnyAsync(x =>
+            x.PlayerId == observation.PlayerId && x.Installation.SharingEnabled &&
+            x.IsActive && x.LastActiveAtUtc > observedAt - activeLeaseDuration, ct);
+        var state = await db.PlayerSampleStates.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.PlayerId == observation.PlayerId, ct);
+        var unchanged = state is null
+            ? expectedState is null
+            : expectedState is not null &&
+              state.Username == expectedState.Username &&
+              state.SnapshotJson == expectedState.SnapshotJson &&
+              state.LastSampledAtUtc == expectedState.LastSampledAtUtc &&
+              state.NeedsBaseline == expectedState.NeedsBaseline;
+        if (!active || !unchanged)
+        {
+            if (state is not null)
+                await db.PlayerSampleStates.Where(x => x.PlayerId == observation.PlayerId)
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.NeedsBaseline, true), ct);
+            await transaction.CommitAsync(ct);
+            return;
+        }
         if (state is null)
         {
-            state = new PlayerSampleStateEntity { PlayerId = observation.PlayerId };
+            state = new PlayerSampleStateEntity
+            {
+                PlayerId = observation.PlayerId,
+                Username = observation.Username.Trim(),
+                SnapshotJson = minimalSnapshotJson,
+                LastSampledAtUtc = observedAt,
+                NeedsBaseline = observation.NeedsBaseline,
+                HasEverScoredGain = observation.ValidGain is > 0
+            };
             db.PlayerSampleStates.Add(state);
         }
-        state.Username = observation.Username.Trim();
-        state.SnapshotJson = minimalSnapshotJson;
-        state.LastSampledAtUtc = observedAt;
-        state.NeedsBaseline = observation.NeedsBaseline;
+        else
+            await db.PlayerSampleStates.Where(x => x.PlayerId == observation.PlayerId)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(x => x.Username, observation.Username.Trim())
+                    .SetProperty(x => x.SnapshotJson, minimalSnapshotJson)
+                    .SetProperty(x => x.LastSampledAtUtc, observedAt)
+                    .SetProperty(x => x.NeedsBaseline, observation.NeedsBaseline)
+                    .SetProperty(x => x.HasEverScoredGain,
+                        state.HasEverScoredGain || observation.ValidGain > 0), ct);
 
         if (observation.ValidGain is > 0)
         {
@@ -153,8 +212,11 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db) : ILeaderboardSt
     public async Task MarkNeedsBaselineAsync(int playerId, CancellationToken ct)
     {
         if (playerId <= 0) throw new ArgumentOutOfRangeException(nameof(playerId));
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await LockPlayerAsync(playerId, ct);
         await db.PlayerSampleStates.Where(x => x.PlayerId == playerId)
             .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.NeedsBaseline, true), ct);
+        await transaction.CommitAsync(ct);
     }
 
     public async Task<LeaderboardPage> GetPageAsync(LeaderboardPeriod period, int page, int pageSize,
@@ -167,34 +229,50 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db) : ILeaderboardSt
         var now = nowUtc.ToUniversalTime();
         var (start, end) = LeaderboardPeriodWindow.GetCurrent(period, now);
 
-        var totals = await db.XpGainEvents.AsNoTracking()
+        var totals = db.XpGainEvents.AsNoTracking()
             .Where(x => x.ObservedAtUtc >= start && x.ObservedAtUtc < end)
             .GroupBy(x => x.PlayerId)
-            .Select(g => new { PlayerId = g.Key, XpGained = g.Sum(x => x.Gain) })
-            .ToListAsync(ct);
-        var ids = totals.Select(x => x.PlayerId).ToArray();
-        var states = await db.PlayerSampleStates.AsNoTracking()
-            .Where(x => ids.Contains(x.PlayerId))
-            .ToDictionaryAsync(x => x.PlayerId, ct);
-        var ordered = totals
-            .Where(x => states.ContainsKey(x.PlayerId))
-            .OrderByDescending(x => x.XpGained)
-            .ThenBy(x => states[x.PlayerId].Username, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(x => x.PlayerId)
-            .ToArray();
+            .Select(g => new { PlayerId = g.Key, XpGained = g.Sum(x => x.Gain) });
+        var ranked = from total in totals
+                     join state in db.PlayerSampleStates.AsNoTracking()
+                         on total.PlayerId equals state.PlayerId
+                     select new
+                     {
+                         total.PlayerId,
+                         total.XpGained,
+                         state.Username,
+                         state.LastSampledAtUtc,
+                         state.NeedsBaseline
+                     };
+        var totalEntries = await ranked.CountAsync(ct);
         var skip = Math.Min((long)(page - 1) * pageSize, int.MaxValue);
-        var entries = ordered.Skip((int)skip).Take(pageSize)
-            .Select((x, index) =>
-            {
-                var state = states[x.PlayerId];
-                return new LeaderboardEntry((int)skip + index + 1, x.PlayerId, state.Username,
-                    x.XpGained, state.LastSampledAtUtc, state.NeedsBaseline ||
-                    now - state.LastSampledAtUtc > staleAfter);
-            })
-            .ToArray();
-        return new LeaderboardPage(period, start, end, page, pageSize, ordered.Length, now, entries);
+        var rows = await ranked.OrderByDescending(x => x.XpGained)
+            .ThenBy(x => x.Username.ToLower())
+            .ThenBy(x => x.PlayerId)
+            .Skip((int)skip).Take(pageSize).ToArrayAsync(ct);
+        var entries = rows.Select((x, index) =>
+            new LeaderboardEntry((int)skip + index + 1, x.PlayerId, x.Username,
+                x.XpGained, x.LastSampledAtUtc,
+                x.NeedsBaseline || now - x.LastSampledAtUtc > staleAfter)).ToArray();
+        var pendingBaselineProfiles = await db.InstallationProfiles.AsNoTracking()
+            .Where(x => x.Installation.SharingEnabled &&
+                !db.PlayerSampleStates.Any(state =>
+                    state.PlayerId == x.PlayerId && state.HasEverScoredGain))
+            .Select(x => x.PlayerId).Distinct().CountAsync(ct);
+        return new LeaderboardPage(period, start, end, page, pageSize, totalEntries, now, entries,
+            pendingBaselineProfiles);
     }
 
     public Task DeleteGainEventsBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken ct) =>
         db.XpGainEvents.Where(x => x.ObservedAtUtc < cutoffUtc.ToUniversalTime()).ExecuteDeleteAsync(ct);
+
+    public async Task DeleteInactiveInstallationsBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({EnrollmentLockKey})", ct);
+        await db.Installations.Where(x => x.LastHeartbeatAtUtc < cutoffUtc.ToUniversalTime())
+            .ExecuteDeleteAsync(ct);
+        await transaction.CommitAsync(ct);
+    }
 }

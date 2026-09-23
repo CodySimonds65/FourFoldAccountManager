@@ -20,8 +20,10 @@ public sealed class LeaderboardRetentionWorker(
             {
                 using var scope = scopeFactory.CreateScope();
                 var store = scope.ServiceProvider.GetRequiredService<ILeaderboardStore>();
+                var now = clock.GetUtcNow();
                 await store.DeleteGainEventsBeforeAsync(
-                    clock.GetUtcNow().AddDays(-options.RetentionDays), stoppingToken);
+                    now.AddDays(-options.RetentionDays), stoppingToken);
+                await store.DeleteInactiveInstallationsBeforeAsync(now.AddDays(-40), stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

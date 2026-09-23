@@ -13,6 +13,11 @@ if (collection.RetentionDays is < 1 or > 40)
 if (collection.ActiveLeaseDuration != TimeSpan.FromMinutes(3))
     throw new InvalidOperationException("Collection:ActiveLeaseDuration must be three minutes.");
 builder.Services.AddSingleton(collection);
+var capacity = new LeaderboardCapacityOptions();
+builder.Configuration.GetSection(LeaderboardCapacityOptions.SectionName).Bind(capacity);
+if (capacity.MaxInstallations is < 1 or > 5_000 || capacity.MaxProfileLinks is < 1 or > 50_000)
+    throw new InvalidOperationException("Capacity ceilings must be positive and may not exceed 5,000 installations or 50,000 profile links.");
+builder.Services.AddSingleton(capacity);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddDbContext<LeaderboardDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Leaderboard") ??
@@ -34,6 +39,18 @@ builder.Services.AddRateLimiter(options =>
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 30,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+    options.AddPolicy("public-read", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            RateLimitClientIp.GetPartitionKey(context,
+                context.RequestServices.GetRequiredService<IConfiguration>()
+                    .GetValue<bool>("RateLimiting:TrustCloudflareConnectingIp")),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
                 Window = TimeSpan.FromMinutes(1),
                 QueueLimit = 0,
                 AutoReplenishment = true

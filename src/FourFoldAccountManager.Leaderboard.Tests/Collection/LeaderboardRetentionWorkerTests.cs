@@ -27,9 +27,31 @@ public sealed class LeaderboardRetentionWorkerTests
         Assert.InRange(cutoff, before, DateTimeOffset.UtcNow.AddDays(-40));
     }
 
+    [Fact]
+    public async Task DisabledCollectionStillExpiresInactiveInstallations()
+    {
+        var store = new RecordingStore();
+        using var provider = new ServiceCollection()
+            .AddSingleton<ILeaderboardStore>(store)
+            .BuildServiceProvider();
+        var before = DateTimeOffset.UtcNow.AddDays(-40);
+        using var worker = new LeaderboardRetentionWorker(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            new LeaderboardCollectionOptions { Enabled = false, RetentionDays = 40 },
+            TimeProvider.System);
+
+        await worker.StartAsync(default);
+        var cutoff = await store.InstallationCutoff.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await worker.StopAsync(default);
+
+        Assert.InRange(cutoff, before, DateTimeOffset.UtcNow.AddDays(-40));
+    }
+
     private sealed class RecordingStore : ILeaderboardStore
     {
         public TaskCompletionSource<DateTimeOffset> Cutoff { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource<DateTimeOffset> InstallationCutoff { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public Task DeleteGainEventsBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken ct)
@@ -44,12 +66,18 @@ public sealed class LeaderboardRetentionWorkerTests
             throw new NotImplementedException();
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) =>
             throw new NotImplementedException();
-        public Task SaveObservationAsync(PlayerObservation observation, CancellationToken ct) =>
+        public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
+            TimeSpan activeLeaseDuration, CancellationToken ct) =>
             throw new NotImplementedException();
         public Task MarkNeedsBaselineAsync(int playerId, CancellationToken ct) =>
             throw new NotImplementedException();
         public Task<LeaderboardPage> GetPageAsync(LeaderboardPeriod period, int page, int pageSize,
             DateTimeOffset nowUtc, TimeSpan staleAfter, CancellationToken ct) =>
             throw new NotImplementedException();
+        public Task DeleteInactiveInstallationsBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken ct)
+        {
+            InstallationCutoff.TrySetResult(cutoffUtc);
+            return Task.CompletedTask;
+        }
     }
 }

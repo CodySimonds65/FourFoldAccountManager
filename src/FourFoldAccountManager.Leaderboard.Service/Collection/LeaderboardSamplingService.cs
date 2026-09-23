@@ -81,7 +81,6 @@ public sealed class LeaderboardSamplingService(
 
         if (now - previous.LastSampledAtUtc > options.MinimumSampleInterval * 3)
         {
-            await store.MarkNeedsBaselineAsync(playerId, ct);
             await SaveAsync(null);
             return true;
         }
@@ -111,7 +110,6 @@ public sealed class LeaderboardSamplingService(
         }
         catch (Exception ex) when (ex is InvalidDataException or System.Text.Json.JsonException or ArgumentException)
         {
-            await store.MarkNeedsBaselineAsync(playerId, ct);
             await SaveAsync(null);
             return true;
         }
@@ -143,6 +141,6 @@ public sealed class LeaderboardSamplingService(
 
         async Task SaveAsync(long? validGain) => await store.SaveObservationAsync(
             new PlayerObservation(playerId, current.Username.Trim(), XpSnapshotJson.Serialize(current),
-                validGain, now, false), ct);
+                validGain, now, false), previous, options.ActiveLeaseDuration, ct);
     }
 }

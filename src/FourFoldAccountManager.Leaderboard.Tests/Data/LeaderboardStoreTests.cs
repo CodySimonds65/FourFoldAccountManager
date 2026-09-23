@@ -54,7 +54,7 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
         var second = Guid.NewGuid();
         await _store.ApplyHeartbeatAsync(Heartbeat(first, (1, "Alice")), Now, default);
         await _store.ApplyHeartbeatAsync(Heartbeat(second, (2, "Bob")), Now, default);
-        await _store.SaveObservationAsync(Observation(1, "Alice", 25, Now), default);
+        await SeedObservationAsync(Observation(1, "Alice", 25, Now));
         await _store.ApplyHeartbeatAsync(new ParticipationHeartbeat(first, false, [], []), Now.AddMinutes(1), default);
 
         var activeIds = (await _store.GetActiveProfilesAsync(Now.AddMilliseconds(-1), default)).Select(x => x.PlayerId).ToArray();
@@ -69,7 +69,7 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
     {
         var installation = Guid.NewGuid();
         await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now, default);
-        await _store.SaveObservationAsync(Observation(1, "Alice", null, Now), default);
+        await SeedObservationAsync(Observation(1, "Alice", null, Now));
 
         // A collector interval longer than the three-minute lease has not run in between.
         await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now.AddMinutes(5), default);
@@ -82,7 +82,7 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
     {
         var installation = Guid.NewGuid();
         await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now, default);
-        await _store.SaveObservationAsync(Observation(1, "Alice", null, Now), default);
+        await SeedObservationAsync(Observation(1, "Alice", null, Now));
         await _store.ApplyHeartbeatAsync(new ParticipationHeartbeat(installation, true,
             [new LeaderboardProfile(1, "Alice")], []), Now.AddMinutes(1), default);
 
@@ -153,10 +153,10 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
     [Fact]
     public async Task AggregatesByPlayerAndSortsDeterministicallyWithPageBounds()
     {
-        await _store.SaveObservationAsync(Observation(3, "zed", 10, Now), default);
-        await _store.SaveObservationAsync(Observation(2, "alice", 10, Now), default);
-        await _store.SaveObservationAsync(Observation(1, "Alice", 10, Now), default);
-        await _store.SaveObservationAsync(Observation(3, "zed", 5, Now.AddMinutes(1)), default);
+        await SeedObservationAsync(Observation(3, "zed", 10, Now));
+        await SeedObservationAsync(Observation(2, "alice", 10, Now));
+        await SeedObservationAsync(Observation(1, "Alice", 10, Now));
+        await SeedObservationAsync(Observation(3, "zed", 5, Now.AddMinutes(1)));
 
         var first = await _store.GetPageAsync(LeaderboardPeriod.Daily, 1, 2, Now.AddMinutes(1),
             TimeSpan.FromMinutes(3), default);
@@ -180,9 +180,9 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
     public async Task UsesHalfOpenUtcWindows()
     {
         var window = LeaderboardPeriodWindow.GetCurrent(LeaderboardPeriod.Daily, Now);
-        await _store.SaveObservationAsync(Observation(1, "Alice", 2, window.StartUtc), default);
-        await _store.SaveObservationAsync(Observation(1, "Alice", 3, window.EndUtc.AddMicroseconds(-1)), default);
-        await _store.SaveObservationAsync(Observation(1, "Alice", 7, window.EndUtc), default);
+        await SeedObservationAsync(Observation(1, "Alice", 2, window.StartUtc));
+        await SeedObservationAsync(Observation(1, "Alice", 3, window.EndUtc.AddMicroseconds(-1)));
+        await SeedObservationAsync(Observation(1, "Alice", 7, window.EndUtc));
 
         var page = await _store.GetPageAsync(LeaderboardPeriod.Daily, 1, 50, Now,
             TimeSpan.FromMinutes(3), default);
@@ -192,8 +192,8 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
     [Fact]
     public async Task PrunesOldEventsButKeepsLatestPlayerState()
     {
-        await _store.SaveObservationAsync(Observation(1, "Alice", 2, Now.AddDays(-41)), default);
-        await _store.SaveObservationAsync(Observation(1, "Alice", 3, Now.AddDays(-39)), default);
+        await SeedObservationAsync(Observation(1, "Alice", 2, Now.AddDays(-41)));
+        await SeedObservationAsync(Observation(1, "Alice", 3, Now.AddDays(-39)));
         await _store.DeleteGainEventsBeforeAsync(Now.AddDays(-40), default);
 
         Assert.Single(await _db.XpGainEvents.ToListAsync());
@@ -203,7 +203,7 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
     [Fact]
     public async Task FailedFetchMarksBaselineWithoutReplacingLastGoodSnapshot()
     {
-        await _store.SaveObservationAsync(Observation(1, "Alice", null, Now), default);
+        await SeedObservationAsync(Observation(1, "Alice", null, Now));
         var previous = await _store.GetPlayerStateAsync(1, default);
         await _store.MarkNeedsBaselineAsync(1, default);
         var state = await _store.GetPlayerStateAsync(1, default);
@@ -211,6 +211,157 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
         Assert.True(state.NeedsBaseline);
         Assert.Equal(previous!.SnapshotJson, state.SnapshotJson);
         Assert.Equal(Now, state.LastSampledAtUtc);
+    }
+
+    [Fact]
+    public async Task ObservationAfterOptOutPreservesBaselineAndWritesNoGain()
+    {
+        var installation = Guid.NewGuid();
+        await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now, default);
+        await SeedObservationAsync(Observation(1, "Alice", null, Now));
+        var expected = await _store.GetPlayerStateAsync(1, default);
+        await _store.ApplyHeartbeatAsync(new ParticipationHeartbeat(installation, false, [], []),
+            Now.AddMinutes(1), default);
+
+        await _store.SaveObservationAsync(Observation(1, "Alice", 25, Now.AddMinutes(1)),
+            expected, TimeSpan.FromMinutes(3), default);
+
+        Assert.True((await _store.GetPlayerStateAsync(1, default))!.NeedsBaseline);
+        Assert.Empty(await _db.XpGainEvents.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ObservationAfterLeaseExpiryPreservesBaselineAndWritesNoGain()
+    {
+        await _store.ApplyHeartbeatAsync(Heartbeat(Guid.NewGuid(), (1, "Alice")), Now, default);
+        await SeedObservationAsync(Observation(1, "Alice", null, Now));
+        var expected = await _store.GetPlayerStateAsync(1, default);
+
+        await _store.SaveObservationAsync(Observation(1, "Alice", 25, Now.AddMinutes(3)),
+            expected, TimeSpan.FromMinutes(3), default);
+
+        Assert.True((await _store.GetPlayerStateAsync(1, default))!.NeedsBaseline);
+        Assert.Empty(await _db.XpGainEvents.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ChangedSampleStateCannotBeOverwrittenByInflightObservation()
+    {
+        await _store.ApplyHeartbeatAsync(Heartbeat(Guid.NewGuid(), (1, "Alice")), Now, default);
+        await SeedObservationAsync(Observation(1, "Alice", null, Now));
+        var expected = await _store.GetPlayerStateAsync(1, default);
+        await _store.MarkNeedsBaselineAsync(1, default);
+
+        await _store.SaveObservationAsync(Observation(1, "Alice", 25, Now.AddMinutes(1)),
+            expected, TimeSpan.FromMinutes(3), default);
+
+        Assert.True((await _store.GetPlayerStateAsync(1, default))!.NeedsBaseline);
+        Assert.Empty(await _db.XpGainEvents.ToListAsync());
+    }
+
+    [Fact]
+    public async Task AnotherFreshInstallationKeepsPlayerEligibleAfterFirstOptsOut()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        await _store.ApplyHeartbeatAsync(Heartbeat(first, (1, "Alice")), Now, default);
+        await _store.ApplyHeartbeatAsync(Heartbeat(second, (1, "Alice")), Now, default);
+        await SeedObservationAsync(Observation(1, "Alice", null, Now));
+        var expected = await _store.GetPlayerStateAsync(1, default);
+        await _store.ApplyHeartbeatAsync(new ParticipationHeartbeat(first, false, [], []),
+            Now.AddMinutes(1), default);
+
+        await _store.SaveObservationAsync(Observation(1, "Alice", 25, Now.AddMinutes(1)),
+            expected, TimeSpan.FromMinutes(3), default);
+
+        Assert.False((await _store.GetPlayerStateAsync(1, default))!.NeedsBaseline);
+        Assert.Equal(25, Assert.Single(await _db.XpGainEvents.ToListAsync()).Gain);
+    }
+
+    [Fact]
+    public async Task ServiceCeilingsRejectNewEnrollmentAndKeepExistingUpdatesAndOptOut()
+    {
+        var store = new EfLeaderboardStore(_db, new LeaderboardCapacityOptions
+        {
+            MaxInstallations = 1,
+            MaxProfileLinks = 1
+        });
+        var installation = Guid.NewGuid();
+        await store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now, default);
+        await Assert.ThrowsAsync<LeaderboardCapacityExceededException>(() =>
+            store.ApplyHeartbeatAsync(Heartbeat(Guid.NewGuid(), (2, "Bob")), Now, default));
+        await Assert.ThrowsAsync<LeaderboardCapacityExceededException>(() =>
+            store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice"), (2, "Bob")), Now, default));
+
+        await store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice Updated")),
+            Now.AddMinutes(1), default);
+        Assert.Equal("Alice Updated", Assert.Single(await _db.InstallationProfiles.ToListAsync()).Username);
+        await store.ApplyHeartbeatAsync(new ParticipationHeartbeat(installation, false, [], []),
+            Now.AddMinutes(2), default);
+        Assert.Empty(await _db.InstallationProfiles.ToListAsync());
+    }
+
+    [Fact]
+    public async Task CleanupExpiresStaleInstallationsAndTheirLinks()
+    {
+        var stale = Guid.NewGuid();
+        var fresh = Guid.NewGuid();
+        await _store.ApplyHeartbeatAsync(Heartbeat(stale, (1, "Alice")), Now.AddDays(-41), default);
+        await _store.ApplyHeartbeatAsync(Heartbeat(fresh, (2, "Bob")), Now.AddDays(-39), default);
+
+        await _store.DeleteInactiveInstallationsBeforeAsync(Now.AddDays(-40), default);
+
+        Assert.Equal(fresh, Assert.Single(await _db.Installations.AsNoTracking().ToListAsync()).InstallationId);
+        Assert.Equal(2, Assert.Single(await _db.InstallationProfiles.AsNoTracking().ToListAsync()).PlayerId);
+    }
+
+    [Fact]
+    public async Task PendingBaselineCountIsAnonymousDistinctAndSurvivesEventPruning()
+    {
+        await _store.ApplyHeartbeatAsync(Heartbeat(Guid.NewGuid(), (1, "Alice"), (2, "Bob")), Now, default);
+        await _store.ApplyHeartbeatAsync(Heartbeat(Guid.NewGuid(), (1, "Alice")), Now, default);
+        var empty = await _store.GetPageAsync(LeaderboardPeriod.Daily, 1, 25, Now,
+            TimeSpan.FromMinutes(3), default);
+        Assert.Equal(2, empty.PendingBaselineProfiles);
+        Assert.Empty(empty.Entries);
+        await SeedObservationAsync(Observation(1, "Alice", 3, Now));
+        var ranked = await _store.GetPageAsync(LeaderboardPeriod.Daily, 1, 25, Now,
+            TimeSpan.FromMinutes(3), default);
+        Assert.Equal(1, ranked.PendingBaselineProfiles);
+        Assert.Equal(1, Assert.Single(ranked.Entries).PlayerId);
+        await _store.DeleteGainEventsBeforeAsync(Now.AddMinutes(1), default);
+
+        var afterPrune = await _store.GetPageAsync(LeaderboardPeriod.Daily, 1, 25, Now.AddMinutes(1),
+            TimeSpan.FromMinutes(3), default);
+        Assert.Equal(1, afterPrune.PendingBaselineProfiles);
+        Assert.Empty(afterPrune.Entries);
+    }
+
+    private async Task SeedObservationAsync(PlayerObservation observation)
+    {
+        var state = await _db.PlayerSampleStates.FindAsync(observation.PlayerId);
+        if (state is null)
+        {
+            state = new PlayerSampleStateEntity { PlayerId = observation.PlayerId };
+            _db.PlayerSampleStates.Add(state);
+        }
+        state.Username = observation.Username;
+        state.SnapshotJson = observation.SnapshotJson;
+        state.LastSampledAtUtc = observation.ObservedAtUtc;
+        state.NeedsBaseline = observation.NeedsBaseline;
+        if (observation.ValidGain is > 0)
+        {
+            state.HasEverScoredGain = true;
+            _db.XpGainEvents.Add(new XpGainEventEntity
+            {
+                PlayerId = observation.PlayerId,
+                Username = observation.Username,
+                Gain = observation.ValidGain.Value,
+                ObservedAtUtc = observation.ObservedAtUtc
+            });
+        }
+        await _db.SaveChangesAsync();
+        _db.ChangeTracker.Clear();
     }
 
     private static ParticipationHeartbeat Heartbeat(Guid installationId, params (int Id, string Username)[] profiles) =>

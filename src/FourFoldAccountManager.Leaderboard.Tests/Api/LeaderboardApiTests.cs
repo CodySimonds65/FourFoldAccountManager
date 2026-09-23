@@ -15,6 +15,28 @@ namespace FourFoldAccountManager.Leaderboard.Tests.Api;
 public sealed class LeaderboardApiTests
 {
     [Fact]
+    public async Task PublicReadsAreLimitedToSixtyPerMinutePerIp()
+    {
+        using var fixture = new ApiFactory();
+        using var client = fixture.CreateClient();
+        for (var i = 0; i < 60; i++)
+            Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/v1/leaderboards/daily")).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests,
+            (await client.GetAsync("/v1/leaderboards/daily")).StatusCode);
+    }
+
+    [Fact]
+    public async Task CapacityFailureReturnsServiceUnavailable()
+    {
+        using var fixture = new ApiFactory();
+        fixture.Store.RejectEnrollment = true;
+        using var client = fixture.CreateClient();
+        var response = await client.PutAsJsonAsync("/v1/participation",
+            new ParticipationHeartbeat(Guid.NewGuid(), true, [new LeaderboardProfile(1, "Alice")], [1]));
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+    }
+
+    [Fact]
     public async Task OptOutPassesDisabledEnrollmentToStore()
     {
         using var fixture = new ApiFactory();
@@ -322,11 +344,13 @@ public sealed class LeaderboardApiTests
 
     private sealed class RecordingStore : ILeaderboardStore
     {
+        public bool RejectEnrollment { get; set; }
         public ParticipationHeartbeat? LastHeartbeat { get; private set; }
         public TimeSpan LastStaleAfter { get; private set; }
 
         public Task ApplyHeartbeatAsync(ParticipationHeartbeat heartbeat, DateTimeOffset receivedAtUtc, CancellationToken ct)
         {
+            if (RejectEnrollment) throw new LeaderboardCapacityExceededException("Leaderboard capacity exceeded");
             LastHeartbeat = heartbeat;
             return Task.CompletedTask;
         }
@@ -342,8 +366,10 @@ public sealed class LeaderboardApiTests
         public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([]);
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) => Task.FromResult<PlayerSampleState?>(null);
-        public Task SaveObservationAsync(PlayerObservation observation, CancellationToken ct) => Task.CompletedTask;
+        public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
+            TimeSpan activeLeaseDuration, CancellationToken ct) => Task.CompletedTask;
         public Task MarkNeedsBaselineAsync(int playerId, CancellationToken ct) => Task.CompletedTask;
         public Task DeleteGainEventsBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken ct) => Task.CompletedTask;
+        public Task DeleteInactiveInstallationsBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken ct) => Task.CompletedTask;
     }
 }

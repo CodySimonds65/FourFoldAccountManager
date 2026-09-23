@@ -1,5 +1,6 @@
 using FourFoldAccountManager.Leaderboard.Service.Collection;
 using FourFoldAccountManager.Leaderboard.Service.Data;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace FourFoldAccountManager.Leaderboard.Service.Api;
 
@@ -24,6 +25,6 @@ public static class LeaderboardEndpoints
                 : MinimumStaleAfter;
             var result = await store.GetPageAsync(parsed, page, size, clock.GetUtcNow(), staleAfter, ct);
             return Results.Ok(result);
-        });
+        }).RequireRateLimiting("public-read");
     }
 }

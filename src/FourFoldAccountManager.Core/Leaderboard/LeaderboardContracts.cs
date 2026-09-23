@@ -31,4 +31,5 @@ public sealed record LeaderboardPage(
     int PageSize,
     int TotalEntries,
     DateTimeOffset GeneratedAtUtc,
-    IReadOnlyList<LeaderboardEntry> Entries);
+    IReadOnlyList<LeaderboardEntry> Entries,
+    int PendingBaselineProfiles = 0);

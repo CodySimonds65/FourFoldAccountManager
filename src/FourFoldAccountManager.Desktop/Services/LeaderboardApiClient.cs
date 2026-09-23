@@ -57,7 +57,7 @@ public sealed class LeaderboardApiClient : IDisposable
         value.GeneratedAtUtc.Offset == TimeSpan.Zero &&
         LeaderboardPeriodWindow.GetCurrent(period, value.PeriodStartUtc) ==
             (value.PeriodStartUtc, value.PeriodEndUtc) &&
-        value.TotalEntries >= 0 && value.Entries is not null &&
+        value.TotalEntries >= 0 && value.PendingBaselineProfiles >= 0 && value.Entries is not null &&
         value.Entries.Count <= pageSize && value.Entries.Count <= value.TotalEntries &&
         value.Entries.All(entry => entry is not null && entry.Rank > 0 && entry.PlayerId > 0 &&
             !string.IsNullOrWhiteSpace(entry.Username) && entry.XpGained >= 0 &&

@@ -29,6 +29,35 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
+    public async Task OptOutDuringFetchCannotScoreOrClearBaseline()
+    {
+        var store = Seed(10);
+        var source = new CallbackSource(Snapshot("Alice", 35), () =>
+        {
+            store.Deactivate(1);
+            store.MarkNeedsBaselineAsync(1, default).GetAwaiter().GetResult();
+        });
+
+        await Create(store, source).RunOnceAsync(Now.AddMinutes(1), default);
+
+        Assert.Empty(store.Gains);
+        Assert.True(store.States[1].NeedsBaseline);
+    }
+
+    [Fact]
+    public async Task ChangedSampleStateDuringFetchCannotScoreOrClearBaseline()
+    {
+        var store = Seed(10);
+        var source = new CallbackSource(Snapshot("Alice", 35), () =>
+            store.MarkNeedsBaselineAsync(1, default).GetAwaiter().GetResult());
+
+        await Create(store, source).RunOnceAsync(Now.AddMinutes(1), default);
+
+        Assert.Empty(store.Gains);
+        Assert.True(store.States[1].NeedsBaseline);
+    }
+
+    [Fact]
     public async Task SamplesEachPlayerIdOnceAcrossInstallations()
     {
         var store = new FakeStore();
@@ -96,7 +125,6 @@ public sealed class LeaderboardSamplingServiceTests
         Assert.Empty(store.Gains);
         Assert.InRange(store.States[1].LastSampledAtUtc, Now.AddMinutes(4), Now.AddMinutes(4).AddSeconds(1));
         Assert.False(store.States[1].NeedsBaseline);
-        Assert.Equal(1, store.BaselineMarks);
     }
 
     [Fact]
@@ -224,7 +252,7 @@ public sealed class LeaderboardSamplingServiceTests
         Assert.True(store.States[1].LastSampledAtUtc >= new DateTimeOffset(2026, 9, 24, 0, 0, 0, TimeSpan.Zero));
     }
 
-    private static LeaderboardSamplingService Create(FakeStore store, FakeSource source) =>
+    private static LeaderboardSamplingService Create(FakeStore store, ILeaderboardPublicProfileSource source) =>
         new(store, source, new LeaderboardCollectionOptions
         {
             Enabled = true,
@@ -277,6 +305,15 @@ public sealed class LeaderboardSamplingServiceTests
         }
     }
 
+    private sealed class CallbackSource(PlayerProgressSnapshot response, Action callback) : ILeaderboardPublicProfileSource
+    {
+        public Task<PlayerProgressSnapshot> FetchAsync(int playerId, CancellationToken ct)
+        {
+            callback();
+            return Task.FromResult(response);
+        }
+    }
+
     private sealed class FakeStore : ILeaderboardStore
     {
         private readonly List<(ActiveLeaderboardProfile Profile, DateTimeOffset At)> _active = [];
@@ -286,13 +323,24 @@ public sealed class LeaderboardSamplingServiceTests
 
         public void Activate(int id, string username, DateTimeOffset at) =>
             _active.Add((new ActiveLeaderboardProfile(id, username), at));
+        public void Deactivate(int id) => _active.RemoveAll(x => x.Profile.PlayerId == id);
         public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>(_active.Where(x => x.At > activeAfterUtc)
                 .Select(x => x.Profile).ToArray());
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) =>
             Task.FromResult(States.GetValueOrDefault(playerId));
-        public Task SaveObservationAsync(PlayerObservation observation, CancellationToken ct)
+        public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
+            TimeSpan activeLeaseDuration, CancellationToken ct)
         {
+            var active = _active.Any(x => x.Profile.PlayerId == observation.PlayerId &&
+                x.At > observation.ObservedAtUtc - activeLeaseDuration);
+            var currentState = States.GetValueOrDefault(observation.PlayerId);
+            if (!active || currentState != expectedState)
+            {
+                if (currentState is not null)
+                    States[observation.PlayerId] = currentState with { NeedsBaseline = true };
+                return Task.CompletedTask;
+            }
             States[observation.PlayerId] = new PlayerSampleState(observation.PlayerId, observation.Username,
                 observation.SnapshotJson, observation.ObservedAtUtc, observation.NeedsBaseline);
             if (observation.ValidGain is { } gain) Gains.Add(gain);
@@ -307,5 +355,6 @@ public sealed class LeaderboardSamplingServiceTests
         public Task ApplyHeartbeatAsync(ParticipationHeartbeat heartbeat, DateTimeOffset receivedAtUtc, CancellationToken ct) => throw new NotImplementedException();
         public Task<LeaderboardPage> GetPageAsync(LeaderboardPeriod period, int page, int pageSize, DateTimeOffset nowUtc, TimeSpan staleAfter, CancellationToken ct) => throw new NotImplementedException();
         public Task DeleteGainEventsBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken ct) => throw new NotImplementedException();
+        public Task DeleteInactiveInstallationsBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken ct) => throw new NotImplementedException();
     }
 }

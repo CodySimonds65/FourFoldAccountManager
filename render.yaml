@@ -23,5 +23,9 @@ services:
         value: "00:03:00"
       - key: Collection__RetentionDays
         value: "40"
+      - key: Capacity__MaxInstallations
+        value: "5000"
+      - key: Capacity__MaxProfileLinks
+        value: "50000"
       - key: RateLimiting__TrustCloudflareConnectingIp
         value: "true"

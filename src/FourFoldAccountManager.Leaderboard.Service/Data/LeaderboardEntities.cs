@@ -25,6 +25,7 @@ public sealed class PlayerSampleStateEntity
     public string SnapshotJson { get; set; } = "{}";
     public DateTimeOffset LastSampledAtUtc { get; set; }
     public bool NeedsBaseline { get; set; }
+    public bool HasEverScoredGain { get; set; }
 }
 
 public sealed class XpGainEventEntity

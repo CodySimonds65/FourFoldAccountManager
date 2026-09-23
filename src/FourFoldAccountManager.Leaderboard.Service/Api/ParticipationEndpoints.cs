@@ -46,7 +46,14 @@ public static class ParticipationEndpoints
         }
         if (!LeaderboardRequestValidator.IsValid(heartbeat)) return Results.BadRequest();
 
-        await store.ApplyHeartbeatAsync(heartbeat!, clock.GetUtcNow(), ct);
+        try
+        {
+            await store.ApplyHeartbeatAsync(heartbeat!, clock.GetUtcNow(), ct);
+        }
+        catch (LeaderboardCapacityExceededException ex)
+        {
+            return Results.Problem(ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
         return Results.NoContent();
     }
 }
