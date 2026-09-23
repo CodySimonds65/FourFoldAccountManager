@@ -88,10 +88,27 @@ public sealed class LeaderboardSamplingService(
         }
 
         XpGainResult gain;
+        PlayerProgressSnapshot before;
+        HashSet<string> pending;
         try
         {
+            before = XpSnapshotJson.Deserialize(previous.SnapshotJson, previous.Username);
+            pending = new HashSet<string>(before.InvalidClasses, StringComparer.OrdinalIgnoreCase);
+            var excluded = new HashSet<string>(pending, StringComparer.OrdinalIgnoreCase);
+            excluded.UnionWith(current.InvalidClasses);
             gain = XpProgressCalculator.Calculate(
-                XpSnapshotJson.Deserialize(previous.SnapshotJson, previous.Username), current);
+                before with
+                {
+                    Classes = before.Classes.Where(x => !excluded.Contains(x.Key))
+                        .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase),
+                    InvalidClasses = []
+                },
+                current with
+                {
+                    Classes = current.Classes.Where(x => !excluded.Contains(x.Key))
+                        .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase),
+                    InvalidClasses = []
+                });
         }
         catch (Exception ex) when (ex is InvalidDataException or System.Text.Json.JsonException or ArgumentException)
         {
@@ -100,7 +117,24 @@ public sealed class LeaderboardSamplingService(
             return true;
         }
 
-        if (gain.ValidClassCount == 0)
+        var nextPending = new HashSet<string>(current.InvalidClasses, StringComparer.OrdinalIgnoreCase);
+        foreach (var name in pending)
+        {
+            if (!current.Classes.ContainsKey(name) || current.InvalidClasses.Contains(name, StringComparer.OrdinalIgnoreCase))
+                nextPending.Add(name);
+        }
+        foreach (var name in gain.InvalidClasses)
+        {
+            if (pending.Contains(name) && current.Classes.ContainsKey(name) &&
+                !current.InvalidClasses.Contains(name, StringComparer.OrdinalIgnoreCase))
+                continue;
+            if (before.Classes.ContainsKey(name) || !current.Classes.ContainsKey(name))
+                nextPending.Add(name);
+        }
+        current = current with { InvalidClasses = nextPending.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray() };
+
+        if (gain.ValidClassCount == 0 && !pending.Any(name => current.Classes.ContainsKey(name) &&
+                !current.InvalidClasses.Contains(name, StringComparer.OrdinalIgnoreCase)))
         {
             await store.MarkNeedsBaselineAsync(playerId, ct);
             return true;

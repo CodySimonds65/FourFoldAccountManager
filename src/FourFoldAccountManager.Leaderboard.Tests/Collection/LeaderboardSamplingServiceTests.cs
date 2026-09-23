@@ -117,6 +117,22 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
+    public async Task RecoveredInvalidClassIsBaselinedWhileOtherClassContinuesScoring()
+    {
+        var store = Seed(10, 10);
+        var source = new FakeSource(
+            Snapshot("Alice", 5, 20),
+            Snapshot("Alice", 15, 25));
+        var service = Create(store, source);
+
+        await service.RunOnceAsync(Now.AddMinutes(1), default);
+        await service.RunOnceAsync(Now.AddMinutes(2).AddSeconds(1), default);
+
+        Assert.Equal([10L, 5L], store.Gains);
+        Assert.Empty(XpSnapshotJson.Deserialize(store.States[1].SnapshotJson, "Alice").InvalidClasses);
+    }
+
+    [Fact]
     public async Task AllInvalidClassDataRequestsRebaseline()
     {
         var store = Seed(10);

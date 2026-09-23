@@ -47,6 +47,13 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db) : ILeaderboardSt
 
         var previous = await db.InstallationProfiles
             .Where(x => x.InstallationId == heartbeat.InstallationId).ToListAsync(ct);
+        var affectedIds = previous.Where(x => x.IsActive).Select(x => x.PlayerId)
+            .Concat(active).Distinct().ToArray();
+        var activeCutoff = now - TimeSpan.FromMinutes(3);
+        var freshBefore = affectedIds.Length == 0 ? [] : await db.InstallationProfiles.AsNoTracking()
+            .Where(x => affectedIds.Contains(x.PlayerId) && x.Installation.SharingEnabled &&
+                x.IsActive && x.LastActiveAtUtc > activeCutoff)
+            .Select(x => x.PlayerId).Distinct().ToArrayAsync(ct);
         db.InstallationProfiles.RemoveRange(previous);
         await db.SaveChangesAsync(ct);
 
@@ -61,6 +68,23 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db) : ILeaderboardSt
                 LastActiveAtUtc = active.Contains(profile.PlayerId) ? now : null
             }));
             await db.SaveChangesAsync(ct);
+        }
+        if (affectedIds.Length > 0)
+        {
+            var freshAfter = await db.InstallationProfiles.AsNoTracking()
+                .Where(x => affectedIds.Contains(x.PlayerId) && x.Installation.SharingEnabled &&
+                    x.IsActive && x.LastActiveAtUtc > activeCutoff)
+                .Select(x => x.PlayerId).Distinct().ToArrayAsync(ct);
+            var beforeSet = freshBefore.ToHashSet();
+            var afterSet = freshAfter.ToHashSet();
+            var rebaselineIds = affectedIds.Where(id =>
+                (active.Contains(id) && !beforeSet.Contains(id)) ||
+                (!afterSet.Contains(id) && beforeSet.Contains(id))).ToArray();
+            if (rebaselineIds.Length > 0)
+            {
+                await db.PlayerSampleStates.Where(x => rebaselineIds.Contains(x.PlayerId))
+                    .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.NeedsBaseline, true), ct);
+            }
         }
         await transaction.CommitAsync(ct);
     }

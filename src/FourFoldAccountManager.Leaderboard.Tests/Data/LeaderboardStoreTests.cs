@@ -64,6 +64,33 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
             TimeSpan.FromMinutes(3), default)).Entries).XpGained);
     }
 
+    [Fact]
+    public async Task LongSamplingIntervalStillRebaselinesAfterLeaseExpiresAndReactivates()
+    {
+        var installation = Guid.NewGuid();
+        await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now, default);
+        await _store.SaveObservationAsync(Observation(1, "Alice", null, Now), default);
+
+        // A collector interval longer than the three-minute lease has not run in between.
+        await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now.AddMinutes(5), default);
+
+        Assert.True((await _store.GetPlayerStateAsync(1, default))!.NeedsBaseline);
+    }
+
+    [Fact]
+    public async Task DeactivationAndReactivationRebaselineEvenWithinSampleInterval()
+    {
+        var installation = Guid.NewGuid();
+        await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now, default);
+        await _store.SaveObservationAsync(Observation(1, "Alice", null, Now), default);
+        await _store.ApplyHeartbeatAsync(new ParticipationHeartbeat(installation, true,
+            [new LeaderboardProfile(1, "Alice")], []), Now.AddMinutes(1), default);
+
+        Assert.True((await _store.GetPlayerStateAsync(1, default))!.NeedsBaseline);
+        await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now.AddMinutes(2), default);
+        Assert.True((await _store.GetPlayerStateAsync(1, default))!.NeedsBaseline);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
