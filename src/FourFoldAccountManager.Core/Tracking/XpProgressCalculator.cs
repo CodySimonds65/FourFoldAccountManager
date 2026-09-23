@@ -69,7 +69,7 @@ public static class XpProgressCalculator
 
     private static BigInteger Cap(int level) => 5 * (BigInteger)level * (level + 1L);
 
-    private static BigInteger AbsoluteProgress(ClassXpSnapshot value) =>
+    private static BigInteger AbsoluteProgress(ClassProfileSnapshot value) =>
         Prefix(value.Level - 1L) + value.CurrentXp;
 
     private static BigInteger Prefix(long level) => level <= 0
