@@ -28,15 +28,7 @@
         <Grid Grid.Row="2">
             <views:XpTrackerPanel x:Name="TrackerPanel" Loaded="TrackerPanel_Loaded" />
             <views:ClassComparisonPanel x:Name="ClassComparisonPanelView" Visibility="Collapsed" />
-            <Border x:Name="XpCalculatorPlaceholder" Visibility="Collapsed"
-                    Style="{StaticResource SidebarCardStyle}" Padding="14">
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="XP CALCULATOR" FontSize="10" FontWeight="Bold"
-                               Foreground="{DynamicResource Brush.AccentGold}" />
-                    <TextBlock Text="Choose a target level for the selected account." TextWrapping="Wrap"
-                               Foreground="{DynamicResource Brush.TextMuted}" Margin="0,8,0,0" />
-                </StackPanel>
-            </Border>
+            <views:ExperienceCalculatorPanel x:Name="XpCalculatorPanelView" Visibility="Collapsed" />
         </Grid>
     </Grid>
 </UserControl>

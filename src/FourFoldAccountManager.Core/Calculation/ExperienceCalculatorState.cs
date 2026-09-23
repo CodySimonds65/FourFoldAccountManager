@@ -1,0 +1,70 @@
+using System.Globalization;
+using FourFoldAccountManager.Core.Tracking;
+
+namespace FourFoldAccountManager.Core.Calculation;
+
+public sealed record ExperienceCalculatorState(
+    bool IsValid,
+    string Status,
+    string? ClassName,
+    long CurrentLevel,
+    long TargetLevel,
+    string RemainingXpText,
+    string CurrentAbsoluteXpText,
+    string TargetAbsoluteXpText,
+    long LevelsRemaining,
+    bool UsedCurrentProgress,
+    ExperienceProjection? Projection,
+    ClassProfileSnapshot? Profile)
+{
+    public static ExperienceCalculatorState FromSnapshot(PlayerProgressSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        if (string.IsNullOrWhiteSpace(snapshot.ActiveClassName))
+        {
+            return Unavailable("The active class is unavailable.");
+        }
+
+        var activeName = snapshot.ActiveClassName.Trim();
+        var profile = snapshot.Classes.FirstOrDefault(pair =>
+            string.Equals(pair.Key, activeName, StringComparison.OrdinalIgnoreCase)).Value;
+        return profile is null
+            ? Unavailable("The selected profile does not contain its active class.", activeName)
+            : FromProfile(profile);
+    }
+
+    public static ExperienceCalculatorState FromProfile(ClassProfileSnapshot profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        var target = profile.Level < int.MaxValue ? (long)profile.Level + 1 : profile.Level;
+        return Create(profile, target);
+    }
+
+    public ExperienceCalculatorState WithTarget(long targetLevel) =>
+        Profile is null ? this with { TargetLevel = targetLevel } : Create(Profile, targetLevel);
+
+    private static ExperienceCalculatorState Create(ClassProfileSnapshot profile, long targetLevel)
+    {
+        var projection = ExperienceCurve.Project(profile, targetLevel);
+        var isValid = projection.IsValid;
+        return new ExperienceCalculatorState(
+            isValid,
+            isValid ? projection.ProgressMessage : projection.Error ?? "XP calculation is unavailable.",
+            profile.ClassName,
+            profile.Level,
+            targetLevel,
+            isValid ? Format(projection.RemainingXp) : "—",
+            isValid ? Format(projection.CurrentAbsoluteXp) : "—",
+            isValid ? Format(projection.TargetAbsoluteXp) : "—",
+            isValid ? targetLevel - profile.Level : 0,
+            projection.UsedCurrentProgress,
+            projection,
+            profile);
+    }
+
+    private static ExperienceCalculatorState Unavailable(string status, string? className = null) =>
+        new(false, status, className, 0, 0, "—", "—", "—", 0, false, null, null);
+
+    private static string Format(System.Numerics.BigInteger value) =>
+        value.ToString("N0", CultureInfo.InvariantCulture);
+}
