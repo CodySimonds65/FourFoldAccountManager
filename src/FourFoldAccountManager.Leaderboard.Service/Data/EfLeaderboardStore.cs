@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Security.Cryptography;
 using FourFoldAccountManager.Core.Leaderboard;
 using Microsoft.EntityFrameworkCore;
 
@@ -29,6 +31,11 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db) : ILeaderboardSt
 
         var now = receivedAtUtc.ToUniversalTime();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        // Serialize replacements for this installation across service instances, including its first insert.
+        var lockKey = BinaryPrimitives.ReadInt64BigEndian(
+            SHA256.HashData(heartbeat.InstallationId.ToByteArray()));
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({lockKey})", ct);
         var installation = await db.Installations.FindAsync([heartbeat.InstallationId], ct);
         if (installation is null)
         {

@@ -94,6 +94,36 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ConcurrentHeartbeatsKeepOneCompleteProfileSet()
+    {
+        var installationId = Guid.NewGuid();
+        await _store.ApplyHeartbeatAsync(Heartbeat(installationId, (1, "Initial")), Now, default);
+
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(async batch =>
+        {
+            var options = new DbContextOptionsBuilder<LeaderboardDbContext>()
+                .UseNpgsql(_postgres.GetConnectionString()).Options;
+            await using var context = new LeaderboardDbContext(options);
+            var profiles = Enumerable.Range(0, 3)
+                .Select(index => (Id: 100 + batch * 10 + index, Username: $"Batch {batch}"))
+                .ToArray();
+            await new EfLeaderboardStore(context).ApplyHeartbeatAsync(
+                Heartbeat(installationId, profiles), Now.AddMinutes(batch + 1), default);
+        }));
+
+        var finalRows = await _db.InstallationProfiles.AsNoTracking()
+            .Where(x => x.InstallationId == installationId)
+            .OrderBy(x => x.PlayerId)
+            .ToArrayAsync();
+        Assert.Equal(3, finalRows.Length);
+        Assert.Equal(3, finalRows.Select(x => x.PlayerId).Distinct().Count());
+        var winningBatch = (finalRows[0].PlayerId - 100) / 10;
+        Assert.Equal(Enumerable.Range(0, 3).Select(index => 100 + winningBatch * 10 + index),
+            finalRows.Select(x => x.PlayerId));
+        Assert.All(finalRows, row => Assert.Equal($"Batch {winningBatch}", row.Username));
+    }
+
+    [Fact]
     public async Task AggregatesByPlayerAndSortsDeterministicallyWithPageBounds()
     {
         await _store.SaveObservationAsync(Observation(3, "zed", 10, Now), default);
