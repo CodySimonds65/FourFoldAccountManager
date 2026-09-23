@@ -18,8 +18,10 @@
                 <StackPanel>
                     <TextBlock Text="XP CALCULATOR" FontSize="10" FontWeight="Bold"
                                Foreground="{DynamicResource Brush.AccentGold}" />
-                    <TextBlock x:Name="AccountText" FontSize="14" FontWeight="SemiBold"
-                               Margin="0,5,0,0" TextTrimming="CharacterEllipsis" />
+                    <ComboBox x:Name="AccountPicker" DisplayMemberPath="Label" SelectedValuePath="Id"
+                              SelectionChanged="AccountPicker_SelectionChanged" Style="{StaticResource ComboBoxStyle}"
+                              Height="32" Padding="8,0" Margin="0,5,0,0"
+                              ToolTip="Choose the account to calculate" />
                     <TextBlock x:Name="ClassText" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
                                Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
                 </StackPanel>

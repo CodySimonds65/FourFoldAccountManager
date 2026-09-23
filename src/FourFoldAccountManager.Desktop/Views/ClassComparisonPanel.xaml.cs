@@ -26,6 +26,7 @@ public partial class ClassComparisonPanel : UserControl
     };
 
     private readonly ObservableCollection<ClassComparisonRow> _rows = [];
+    private bool _suppressAccountSelection;
 
     public ClassComparisonPanel()
     {
@@ -34,10 +35,26 @@ public partial class ClassComparisonPanel : UserControl
     }
 
     public event EventHandler? RefreshRequested;
+    public event Action<Guid>? AccountSelectionRequested;
+
+    public void SetAccounts(IEnumerable<AccountProfile> accounts) => AccountPicker.ItemsSource = accounts;
+
+    public void SetSelectedAccount(AccountProfile? account)
+    {
+        _suppressAccountSelection = true;
+        try
+        {
+            AccountPicker.SelectedValue = account?.Id;
+        }
+        finally
+        {
+            _suppressAccountSelection = false;
+        }
+    }
 
     public void SetSnapshot(AccountProfile account, PlayerProgressSnapshot snapshot)
     {
-        AccountText.Text = account.Label;
+        SetSelectedAccount(account);
         var state = ClassComparisonDisplayState.FromSnapshot(snapshot);
         ClassText.Text = state.ActiveClassName is null ? "Active class unavailable" :
             $"{state.ActiveClassName} · Level {state.Level}";
@@ -73,7 +90,6 @@ public partial class ClassComparisonPanel : UserControl
 
     public void ClearSnapshot(string status)
     {
-        AccountText.Text = string.Empty;
         ClassText.Text = string.Empty;
         UpdatedText.Text = string.Empty;
         StatusText.Text = status;
@@ -89,6 +105,14 @@ public partial class ClassComparisonPanel : UserControl
     }
 
     public void SetProfileStatus(string status) => StatusText.Text = status;
+
+    private void AccountPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_suppressAccountSelection && AccountPicker.SelectedItem is AccountProfile account)
+        {
+            AccountSelectionRequested?.Invoke(account.Id);
+        }
+    }
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => RefreshRequested?.Invoke(this, EventArgs.Empty);
 

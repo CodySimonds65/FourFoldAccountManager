@@ -25,7 +25,9 @@
                     </Grid>
                 </Border>
                 <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
-                    <TextBlock x:Name="AccountText" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                    <ComboBox x:Name="AccountPicker" DisplayMemberPath="Label" SelectedValuePath="Id"
+                              SelectionChanged="AccountPicker_SelectionChanged" Style="{StaticResource ComboBoxStyle}"
+                              Height="32" Padding="8,0" ToolTip="Choose the account to compare" />
                     <TextBlock x:Name="ClassText" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
                                Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
                     <TextBlock x:Name="UpdatedText" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}"

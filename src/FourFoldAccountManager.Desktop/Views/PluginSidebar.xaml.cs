@@ -16,6 +16,8 @@ public partial class PluginSidebar : UserControl
         ActivePlugin = PluginKind.XpTracker;
         ClassComparisonPanelView.RefreshRequested += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
         XpCalculatorPanelView.RefreshRequested += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
+        ClassComparisonPanelView.AccountSelectionRequested += accountId => AccountSelectionRequested?.Invoke(accountId);
+        XpCalculatorPanelView.AccountSelectionRequested += accountId => AccountSelectionRequested?.Invoke(accountId);
         UpdateActivePlugin();
     }
 
@@ -26,14 +28,23 @@ public partial class PluginSidebar : UserControl
     public event Action<Guid>? LinkRequested;
     public event Action<Guid>? ResetRateRequested;
     public event Action<Guid>? ResetAllRequested;
+    public event Action<Guid>? AccountSelectionRequested;
     public event EventHandler? RefreshRequested;
 
     public void SetTrackerItemsSource(IEnumerable? itemsSource) => TrackerPanel.ItemsSource = itemsSource;
+
+    public void SetAccounts(IEnumerable<AccountProfile> accounts)
+    {
+        ClassComparisonPanelView.SetAccounts(accounts);
+        XpCalculatorPanelView.SetAccounts(accounts);
+    }
 
     public void SetSelectedAccount(Guid? accountId)
     {
         SelectedAccountId = accountId;
         _selectedAccount = null;
+        ClassComparisonPanelView.SetSelectedAccount(null);
+        XpCalculatorPanelView.SetSelectedAccount(null);
         ClassComparisonPanelView.ClearSnapshot(accountId.HasValue
             ? "Select Refresh to load the selected profile." : "Select an account to load its profile.");
         XpCalculatorPanelView.ClearSnapshot(accountId.HasValue
@@ -44,6 +55,8 @@ public partial class PluginSidebar : UserControl
     {
         SelectedAccountId = account?.Id;
         _selectedAccount = account;
+        ClassComparisonPanelView.SetSelectedAccount(account);
+        XpCalculatorPanelView.SetSelectedAccount(account);
         ClassComparisonPanelView.ClearSnapshot(account is null
             ? "Select an account to load its profile." : "Select Refresh to load the selected profile.");
         XpCalculatorPanelView.ClearSnapshot(account is null

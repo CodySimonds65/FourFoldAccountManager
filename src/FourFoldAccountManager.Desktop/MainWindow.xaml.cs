@@ -75,6 +75,7 @@ public partial class MainWindow : Window
         FullscreenXpOverlayTray.EditRequested += (_, _) => SetXpOverlayEditing(true);
         FullscreenXpOverlayTray.DoneRequested += (_, _) => SetXpOverlayEditing(false);
         PluginSidebar.SetTrackerItemsSource(_xpTrackerRows);
+        PluginSidebar.SetAccounts(_accounts);
         PluginSidebar.LinkRequested += accountId =>
         {
             AccountsListBox.SelectedItem = _accounts.FirstOrDefault(account => account.Id == accountId);
@@ -91,6 +92,14 @@ public partial class MainWindow : Window
             RefreshTrackerRows();
         };
         PluginSidebar.RefreshRequested += (_, _) => _ = RefreshSelectedProfileAsync();
+        PluginSidebar.AccountSelectionRequested += accountId =>
+        {
+            var account = _accounts.FirstOrDefault(candidate => candidate.Id == accountId);
+            if (account is not null && SelectedAccount?.Id != account.Id)
+            {
+                AccountsListBox.SelectedItem = account;
+            }
+        };
         _browserSessions.NavigationBlocked += BrowserSessions_NavigationBlocked;
 
         AccountsListBox.ItemsSource = _accounts;

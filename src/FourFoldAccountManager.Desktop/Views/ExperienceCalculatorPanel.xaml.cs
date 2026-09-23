@@ -15,6 +15,7 @@ public partial class ExperienceCalculatorPanel : UserControl
     private readonly ObservableCollection<ExperienceTransitionRow> _transitions = [];
     private ExperienceCalculatorState? _state;
     private bool _updatingTarget;
+    private bool _suppressAccountSelection;
 
     public ExperienceCalculatorPanel()
     {
@@ -23,10 +24,26 @@ public partial class ExperienceCalculatorPanel : UserControl
     }
 
     public event EventHandler? RefreshRequested;
+    public event Action<Guid>? AccountSelectionRequested;
+
+    public void SetAccounts(IEnumerable<AccountProfile> accounts) => AccountPicker.ItemsSource = accounts;
+
+    public void SetSelectedAccount(AccountProfile? account)
+    {
+        _suppressAccountSelection = true;
+        try
+        {
+            AccountPicker.SelectedValue = account?.Id;
+        }
+        finally
+        {
+            _suppressAccountSelection = false;
+        }
+    }
 
     public void SetSnapshot(AccountProfile account, PlayerProgressSnapshot snapshot)
     {
-        AccountText.Text = account.Label;
+        SetSelectedAccount(account);
         _state = ExperienceCalculatorState.FromSnapshot(snapshot);
         _updatingTarget = true;
         TargetLevelBox.Text = _state.TargetLevel > 0
@@ -38,7 +55,6 @@ public partial class ExperienceCalculatorPanel : UserControl
     public void ClearSnapshot(string status)
     {
         _state = null;
-        AccountText.Text = string.Empty;
         ClassText.Text = string.Empty;
         RemainingText.Text = "—";
         CurrentAbsoluteText.Text = "—";
@@ -50,6 +66,14 @@ public partial class ExperienceCalculatorPanel : UserControl
     }
 
     public void SetProfileStatus(string status) => StatusText.Text = status;
+
+    private void AccountPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_suppressAccountSelection && AccountPicker.SelectedItem is AccountProfile account)
+        {
+            AccountSelectionRequested?.Invoke(account.Id);
+        }
+    }
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => RefreshRequested?.Invoke(this, EventArgs.Empty);
 
