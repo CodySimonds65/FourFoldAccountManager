@@ -5,7 +5,7 @@ using FourFoldAccountManager.Core.Tracking;
 
 namespace FourFoldAccountManager.Desktop.Services;
 
-public sealed class FourFoldRankingClient : IDisposable
+public sealed class FourFoldRankingClient : IDisposable, IPlayerProfileTransport
 {
     private const int MaximumPageBytes = 2 * 1024 * 1024;
     private readonly HttpClient _http;

@@ -19,7 +19,8 @@ public sealed record XpTrackerState(
 
 public sealed class XpTrackerCoordinator : IAsyncDisposable
 {
-    private readonly FourFoldRankingClient _client = new();
+    private readonly PlayerProfileService _profileService;
+    private readonly IDisposable? _ownedTransport;
     private readonly XpTrackerStore _store;
     private readonly Dispatcher _dispatcher;
     private readonly Func<CancellationToken, Task> _runPollingLoop;
@@ -29,22 +30,35 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
     private Task? _loopTask;
     private bool _loaded;
 
-    public XpTrackerCoordinator(LocalDataPaths paths) : this(paths, null) { }
+    public XpTrackerCoordinator(LocalDataPaths paths) : this(paths, null, null) { }
 
     // Tests can replace the background loop while exercising the real account/reset lifecycle.
-    internal XpTrackerCoordinator(LocalDataPaths paths, Func<CancellationToken, Task>? runPollingLoop)
+    internal XpTrackerCoordinator(
+        LocalDataPaths paths,
+        Func<CancellationToken, Task>? runPollingLoop,
+        PlayerProfileService? profileService = null)
     {
         _store = new XpTrackerStore(paths);
         _dispatcher = Dispatcher.CurrentDispatcher;
         _runPollingLoop = runPollingLoop ?? RunLoopAsync;
+        if (profileService is not null)
+        {
+            _profileService = profileService;
+        }
+        else
+        {
+            var client = new FourFoldRankingClient();
+            _profileService = new PlayerProfileService(client);
+            _ownedTransport = client;
+        }
     }
 
     public event EventHandler? Changed;
 
     public async Task<bool> VerifyPlayerAsync(int playerId, string username)
     {
-        var profile = await _client.GetProfileAsync(playerId, CancellationToken.None);
-        return string.Equals(profile.Username, username.Trim(), StringComparison.OrdinalIgnoreCase);
+        var result = await _profileService.ReadAsync(Guid.NewGuid(), username, playerId, CancellationToken.None);
+        return result.IsSuccess;
     }
 
     public IReadOnlyList<XpTrackerState> GetStates() => _active.Values.Select(account => new XpTrackerState(
@@ -156,28 +170,17 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
             _loaded = true;
         }
 
-        IReadOnlyList<RankingEntry>? ranking = null;
-        try
-        {
-            ranking = await _client.GetRankingAsync(cancellationToken);
-        }
-        catch (Exception) when (!cancellationToken.IsCancellationRequested)
-        {
-            // Known player IDs can still be sampled when the ranking is unavailable.
-        }
-
         using var gate = new SemaphoreSlim(2, 2);
         var tasks = _active.Values.ToArray().Select(async account =>
         {
             await gate.WaitAsync(cancellationToken);
-            try { await PollAccountAsync(account, ranking, cancellationToken); }
+            try { await PollAccountAsync(account, cancellationToken); }
             finally { gate.Release(); }
         });
         await Task.WhenAll(tasks);
     }
 
-    private async Task PollAccountAsync(
-        TrackedAccount account, IReadOnlyList<RankingEntry>? ranking, CancellationToken cancellationToken)
+    private async Task PollAccountAsync(TrackedAccount account, CancellationToken cancellationToken)
     {
         if (!_active.TryGetValue(account.Id, out var current) || !ReferenceEquals(current, account)) return;
         if (string.IsNullOrWhiteSpace(account.Username))
@@ -192,38 +195,50 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
             var playerId = account.PlayerId;
             if (playerId is null && _stored.TryGetValue(account.Id, out var cached) &&
                 string.Equals(cached.Snapshot.Username, account.Username, StringComparison.OrdinalIgnoreCase))
-                playerId = cached.PlayerId;
-            if (playerId is null)
             {
-                if (ranking is null) throw new HttpRequestException("Ranking unavailable.");
-                var resolution = RankingIdentityResolver.Resolve(account.Username, ranking);
-                if (resolution.Status != IdentityResolutionStatus.Matched)
-                {
-                    account.Status = resolution.Status == IdentityResolutionStatus.Ambiguous
-                        ? "Multiple player matches; link a profile" : "Not in top 200; link a profile";
-                    NotifyChanged();
-                    return;
-                }
-                playerId = resolution.PlayerId;
+                playerId = cached.PlayerId;
             }
 
-            var profile = await _client.GetProfileAsync(playerId!.Value, cancellationToken);
-            if (!string.Equals(profile.Username, account.Username, StringComparison.OrdinalIgnoreCase))
+            var result = await _profileService.ReadAsync(account.Id, account.Username, playerId, cancellationToken);
+            if (!result.IsSuccess)
             {
-                account.PlayerId = null;
-                account.Status = "Player name mismatch; check profile link";
-                account.Session.MarkFetchFailed(DateTimeOffset.UtcNow);
+                if (result.Status == PlayerProfileReadStatus.Ambiguous)
+                {
+                    account.Status = "Multiple player matches; link a profile";
+                }
+                else if (result.Status == PlayerProfileReadStatus.NotInTop200)
+                {
+                    account.Status = "Not in top 200; link a profile";
+                }
+                else if (result.Status == PlayerProfileReadStatus.MissingUsername)
+                {
+                    account.Status = "Add a ranking username";
+                }
+                else if (result.Status == PlayerProfileReadStatus.ProfileMismatch)
+                {
+                    account.PlayerId = null;
+                    account.Status = "Player name mismatch; check profile link";
+                    account.Session.MarkFetchFailed(DateTimeOffset.UtcNow);
+                }
+                else
+                {
+                    account.PlayerId = result.PlayerId;
+                    account.Status = "Stale; could not refresh player data";
+                    account.Session.MarkFetchFailed(DateTimeOffset.UtcNow);
+                }
+
                 NotifyChanged();
                 return;
             }
 
+            var profile = result.Snapshot!;
             if (!_active.TryGetValue(account.Id, out current) || !ReferenceEquals(current, account)) return;
-            account.PlayerId = playerId;
+            account.PlayerId = result.PlayerId;
             var sampledAt = DateTimeOffset.UtcNow;
             account.Session.ApplySnapshot(profile, sampledAt);
             account.Status = account.Session.HasUncertainInterval ? "Partial interval; sample missed or class reset" :
                 account.Session.RatePerHour is null ? "Collecting baseline" : "Tracking";
-            _stored[account.Id] = new XpStoredAccount(account.Id, playerId.Value, sampledAt, profile,
+            _stored[account.Id] = new XpStoredAccount(account.Id, result.PlayerId!.Value, sampledAt, profile,
                 account.Session.Intervals.ToArray());
             await _store.SaveAsync(_stored.Values.ToArray(), sampledAt, cancellationToken);
             NotifyChanged();
@@ -250,7 +265,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         _loopCancellation?.Cancel();
         if (_loopTask is { } task) await task;
         _loopCancellation?.Dispose();
-        _client.Dispose();
+        _ownedTransport?.Dispose();
     }
 
     private sealed class TrackedAccount(Guid id, string? username, int? playerId)
