@@ -188,7 +188,7 @@
                            Text="Add an account to get started." TextTrimming="CharacterEllipsis"
                            ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
             </Grid>
-            <views:XpTrackerPanel x:Name="TrackerPanel" Grid.Column="4" Visibility="Collapsed" />
+            <views:PluginSidebar x:Name="PluginSidebar" Grid.Column="4" Visibility="Collapsed" />
         </Grid>
         <Grid x:Name="MaintenanceWebViewHost" Width="2" Height="2" Opacity="0" IsHitTestVisible="False"
               HorizontalAlignment="Left" VerticalAlignment="Top" />

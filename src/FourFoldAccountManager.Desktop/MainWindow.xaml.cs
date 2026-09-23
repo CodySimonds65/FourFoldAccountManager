@@ -70,18 +70,18 @@ public partial class MainWindow : Window
         _xpTracker.Changed += (_, _) => RefreshTrackerRows();
         FullscreenXpOverlayTray.EditRequested += (_, _) => SetXpOverlayEditing(true);
         FullscreenXpOverlayTray.DoneRequested += (_, _) => SetXpOverlayEditing(false);
-        TrackerPanel.ItemsSource = _xpTrackerRows;
-        TrackerPanel.LinkRequested += accountId =>
+        PluginSidebar.SetTrackerItemsSource(_xpTrackerRows);
+        PluginSidebar.LinkRequested += accountId =>
         {
             AccountsListBox.SelectedItem = _accounts.FirstOrDefault(account => account.Id == accountId);
-            RenameAccount_Click(TrackerPanel, new RoutedEventArgs());
+            RenameAccount_Click(PluginSidebar, new RoutedEventArgs());
         };
-        TrackerPanel.ResetRateRequested += accountId =>
+        PluginSidebar.ResetRateRequested += accountId =>
         {
             _xpTracker.ResetRate(accountId);
             RefreshTrackerRows();
         };
-        TrackerPanel.ResetAllRequested += accountId =>
+        PluginSidebar.ResetAllRequested += accountId =>
         {
             _xpTracker.ResetAll(accountId);
             RefreshTrackerRows();
@@ -585,7 +585,12 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AccountsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateAccountActions();
+    private void AccountsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        UpdateAccountActions();
+        PluginSidebar.SetSelectedAccount((AccountsListBox.SelectedItem as AccountProfile)?.Id);
+        UpdatePluginSidebarVisibility();
+    }
 
     private async void LayoutPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -835,7 +840,7 @@ public partial class MainWindow : Window
         AccountsPanel.Visibility = Visibility.Collapsed;
         AccountsColumn.Width = new GridLength(0);
         AccountsGapColumn.Width = new GridLength(0);
-        UpdateTrackerPanelVisibility();
+        UpdatePluginSidebarVisibility();
         PanelToolbar.Visibility = Visibility.Collapsed;
         GlobalStatusText.Visibility = Visibility.Collapsed;
         PanelBorder.Padding = new Thickness(0);
@@ -875,7 +880,7 @@ public partial class MainWindow : Window
         AccountsPanel.Visibility = _accountsPanelVisible ? Visibility.Visible : Visibility.Collapsed;
         AccountsColumn.Width = _accountsPanelVisible ? new GridLength(232) : new GridLength(0);
         AccountsGapColumn.Width = _accountsPanelVisible ? new GridLength(16) : new GridLength(0);
-        UpdateTrackerPanelVisibility();
+        UpdatePluginSidebarVisibility();
         PanelToolbar.Visibility = Visibility.Visible;
         GlobalStatusText.Visibility = Visibility.Visible;
         PanelBorder.Padding = new Thickness(0);
@@ -958,13 +963,16 @@ public partial class MainWindow : Window
         }
 
         FullscreenXpOverlayTray.SetChoices(trayChoices);
-        UpdateTrackerPanelVisibility();
+        UpdatePluginSidebarVisibility();
     }
 
-    private void UpdateTrackerPanelVisibility()
+    private void UpdatePluginSidebarVisibility()
     {
-        var visible = TrackerPanelPolicy.ShouldShow(_isFullScreen, _openAccountIds);
-        TrackerPanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        var visible = PluginSidebarPolicy.ShouldShow(
+            _isFullScreen,
+            PluginSidebar.SelectedAccountId,
+            _openAccountIds);
+        PluginSidebar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         TrackerGapColumn.Width = visible ? new GridLength(16) : new GridLength(0);
         TrackerColumn.Width = visible ? new GridLength(240) : new GridLength(0);
     }
