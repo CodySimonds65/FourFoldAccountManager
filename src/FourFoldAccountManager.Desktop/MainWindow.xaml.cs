@@ -1142,11 +1142,8 @@ public partial class MainWindow : Window
 
     private void UpdatePluginSidebarVisibility()
     {
-        var visible = !_showingLeaderboard && PluginSidebarPolicy.ShouldShow(
-            _isFullScreen,
-            PluginSidebar.SelectedAccountId,
-            _openAccountIds);
-        PluginSidebar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        var visible = PluginSidebar.UpdateHostVisibility(!_showingLeaderboard,
+            _isFullScreen, _openAccountIds);
         TrackerGapColumn.Width = visible ? new GridLength(6) : new GridLength(0);
         TrackerColumn.Width = visible ? new GridLength(250) : new GridLength(0);
     }

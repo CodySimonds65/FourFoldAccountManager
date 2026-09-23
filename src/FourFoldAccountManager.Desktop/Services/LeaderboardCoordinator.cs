@@ -164,6 +164,15 @@ public sealed class LeaderboardCoordinator : IAsyncDisposable
         finally { if (acquired) _requestGate.Release(); }
     }
 
+    public async Task<LeaderboardPage?> GetCachedPageAsync(LeaderboardPeriod period, int page, int pageSize,
+        CancellationToken ct)
+    {
+        // Reading the local snapshot must not start a request or a retry loop.
+        var state = _state ?? await _store.LoadAsync(ct);
+        return state.CachedPages.FirstOrDefault(candidate =>
+            candidate.Period == period && candidate.Page == page && candidate.PageSize == pageSize);
+    }
+
     public async Task<LeaderboardPage> GetPageAsync(LeaderboardPeriod period, int page, int pageSize,
         CancellationToken ct)
     {
@@ -182,8 +191,8 @@ public sealed class LeaderboardCoordinator : IAsyncDisposable
     }
 
     public async Task<LeaderboardPage?> RefreshPageAsync(LeaderboardPeriod period, int page, int pageSize,
-        CancellationToken ct)
-        => await RefreshPageCoreAsync(period, page, pageSize, ct, scheduleRetry: true);
+        CancellationToken ct, bool scheduleRetry = true)
+        => await RefreshPageCoreAsync(period, page, pageSize, ct, scheduleRetry);
 
     private async Task<LeaderboardPage?> RefreshPageCoreAsync(LeaderboardPeriod period, int page, int pageSize,
         CancellationToken ct, bool scheduleRetry)

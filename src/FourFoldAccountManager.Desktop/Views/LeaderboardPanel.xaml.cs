@@ -86,16 +86,47 @@ public partial class LeaderboardPanel : UserControl
 
         try
         {
-            LeaderboardPage? fresh = null;
-            if (coordinator.IsConfigured)
-                fresh = await coordinator.RefreshPageAsync(period, pageNumber, PageSize, cancellation.Token);
+            var cached = await coordinator.GetCachedPageAsync(period, pageNumber, PageSize,
+                cancellation.Token);
             if (!IsCurrent(version, cancellation)) return;
+            _page = cached;
+            _showingCachedData = cached is not null;
+            if (cached is not null)
+            {
+                ShowPage(cached);
+                if (coordinator.IsConfigured) StateText.Text = "Checking for new rankings…";
+            }
+            else
+            {
+                RowsControl.ItemsSource = null;
+                FreshnessText.Text = "No saved snapshot is available.";
+                StateText.Text = coordinator.IsConfigured
+                    ? "Loading rankings…"
+                    : "The shared leaderboard service is not configured on this PC.";
+                UpdatePaging();
+            }
 
-            var page = fresh ?? await coordinator.GetPageAsync(period, pageNumber, PageSize, cancellation.Token);
+            if (!coordinator.IsConfigured) return;
+            // The view timer performs retries while visible; this request must not create
+            // a coordinator retry that survives a switch back to Workspace.
+            var fresh = await coordinator.RefreshPageAsync(period, pageNumber, PageSize,
+                cancellation.Token, scheduleRetry: false);
             if (!IsCurrent(version, cancellation)) return;
-            _page = page;
-            _showingCachedData = fresh is null;
-            ShowPage(page);
+            if (fresh is not null)
+            {
+                _page = fresh;
+                _showingCachedData = false;
+                ShowPage(fresh);
+            }
+            else if (cached is not null)
+            {
+                _showingCachedData = true;
+                ShowPage(cached);
+            }
+            else
+            {
+                StateText.Text = "The service is unavailable and no rankings have been saved yet.";
+            }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         catch (Exception)
@@ -127,15 +158,13 @@ public partial class LeaderboardPanel : UserControl
             entry.LastSampledAtUtc.UtcDateTime.ToString("MMM d, HH:mm 'UTC'", CultureInfo.InvariantCulture),
             entry.IsStale ? "Sample is stale" : "Fresh sample")).ToArray();
 
-        var hasSavedPage = page.Entries.Count > 0 || page.TotalEntries > 0 ||
-                           page.GeneratedAtUtc < DateTimeOffset.UtcNow.AddSeconds(-5);
         var offline = !_coordinator!.IsConfigured || _showingCachedData;
-        FreshnessText.Text = offline && hasSavedPage
+        FreshnessText.Text = offline
             ? $"Saved snapshot · last updated {FormatUtc(page.GeneratedAtUtc)}"
-            : offline ? "No saved snapshot is available." : $"Updated {FormatUtc(page.GeneratedAtUtc)}";
+            : $"Updated {FormatUtc(page.GeneratedAtUtc)}";
 
         var currentWindow = LeaderboardPeriodWindow.GetCurrent(_period, DateTimeOffset.UtcNow);
-        if (offline && hasSavedPage &&
+        if (offline &&
             (page.PeriodStartUtc != currentWindow.StartUtc || page.PeriodEndUtc != currentWindow.EndUtc))
         {
             StateText.Text = "This saved snapshot is from a previous UTC period.";
@@ -144,9 +173,7 @@ public partial class LeaderboardPanel : UserControl
         {
             StateText.Text = !_coordinator.IsConfigured
                 ? "The shared leaderboard service is not configured on this PC."
-                : hasSavedPage
-                    ? "The service is unavailable. Showing saved rankings."
-                    : "The service is unavailable and no rankings have been saved yet.";
+                : "The service is unavailable. Showing saved rankings.";
         }
         else
         {

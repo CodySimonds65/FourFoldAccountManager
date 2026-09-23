@@ -91,6 +91,26 @@ public sealed class LeaderboardCoordinatorTests
     }
 
     [Fact]
+    public async Task CacheOnlyReadPreservesRecentEmptyPageWithoutContactingService()
+    {
+        using var temp = new TempDirectory();
+        var store = new LeaderboardClientStateStore(new LocalDataPaths(temp.Path));
+        var (start, end) = LeaderboardPeriodWindow.GetCurrent(LeaderboardPeriod.Daily, DateTimeOffset.UtcNow);
+        var emptyPage = new LeaderboardPage(LeaderboardPeriod.Daily, start, end, 1, 25, 0,
+            DateTimeOffset.UtcNow, []);
+        await store.SaveAsync(new LeaderboardClientState(Guid.NewGuid(), [emptyPage], null));
+        var handler = new RecordingHandler { Fail = true };
+        await using var coordinator = CreateCoordinator(temp.Path, handler, sharing: false);
+
+        var cached = await coordinator.GetCachedPageAsync(LeaderboardPeriod.Daily, 1, 25, CancellationToken.None);
+
+        Assert.NotNull(cached);
+        Assert.Empty(cached.Entries);
+        Assert.Equal(emptyPage.GeneratedAtUtc, cached.GeneratedAtUtc);
+        Assert.Equal(0, handler.GetRequests);
+    }
+
+    [Fact]
     public async Task NextSyncIncludesNewlyLinkedProfileAndOnlyOpenPlayerIds()
     {
         using var temp = new TempDirectory();
@@ -214,10 +234,12 @@ public sealed class LeaderboardCoordinatorTests
         public List<string> Bodies { get; } = [];
         public bool Fail { get; set; }
         public bool BadJson { get; set; }
+        public int GetRequests { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
             if (request.Content is not null) Bodies.Add(await request.Content.ReadAsStringAsync(ct));
+            if (request.Method == HttpMethod.Get) GetRequests++;
             if (Fail) throw new HttpRequestException("offline");
             if (request.Method == HttpMethod.Put) return new HttpResponseMessage(HttpStatusCode.NoContent);
             var page = request.RequestUri!.Query.Contains("page=2&", StringComparison.Ordinal) ? 2 : 1;
