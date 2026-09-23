@@ -1,0 +1,115 @@
+using FourFoldAccountManager.Core.Tracking;
+using FourFoldAccountManager.Leaderboard.Service.Data;
+
+namespace FourFoldAccountManager.Leaderboard.Service.Collection;
+
+public sealed class LeaderboardSamplingService(
+    ILeaderboardStore store,
+    ILeaderboardPublicProfileSource source,
+    LeaderboardCollectionOptions options,
+    TimeProvider? timeProvider = null)
+{
+    private static readonly TimeSpan ActiveLease = TimeSpan.FromMinutes(3);
+    private readonly SemaphoreSlim _runGate = new(1, 1);
+    private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
+
+    public async Task RunOnceAsync(DateTimeOffset nowUtc, CancellationToken ct)
+    {
+        if (!options.CanCollect) return;
+        var now = nowUtc.ToUniversalTime();
+        await _runGate.WaitAsync(ct);
+        try
+        {
+            var start = _clock.GetTimestamp();
+            var active = await store.GetActiveProfilesAsync(now - ActiveLease, ct);
+            var fetched = false;
+            foreach (var profile in active.GroupBy(x => x.PlayerId).Select(x => x.First()).OrderBy(x => x.PlayerId))
+            {
+                ct.ThrowIfCancellationRequested();
+                if (fetched) await Task.Delay(options.MinimumSampleInterval, _clock, ct);
+                var observedAt = fetched ? now + _clock.GetElapsedTime(start) : now;
+                var currentActive = await store.GetActiveProfilesAsync(observedAt - ActiveLease, ct);
+                var currentProfile = currentActive.FirstOrDefault(x => x.PlayerId == profile.PlayerId);
+                if (currentProfile is null) continue;
+                fetched = await SampleAsync(currentProfile.PlayerId, currentProfile.Username, observedAt, ct);
+            }
+        }
+        finally
+        {
+            _runGate.Release();
+        }
+    }
+
+    private async Task<bool> SampleAsync(int playerId, string username, DateTimeOffset now, CancellationToken ct)
+    {
+        var previous = await store.GetPlayerStateAsync(playerId, ct);
+        if (previous is not null && !previous.NeedsBaseline &&
+            now - previous.LastSampledAtUtc < options.MinimumSampleInterval)
+            return false;
+
+        var fetchStarted = _clock.GetTimestamp();
+        PlayerProgressSnapshot current;
+        try
+        {
+            current = await source.FetchAsync(playerId, ct);
+            if (current is null || string.IsNullOrWhiteSpace(current.Username) ||
+                current.Classes is null || current.InvalidClasses is null ||
+                current.Classes.Count == 0)
+                throw new InvalidDataException("The public profile has no class progression.");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            await store.MarkNeedsBaselineAsync(playerId, ct);
+            return true;
+        }
+        now += _clock.GetElapsedTime(fetchStarted);
+
+        if (!string.Equals(username.Trim(), current.Username.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            await store.MarkNeedsBaselineAsync(playerId, ct);
+            return true;
+        }
+
+        if (previous is null || previous.NeedsBaseline)
+        {
+            await SaveAsync(null);
+            return true;
+        }
+
+        if (now - previous.LastSampledAtUtc > options.MinimumSampleInterval * 3)
+        {
+            await store.MarkNeedsBaselineAsync(playerId, ct);
+            await SaveAsync(null);
+            return true;
+        }
+
+        XpGainResult gain;
+        try
+        {
+            gain = XpProgressCalculator.Calculate(
+                XpSnapshotJson.Deserialize(previous.SnapshotJson, previous.Username), current);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or System.Text.Json.JsonException or ArgumentException)
+        {
+            await store.MarkNeedsBaselineAsync(playerId, ct);
+            await SaveAsync(null);
+            return true;
+        }
+
+        if (gain.ValidClassCount == 0)
+        {
+            await store.MarkNeedsBaselineAsync(playerId, ct);
+            return true;
+        }
+        await SaveAsync(gain.ValidGain > 0 ? gain.ValidGain : null);
+        return true;
+
+        async Task SaveAsync(long? validGain) => await store.SaveObservationAsync(
+            new PlayerObservation(playerId, current.Username.Trim(), XpSnapshotJson.Serialize(current),
+                validGain, now, false), ct);
+    }
+}
