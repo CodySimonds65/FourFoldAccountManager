@@ -19,6 +19,9 @@ public sealed record GlobalHotkeyChord(ushort VirtualKey, GlobalHotkeyModifiers 
     public static GlobalHotkeyChord DefaultRevealXpOverlayTab { get; } =
         new(0x4F, SupportedModifiers);
 
+    public static GlobalHotkeyChord DefaultToggleDividerResizing { get; } =
+        new(0x4C, SupportedModifiers);
+
     [JsonIgnore]
     public bool IsValid =>
         VirtualKey is >= 0x20 and <= 0xFE &&

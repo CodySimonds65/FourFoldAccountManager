@@ -8,8 +8,10 @@ public partial class SettingsDialog : Window
 {
     private readonly Func<MessageBoxResult>? _confirmResetLayoutSizes;
     private readonly GlobalHotkeyChord _initialRevealXpOverlayTabShortcut;
+    private readonly GlobalHotkeyChord _initialToggleDividerResizingShortcut;
     private readonly bool _revealShortcutAvailable;
-    private bool _isCapturingRevealShortcut;
+    private readonly bool _toggleDividerShortcutAvailable;
+    private ShortcutTarget? _capturingShortcut;
 
     public SettingsDialog(bool fillGameToPanel, bool showFullScreenExitButton) :
         this(
@@ -17,6 +19,8 @@ public partial class SettingsDialog : Window
             showFullScreenExitButton,
             GlobalHotkeyChord.DefaultRevealXpOverlayTab,
             revealShortcutAvailable: true,
+            GlobalHotkeyChord.DefaultToggleDividerResizing,
+            toggleDividerShortcutAvailable: true,
             confirmResetLayoutSizes: null)
     {
     }
@@ -30,7 +34,9 @@ public partial class SettingsDialog : Window
             showFullScreenExitButton,
             GlobalHotkeyChord.DefaultRevealXpOverlayTab,
             revealShortcutAvailable: true,
-            confirmResetLayoutSizes: confirmResetLayoutSizes)
+            GlobalHotkeyChord.DefaultToggleDividerResizing,
+            toggleDividerShortcutAvailable: true,
+            confirmResetLayoutSizes)
     {
     }
 
@@ -40,19 +46,44 @@ public partial class SettingsDialog : Window
         GlobalHotkeyChord revealXpOverlayTabShortcut,
         bool revealShortcutAvailable,
         Func<MessageBoxResult>? confirmResetLayoutSizes = null)
+        : this(
+            fillGameToPanel,
+            showFullScreenExitButton,
+            revealXpOverlayTabShortcut,
+            revealShortcutAvailable,
+            GlobalHotkeyChord.DefaultToggleDividerResizing,
+            toggleDividerShortcutAvailable: true,
+            confirmResetLayoutSizes)
+    {
+    }
+
+    internal SettingsDialog(
+        bool fillGameToPanel,
+        bool showFullScreenExitButton,
+        GlobalHotkeyChord revealXpOverlayTabShortcut,
+        bool revealShortcutAvailable,
+        GlobalHotkeyChord toggleDividerResizingShortcut,
+        bool toggleDividerShortcutAvailable,
+        Func<MessageBoxResult>? confirmResetLayoutSizes = null)
     {
         ArgumentNullException.ThrowIfNull(revealXpOverlayTabShortcut);
+        ArgumentNullException.ThrowIfNull(toggleDividerResizingShortcut);
         _confirmResetLayoutSizes = confirmResetLayoutSizes;
         _initialRevealXpOverlayTabShortcut = revealXpOverlayTabShortcut;
+        _initialToggleDividerResizingShortcut = toggleDividerResizingShortcut;
         _revealShortcutAvailable = revealShortcutAvailable;
+        _toggleDividerShortcutAvailable = toggleDividerShortcutAvailable;
         InitializeComponent();
         SourceInitialized += (_, _) => WindowAppearance.Apply(this);
         FillOption.IsChecked = fillGameToPanel;
         FitOption.IsChecked = !fillGameToPanel;
         ShowFullScreenExitOption.IsChecked = showFullScreenExitButton;
         RevealXpOverlayTabShortcut = revealXpOverlayTabShortcut;
+        ToggleDividerResizingShortcut = toggleDividerResizingShortcut;
         RevealShortcutButton.Content = FormatShortcut(revealXpOverlayTabShortcut);
-        UpdateRevealShortcutStatus();
+        ToggleDividerResizeShortcutButton.Content = FormatShortcut(toggleDividerResizingShortcut);
+        UpdateShortcutStatus(ShortcutTarget.RevealXpOverlayTab);
+        UpdateShortcutStatus(ShortcutTarget.ToggleDividerResizing);
     }
 
     public bool FillGameToPanel { get; private set; }
@@ -61,6 +92,9 @@ public partial class SettingsDialog : Window
 
     public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; private set; } =
         GlobalHotkeyChord.DefaultRevealXpOverlayTab;
+
+    public GlobalHotkeyChord ToggleDividerResizingShortcut { get; private set; } =
+        GlobalHotkeyChord.DefaultToggleDividerResizing;
 
     public bool ResetLayoutSizes { get; private set; }
 
@@ -78,18 +112,24 @@ public partial class SettingsDialog : Window
         }
     }
 
-    private void CaptureRevealShortcut_Click(object sender, RoutedEventArgs e)
+    private void CaptureRevealShortcut_Click(object sender, RoutedEventArgs e) =>
+        BeginCapturingShortcut(ShortcutTarget.RevealXpOverlayTab);
+
+    private void CaptureToggleDividerResizeShortcut_Click(object sender, RoutedEventArgs e) =>
+        BeginCapturingShortcut(ShortcutTarget.ToggleDividerResizing);
+
+    private void BeginCapturingShortcut(ShortcutTarget target)
     {
-        _isCapturingRevealShortcut = true;
-        RevealShortcutButton.Content = "Press shortcut…";
-        RevealShortcutStatusText.Text = "Press Ctrl, Alt, or Shift with one key. Esc cancels.";
+        _capturingShortcut = target;
+        SetShortcutButtonContent(target, "Press shortcut…");
+        SetShortcutStatus(target, "Press Ctrl, Alt, or Shift with one key. Esc cancels.");
         Activate();
         Keyboard.Focus(this);
     }
 
     private void SettingsDialog_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (!_isCapturingRevealShortcut)
+        if (_capturingShortcut is not { } target)
         {
             return;
         }
@@ -98,9 +138,9 @@ public partial class SettingsDialog : Window
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (key == Key.Escape)
         {
-            _isCapturingRevealShortcut = false;
-            RevealShortcutButton.Content = FormatShortcut(RevealXpOverlayTabShortcut);
-            UpdateRevealShortcutStatus();
+            _capturingShortcut = null;
+            SetShortcutButtonContent(target, FormatShortcut(GetShortcut(target)));
+            UpdateShortcutStatus(target);
             return;
         }
 
@@ -108,36 +148,88 @@ public partial class SettingsDialog : Window
         var modifiers = MapSupportedModifiers(Keyboard.Modifiers);
         if (!GlobalHotkeyChord.TryCreate(virtualKey, modifiers, out var chord))
         {
-            RevealShortcutStatusText.Text =
-                "Use Ctrl, Alt, or Shift plus one non-modifier key. Windows-key shortcuts are not supported.";
+            SetShortcutStatus(target,
+                "Use Ctrl, Alt, or Shift plus one non-modifier key. Windows-key shortcuts are not supported.");
             return;
         }
 
-        RevealXpOverlayTabShortcut = chord;
-        _isCapturingRevealShortcut = false;
-        RevealShortcutButton.Content = FormatShortcut(chord);
-        UpdateRevealShortcutStatus();
+        SetShortcut(target, chord);
+        _capturingShortcut = null;
+        SetShortcutButtonContent(target, FormatShortcut(chord));
+        UpdateShortcutStatus(target);
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
-        _isCapturingRevealShortcut = false;
+        _capturingShortcut = null;
+        if (RevealXpOverlayTabShortcut == ToggleDividerResizingShortcut)
+        {
+            MessageBox.Show(this,
+                "Choose different shortcuts for revealing the XP overlay tab and toggling divider resizing.",
+                "Shortcuts must be different", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         FillGameToPanel = FillOption.IsChecked == true;
         ShowFullScreenExitButton = ShowFullScreenExitOption.IsChecked == true;
         DialogResult = true;
     }
 
-    private void UpdateRevealShortcutStatus()
+    private void UpdateShortcutStatus(ShortcutTarget target)
     {
-        if (RevealXpOverlayTabShortcut != _initialRevealXpOverlayTabShortcut)
+        var chord = GetShortcut(target);
+        var initialChord = target == ShortcutTarget.RevealXpOverlayTab
+            ? _initialRevealXpOverlayTabShortcut
+            : _initialToggleDividerResizingShortcut;
+        var available = target == ShortcutTarget.RevealXpOverlayTab
+            ? _revealShortcutAvailable
+            : _toggleDividerShortcutAvailable;
+
+        SetShortcutStatus(target, chord != initialChord
+            ? "Save settings to register this shortcut."
+            : available
+                ? "Available globally, including while a game window is focused."
+                : "Unavailable — another app may be using this shortcut. Choose a different combination.");
+    }
+
+    private GlobalHotkeyChord GetShortcut(ShortcutTarget target) =>
+        target == ShortcutTarget.RevealXpOverlayTab
+            ? RevealXpOverlayTabShortcut
+            : ToggleDividerResizingShortcut;
+
+    private void SetShortcut(ShortcutTarget target, GlobalHotkeyChord chord)
+    {
+        if (target == ShortcutTarget.RevealXpOverlayTab)
         {
-            RevealShortcutStatusText.Text = "Save settings to register this shortcut.";
+            RevealXpOverlayTabShortcut = chord;
         }
         else
         {
-            RevealShortcutStatusText.Text = _revealShortcutAvailable
-                ? "Available globally, including while a game window is focused."
-                : "Unavailable — another app may be using this shortcut. Choose a different combination.";
+            ToggleDividerResizingShortcut = chord;
+        }
+    }
+
+    private void SetShortcutButtonContent(ShortcutTarget target, string content)
+    {
+        if (target == ShortcutTarget.RevealXpOverlayTab)
+        {
+            RevealShortcutButton.Content = content;
+        }
+        else
+        {
+            ToggleDividerResizeShortcutButton.Content = content;
+        }
+    }
+
+    private void SetShortcutStatus(ShortcutTarget target, string status)
+    {
+        if (target == ShortcutTarget.RevealXpOverlayTab)
+        {
+            RevealShortcutStatusText.Text = status;
+        }
+        else
+        {
+            ToggleDividerResizeShortcutStatusText.Text = status;
         }
     }
 
@@ -193,5 +285,11 @@ public partial class SettingsDialog : Window
 
         parts.Add(keyName);
         return string.Join("+", parts);
+    }
+
+    private enum ShortcutTarget
+    {
+        RevealXpOverlayTab,
+        ToggleDividerResizing
     }
 }

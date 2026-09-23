@@ -23,6 +23,9 @@ public sealed record PanelSettings
     public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =
         GlobalHotkeyChord.DefaultRevealXpOverlayTab;
 
+    public GlobalHotkeyChord ToggleDividerResizingShortcut { get; init; } =
+        GlobalHotkeyChord.DefaultToggleDividerResizing;
+
     public double TwoByThreeTopRowFraction { get; init; } = 0.6;
 
     public IReadOnlyList<PanelSplitState> SplitStates { get; init; } = Array.Empty<PanelSplitState>();
