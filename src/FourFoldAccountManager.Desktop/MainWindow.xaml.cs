@@ -1058,8 +1058,8 @@ public partial class MainWindow : Window
             PluginSidebar.SelectedAccountId,
             _openAccountIds);
         PluginSidebar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        TrackerGapColumn.Width = visible ? new GridLength(16) : new GridLength(0);
-        TrackerColumn.Width = visible ? new GridLength(240) : new GridLength(0);
+        TrackerGapColumn.Width = visible ? new GridLength(11) : new GridLength(0);
+        TrackerColumn.Width = visible ? new GridLength(245) : new GridLength(0);
     }
 
     private async void XpOverlayLayer_AccountDropped(object? sender, XpOverlayAccountDroppedEventArgs args)
