@@ -84,6 +84,29 @@
                        Margin="0,20,0,9" />
             <Border Padding="14" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}"
                     Background="{DynamicResource Brush.Surface}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
+                        <TextBlock Text="Toggle divider resizing" FontWeight="SemiBold" />
+                        <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource Brush.TextMuted}"
+                                   Text="Lock or unlock layout divider dragging with a global shortcut." />
+                    </StackPanel>
+                    <Button x:Name="ToggleDividerResizeShortcutButton" Grid.Column="1" Width="174" Height="34"
+                            Click="CaptureToggleDividerResizeShortcut_Click" Style="{StaticResource AppButtonStyle}" />
+                    <TextBlock x:Name="ToggleDividerResizeShortcutStatusText" Grid.Row="1" Grid.ColumnSpan="2"
+                               Margin="0,10,0,0" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
+                               TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+            <Border Padding="14" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}"
+                    Background="{DynamicResource Brush.Surface}" Margin="0,10,0,0">
                 <StackPanel>
                     <TextBlock Text="Restore divider positions" FontWeight="SemiBold" />
                     <TextBlock Margin="0,4,0,12" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"

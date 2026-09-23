@@ -113,6 +113,11 @@ public sealed class SettingsStore
             throw new InvalidDataException("Panel settings contain an invalid XP overlay reveal shortcut.");
         }
 
+        if (settings.ToggleDividerResizingShortcut is null || !settings.ToggleDividerResizingShortcut.IsValid)
+        {
+            throw new InvalidDataException("Panel settings contain an invalid divider resizing shortcut.");
+        }
+
         if (settings.TwoByThreeTopRowFraction is < 0.2 or > 0.8)
         {
             throw new InvalidDataException("The 2 × 3 top-row height must be between 20% and 80%.");
@@ -145,6 +150,7 @@ public sealed class SettingsStore
             FillGameToPanel = settings.FillGameToPanel,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
+            ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = splitStates,
             GameViewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes),

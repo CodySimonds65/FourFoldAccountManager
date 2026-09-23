@@ -9,6 +9,10 @@ internal interface IGlobalHotkeyRegistrar
     void Unregister(int id);
 }
 
+internal sealed record GlobalHotkeyShortcutChange(
+    GlobalHotkeyChord Previous,
+    GlobalHotkeyChord Current);
+
 internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
 {
     private const int MaximumApplicationHotkeyId = 0xBFFF;
@@ -16,10 +20,9 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
     private readonly object _sync = new();
     private readonly SemaphoreSlim _replacementGate = new(1, 1);
     private readonly IGlobalHotkeyRegistrar _registrar;
+    private readonly Dictionary<int, GlobalHotkeyChord> _activeRegistrations = [];
+    private readonly Dictionary<int, GlobalHotkeyChord> _pendingRegistrations = [];
     private readonly HashSet<int> _registeredIds = [];
-    private readonly HashSet<int> _pendingIds = [];
-    private int? _activeId;
-    private GlobalHotkeyChord? _activeChord;
     private int _nextId;
     private bool _disposed;
 
@@ -43,9 +46,14 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
                 return false;
             }
 
-            if (_activeId is not null)
+            if (_activeRegistrations.Values.Contains(chord))
             {
-                return _activeChord == chord;
+                return true;
+            }
+
+            if (_pendingRegistrations.Values.Contains(chord))
+            {
+                return false;
             }
 
             var id = NextId();
@@ -55,8 +63,7 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
             }
 
             _registeredIds.Add(id);
-            _activeId = id;
-            _activeChord = chord;
+            _activeRegistrations.Add(id, chord);
             return true;
         }
     }
@@ -65,15 +72,62 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
     {
         lock (_sync)
         {
-            return !_disposed && _activeId == id;
+            return !_disposed && _activeRegistrations.ContainsKey(id);
         }
     }
 
-    public async Task<bool> TryReplaceAsync(GlobalHotkeyChord chord, Func<Task> persist)
+    public bool TryGetChord(int id, out GlobalHotkeyChord chord)
+    {
+        lock (_sync)
+        {
+            if (!_disposed && _activeRegistrations.TryGetValue(id, out chord!))
+            {
+                return true;
+            }
+
+            chord = null!;
+            return false;
+        }
+    }
+
+    public Task<bool> TryReplaceAsync(GlobalHotkeyChord chord, Func<Task> persist)
     {
         ArgumentNullException.ThrowIfNull(chord);
+        GlobalHotkeyChord previous;
+        lock (_sync)
+        {
+            if (_disposed)
+            {
+                return Task.FromResult(false);
+            }
+
+            previous = _activeRegistrations.Values.FirstOrDefault() ?? chord;
+        }
+
+        return TryReplaceAsync([new GlobalHotkeyShortcutChange(previous, chord)], persist);
+    }
+
+    public Task<bool> TryReplaceAsync(
+        GlobalHotkeyChord previous,
+        GlobalHotkeyChord current,
+        Func<Task> persist)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        ArgumentNullException.ThrowIfNull(current);
+        return TryReplaceAsync([new GlobalHotkeyShortcutChange(previous, current)], persist);
+    }
+
+    public async Task<bool> TryReplaceAsync(
+        IReadOnlyCollection<GlobalHotkeyShortcutChange> changes,
+        Func<Task> persist)
+    {
+        ArgumentNullException.ThrowIfNull(changes);
         ArgumentNullException.ThrowIfNull(persist);
-        if (!chord.IsValid)
+        var replacements = changes.ToArray();
+        if (replacements.Any(change =>
+                change.Previous is null || change.Current is null || !change.Current.IsValid) ||
+            replacements.Select(change => change.Previous).Distinct().Count() != replacements.Length ||
+            replacements.Select(change => change.Current).Distinct().Count() != replacements.Length)
         {
             return false;
         }
@@ -81,7 +135,9 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
         await _replacementGate.WaitAsync();
         try
         {
-            int? candidateId = null;
+            var changed = replacements
+                .Where(change => change.Previous != change.Current)
+                .ToArray();
             lock (_sync)
             {
                 if (_disposed)
@@ -89,17 +145,42 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
                     return false;
                 }
 
-                if (_activeId is null || _activeChord != chord)
+                var replacedChords = changed.Select(change => change.Previous).ToHashSet();
+                var currentUnchangedChords = _activeRegistrations.Values
+                    .Where(chord => !replacedChords.Contains(chord))
+                    .Concat(_pendingRegistrations.Values)
+                    .ToHashSet();
+                if (changed.Any(change => currentUnchangedChords.Contains(change.Current)))
+                {
+                    return false;
+                }
+            }
+
+            if (changed.Length == 0)
+            {
+                await persist();
+                return true;
+            }
+
+            var candidates = new Dictionary<GlobalHotkeyShortcutChange, int>();
+            lock (_sync)
+            {
+                foreach (var change in changed)
                 {
                     var id = NextId();
-                    if (!_registrar.TryRegister(id, chord))
+                    if (!_registrar.TryRegister(id, change.Current))
                     {
+                        foreach (var candidateId in candidates.Values)
+                        {
+                            ReleasePending(candidateId);
+                        }
+
                         return false;
                     }
 
                     _registeredIds.Add(id);
-                    _pendingIds.Add(id);
-                    candidateId = id;
+                    _pendingRegistrations.Add(id, change.Current);
+                    candidates.Add(change, id);
                 }
             }
 
@@ -109,9 +190,9 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
             }
             catch
             {
-                if (candidateId is int failedId)
+                foreach (var candidateId in candidates.Values)
                 {
-                    ReleasePending(failedId);
+                    ReleasePending(candidateId);
                 }
 
                 throw;
@@ -124,23 +205,23 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
                     return false;
                 }
 
-                if (candidateId is not int committedId)
+                foreach (var change in changed)
                 {
-                    return _activeId is not null && _activeChord == chord;
-                }
+                    var oldId = FindActiveId(change.Previous);
+                    if (oldId is int previousId && _activeRegistrations.Remove(previousId))
+                    {
+                        _registeredIds.Remove(previousId);
+                        _registrar.Unregister(previousId);
+                    }
 
-                if (!_pendingIds.Remove(committedId) || !_registeredIds.Contains(committedId))
-                {
-                    return false;
-                }
+                    var candidateId = candidates[change];
+                    if (!_pendingRegistrations.Remove(candidateId) ||
+                        !_registeredIds.Contains(candidateId))
+                    {
+                        return false;
+                    }
 
-                var previousId = _activeId;
-                _activeId = committedId;
-                _activeChord = chord;
-
-                if (previousId is int oldId && _registeredIds.Remove(oldId))
-                {
-                    _registrar.Unregister(oldId);
+                    _activeRegistrations.Add(candidateId, change.Current);
                 }
 
                 return true;
@@ -168,10 +249,22 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
             }
 
             _registeredIds.Clear();
-            _pendingIds.Clear();
-            _activeId = null;
-            _activeChord = null;
+            _activeRegistrations.Clear();
+            _pendingRegistrations.Clear();
         }
+    }
+
+    private int? FindActiveId(GlobalHotkeyChord chord)
+    {
+        foreach (var (id, activeChord) in _activeRegistrations)
+        {
+            if (activeChord == chord)
+            {
+                return id;
+            }
+        }
+
+        return null;
     }
 
     private int NextId()
@@ -192,7 +285,7 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
     {
         lock (_sync)
         {
-            _pendingIds.Remove(id);
+            _pendingRegistrations.Remove(id);
             if (_registeredIds.Remove(id))
             {
                 _registrar.Unregister(id);

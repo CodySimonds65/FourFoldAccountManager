@@ -35,12 +35,14 @@ public partial class MainWindow : Window
     private readonly XpTrackerCoordinator _xpTracker;
     private readonly ObservableCollection<XpTrackerRow> _xpTrackerRows = [];
     private readonly List<PanelSlotCard> _slotCards = [];
+    private readonly LayoutDividerResizeController _layoutDividerResizeController = new();
     private readonly SemaphoreSlim _settingsMutationGate = new(1, 1);
     private readonly SemaphoreSlim _viewportSaveGate = new(1, 1);
     private HwndSource? _windowSource;
     private GlobalHotkeyRegistrationCoordinator? _hotkeyCoordinator;
     private PanelSettings _panelSettings = PanelSettings.Default;
     private bool _revealShortcutAvailable;
+    private bool _toggleDividerResizeShortcutAvailable;
     private bool _isReady;
     private bool _batchLaunchInProgress;
     private bool _accountsPanelVisible = true;
@@ -132,10 +134,18 @@ public partial class MainWindow : Window
     {
         if (message == WmHotkey &&
             _hotkeyCoordinator is { } coordinator &&
-            coordinator.IsCurrent(unchecked((int)wParam.ToInt64())))
+            coordinator.TryGetChord(unchecked((int)wParam.ToInt64()), out var chord))
         {
-            FullscreenXpOverlayTray.RevealEdgeTab();
-            handled = true;
+            if (chord == _panelSettings.RevealXpOverlayTabShortcut)
+            {
+                FullscreenXpOverlayTray.RevealEdgeTab();
+                handled = true;
+            }
+            else if (chord == _panelSettings.ToggleDividerResizingShortcut)
+            {
+                ToggleLayoutDividerResizing();
+                handled = true;
+            }
         }
 
         return IntPtr.Zero;
@@ -155,6 +165,9 @@ public partial class MainWindow : Window
             _panelSettings = await _settingsStore.LoadAsync();
             _revealShortcutAvailable =
                 _hotkeyCoordinator?.TryInitialize(_panelSettings.RevealXpOverlayTabShortcut) == true;
+            _toggleDividerResizeShortcutAvailable =
+                _panelSettings.ToggleDividerResizingShortcut != _panelSettings.RevealXpOverlayTabShortcut &&
+                _hotkeyCoordinator?.TryInitialize(_panelSettings.ToggleDividerResizingShortcut) == true;
             foreach (var (accountId, size) in _panelSettings.GameViewportSizes)
             {
                 await _browserSessions.SetGameViewportSizeAsync(accountId, size);
@@ -623,13 +636,22 @@ public partial class MainWindow : Window
         UpdateManageSlotsButton();
     }
 
+    private void ToggleLayoutDividerResizing()
+    {
+        GlobalStatusText.Text = _layoutDividerResizeController.Toggle()
+            ? "Layout divider resizing locked."
+            : "Layout divider resizing unlocked.";
+    }
+
     private async void Settings_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new SettingsDialog(
             _panelSettings.FillGameToPanel,
             _panelSettings.ShowFullScreenExitButton,
             _panelSettings.RevealXpOverlayTabShortcut,
-            _revealShortcutAvailable)
+            _revealShortcutAvailable,
+            _panelSettings.ToggleDividerResizingShortcut,
+            _toggleDividerResizeShortcutAvailable)
         {
             Owner = this
         };
@@ -638,10 +660,28 @@ public partial class MainWindow : Window
             return;
         }
 
-        var shortcutChanged = dialog.RevealXpOverlayTabShortcut != _panelSettings.RevealXpOverlayTabShortcut;
+        var revealShortcutChanged =
+            dialog.RevealXpOverlayTabShortcut != _panelSettings.RevealXpOverlayTabShortcut;
+        var dividerShortcutChanged =
+            dialog.ToggleDividerResizingShortcut != _panelSettings.ToggleDividerResizingShortcut;
+        var shortcutChanges = new List<GlobalHotkeyShortcutChange>();
+        if (revealShortcutChanged)
+        {
+            shortcutChanges.Add(new GlobalHotkeyShortcutChange(
+                _panelSettings.RevealXpOverlayTabShortcut,
+                dialog.RevealXpOverlayTabShortcut));
+        }
+
+        if (dividerShortcutChanged)
+        {
+            shortcutChanges.Add(new GlobalHotkeyShortcutChange(
+                _panelSettings.ToggleDividerResizingShortcut,
+                dialog.ToggleDividerResizingShortcut));
+        }
+
         if (dialog.FillGameToPanel == _panelSettings.FillGameToPanel &&
             dialog.ShowFullScreenExitButton == _panelSettings.ShowFullScreenExitButton &&
-            !shortcutChanged &&
+            shortcutChanges.Count == 0 &&
             !dialog.ResetLayoutSizes)
         {
             return;
@@ -663,7 +703,8 @@ public partial class MainWindow : Window
                     {
                         FillGameToPanel = dialog.FillGameToPanel,
                         ShowFullScreenExitButton = dialog.ShowFullScreenExitButton,
-                        RevealXpOverlayTabShortcut = dialog.RevealXpOverlayTabShortcut
+                        RevealXpOverlayTabShortcut = dialog.RevealXpOverlayTabShortcut,
+                        ToggleDividerResizingShortcut = dialog.ToggleDividerResizingShortcut
                     };
                     scalingChanged = candidate.FillGameToPanel != currentSettings.FillGameToPanel;
                     if (scalingChanged)
@@ -677,21 +718,29 @@ public partial class MainWindow : Window
                     : Task.CompletedTask);
             }
 
-            if (shortcutChanged)
+            if (shortcutChanges.Count > 0)
             {
                 var registered = _hotkeyCoordinator is not null &&
                     await _hotkeyCoordinator.TryReplaceAsync(
-                        dialog.RevealXpOverlayTabShortcut,
+                        shortcutChanges,
                         PersistDialogSettingsAsync);
                 if (!registered)
                 {
                     MessageBox.Show(this,
-                        "Windows couldn't register the new shortcut. Your previous saved shortcut and any existing registration remain unchanged. Choose another combination and try again.",
-                        "XP overlay shortcut unavailable", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        "Windows couldn't register one or more new shortcuts. Your previous saved shortcuts and registrations remain unchanged. Choose different combinations and try again.",
+                        "Shortcut unavailable", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
 
-                _revealShortcutAvailable = true;
+                if (revealShortcutChanged)
+                {
+                    _revealShortcutAvailable = true;
+                }
+
+                if (dividerShortcutChanged)
+                {
+                    _toggleDividerResizeShortcutAvailable = true;
+                }
             }
             else
             {
@@ -719,7 +768,11 @@ public partial class MainWindow : Window
                 ? nextSettings.FillGameToPanel
                     ? "Game scaling set to Fill panel."
                     : "Game scaling set to Fit entire game."
-                : shortcutChanged
+                : revealShortcutChanged && dividerShortcutChanged
+                ? "Global shortcuts updated."
+                : dividerShortcutChanged
+                ? "Layout divider resizing shortcut updated."
+                : revealShortcutChanged
                 ? "Full-screen XP overlay reveal shortcut updated."
                 : nextSettings.ShowFullScreenExitButton
                     ? "Full-screen Exit button enabled."
@@ -1297,6 +1350,7 @@ public partial class MainWindow : Window
             }
         }
 
+        _layoutDividerResizeController.Reset();
         _slotCards.Clear();
         PanelGridHost.Children.Clear();
         PanelGridHost.RowDefinitions.Clear();
@@ -1330,14 +1384,16 @@ public partial class MainWindow : Window
                 GlobalStatusText.Text = "The layout sizes were saved.";
             },
             () => MessageBox.Show(this, "The row heights could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error));
+                MessageBoxButton.OK, MessageBoxImage.Error),
+            _layoutDividerResizeController);
 
     internal static FrameworkElement BuildLayoutNode(
         PanelLayoutNode node,
         PanelSettings settings,
         Func<int, FrameworkElement> buildSlot,
         Func<PanelSplitState, Task> persistSplitState,
-        Action reportSaveFailure)
+        Action reportSaveFailure,
+        LayoutDividerResizeController? dividerResizeController = null)
     {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(settings);
@@ -1349,7 +1405,7 @@ public partial class MainWindow : Window
         {
             PanelSlotNode slot => buildSlot(slot.SlotIndex),
             PanelSplitNode split => BuildSplitElement(
-                split, settings, buildSlot, persistSplitState, reportSaveFailure),
+                split, settings, buildSlot, persistSplitState, reportSaveFailure, dividerResizeController),
             _ => throw new ArgumentOutOfRangeException(nameof(node))
         };
     }
@@ -1366,7 +1422,8 @@ public partial class MainWindow : Window
         PanelSettings settings,
         Func<int, FrameworkElement> buildSlot,
         Func<PanelSplitState, Task> persistSplitState,
-        Action reportSaveFailure)
+        Action reportSaveFailure,
+        LayoutDividerResizeController? dividerResizeController)
     {
         const double minimumWeight = 0.30;
         var group = new Grid();
@@ -1392,7 +1449,8 @@ public partial class MainWindow : Window
             }
 
             var child = BuildLayoutNode(
-                split.Children[index], settings, buildSlot, persistSplitState, reportSaveFailure);
+                split.Children[index], settings, buildSlot, persistSplitState, reportSaveFailure,
+                dividerResizeController);
             if (split.Orientation == PanelSplitOrientation.Horizontal)
             {
                 Grid.SetColumn(child, index);
@@ -1409,6 +1467,7 @@ public partial class MainWindow : Window
         for (var boundaryIndex = 0; boundaryIndex < split.Children.Count - 1; boundaryIndex++)
         {
             var splitter = CreateGridSplitter(split.Orientation, boundaryIndex);
+            dividerResizeController?.Track(splitter);
             splitters.Add(splitter);
             group.Children.Add(splitter);
         }
@@ -1496,7 +1555,14 @@ public partial class MainWindow : Window
 
                 foreach (var groupSplitter in splitters)
                 {
-                    groupSplitter.IsEnabled = false;
+                    if (dividerResizeController is not null)
+                    {
+                        dividerResizeController.SetTemporarilyDisabled(groupSplitter, true);
+                    }
+                    else
+                    {
+                        groupSplitter.IsEnabled = false;
+                    }
                 }
 
                 try
@@ -1516,7 +1582,14 @@ public partial class MainWindow : Window
                 {
                     foreach (var groupSplitter in splitters)
                     {
-                        groupSplitter.IsEnabled = true;
+                        if (dividerResizeController is not null)
+                        {
+                            dividerResizeController.SetTemporarilyDisabled(groupSplitter, false);
+                        }
+                        else
+                        {
+                            groupSplitter.IsEnabled = true;
+                        }
                     }
                 }
             };
