@@ -1,40 +1,49 @@
 # FourFold Account Manager
 
-A Windows desktop app for managing FourFold accounts and opening them in separate browser sessions in a 1×1, 1×2, 2×1, 2×2, five-client 2×3, or three-client 1×2 vertical panel layout. Saved logins use Windows Credential Manager.
+A Windows desktop client for managing FourFold accounts, saved logins, multi-client layouts, and profile tools in separate browser sessions.
 
-## Capabilities
+<details>
+<summary><strong>Showcase</strong> — click to view screenshots</summary>
 
-- **Profile management** — Create, edit, favorite, reorder, and remove local FourFold profiles.
-- **Panel layouts** — Assign accounts to 1×1, 1×2, 2×1, 2×2, five-client 2×3, or three-client 1×2 vertical panels and launch them together. Every multi-client layout has shared drag boundaries: resizing one client redistributes space among the clients in that split group so panels do not overlap, and each affected client remains at least 30% of the group. Split positions are saved independently for each layout and restored on launch. Use **Settings → Reset layout sizes** to restore the default boundaries; this resets layout splits only and leaves per-client viewport sizes unchanged. The 1×1 layout has no resize boundaries. The 2×3 layout starts at a 60/40 row split with two equal-width clients above three equal-width clients. The 1×2 vertical layout places one full-height client on the left and two equal-height clients stacked on the right.
-- **Game scaling** — Fit the entire game by default, fill panels to reduce black bars, and adjust each client’s viewport size.
-- **Account launch and login** — Launch accounts starts assigned sessions whose views are missing or marked failed, leaving healthy open sessions untouched. Each open, assigned slot has a relaunch icon over its slot number on hover or keyboard focus for a game that appears stuck; not every game freeze is automatically detected. Relaunching restarts only that account's browser view and reuses its saved browser profile, though FourFold may ask you to sign in again.
-- **XP tracker** — View earned XP/hour, session XP, and active-class XP remaining to the next level for each open client in a right-side panel. The panel is hidden in full screen.
+| Class Comparison | XP Calculator |
+|---|---|
+| <img src="./docs/showcase/class-comparison.png" alt="Class Comparison" width="320"> | <img src="./docs/showcase/xp-calculator.png" alt="XP Calculator" width="320"> |
+| **Workspace Settings** |  |
+| <img src="./docs/showcase/settings.png" alt="Workspace Settings" width="360"> |  |
 
-## XP tracker
+</details>
 
-The tracker matches each open account to its public FourFold username. Use the saved login username or set a separate **Ranking username**; players outside the top 200 can be linked with a verified player ID or URL.
+## Features
 
-It polls every minute. The first sample sets the baseline; later samples show XP/hour, session XP, active class, XP to next level, and an active-class time-to-level estimate based on the current XP/hour. Level gains are calculated continuously across level transitions, so XP earned after a level-up remains part of the session total and rate. Failed polls show stale data and reset the baseline on the next success. Slot moves preserve tracking, closing a client resets it, and the panel is hidden in full screen.
+- **Account profiles** — Create, edit, favorite, reorder, and remove local profiles. Saved credentials use Windows Credential Manager.
+- **Flexible layouts** — Run 1×1, 1×2, 2×1, 2×2, 2×3, or vertical split client layouts together.
+- **Plugins** — Use XP Tracker, Class Comparison, and XP Calculator from the right-side Plugins sidebar.
+- **Game controls** — Fit or fill each game panel, adjust viewport sizes, use full screen, and configure keyboard shortcuts.
+- **Updates** — Stable Windows releases are published through [GitHub Releases](https://github.com/CodySimonds65/FourFoldAccountManager/releases).
 
-Right-click a tracker row for **Reset XP/hr** or **Reset all**. **Reset XP/hr** clears that row's rate intervals and baseline while preserving session XP; **Reset all** also clears the row's session XP and rate data.
+## Profile tools
 
-Requires Windows, the .NET 10 SDK, and the Microsoft Edge WebView2 Runtime.
+Choose an account directly from the dropdown on the **Stats** or **XP Calculator** tab. The selected profile refreshes automatically.
 
-## Updates and releases
+- **Class Comparison** reads the profile’s active class and compares its displayed HP, SP, ATT, MAG, SKL, SPD, LCK, DEF, and RES values against projected class averages. Equipment is shown for context only.
+- **XP Calculator** calculates progress to a target level using `5 × level × (level + 1)` for next-level caps and `(5 / 3) × (level³ - level)` for cumulative XP.
+- Usernames in the top-200 ranking resolve to profile IDs automatically. Ambiguous or out-of-ranking users can be linked with a verified profile ID or URL.
 
-Stable Windows releases are published on [GitHub Releases](https://github.com/CodySimonds65/FourFoldAccountManager/releases). FourFold checks once after startup, asks before downloading a newer version, verifies the standalone executable, and restarts into the update when you approve it. WebView2 remains required after updating.
+## XP Tracker
 
-Each Windows release includes:
+The tracker polls every minute and shows XP/hour, session XP, active class, XP to next level, and time-to-level estimates. Right-click a row to reset its XP/hour rate or all tracking data. Tracker behavior and overlays remain available inside the Plugins sidebar.
 
-```text
-FourFoldAccountManager-v<version>-win-x64.zip
-FourFoldAccountManager-v<version>-win-x64-standalone.exe
-FourFoldAccountManager-v<version>-checksums.txt
-```
+## Requirements
 
-The release workflow currently publishes Windows `win-x64` assets only; no macOS build is provided.
+- Windows
+- .NET 10 SDK/runtime
+- Microsoft Edge WebView2 Runtime
+
+## Run from source
 
 ```powershell
 dotnet build FourFoldAccountManager.sln -c Release
 dotnet run --project src/FourFoldAccountManager.Desktop/FourFoldAccountManager.Desktop.csproj
 ```
+
+Windows releases include a framework-dependent ZIP, standalone executable, and checksums file. The release workflow currently publishes `win-x64` assets only.

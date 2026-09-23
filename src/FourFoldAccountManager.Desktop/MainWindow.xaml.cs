@@ -33,6 +33,7 @@ public partial class MainWindow : Window
     private readonly WindowsCredentialStore _credentialStore;
     private readonly AccountBrowserSessionService _browserSessions;
     private readonly XpTrackerCoordinator _xpTracker;
+    private readonly PlayerProfileService _playerProfileService;
     private readonly ObservableCollection<XpTrackerRow> _xpTrackerRows = [];
     private readonly List<PanelSlotCard> _slotCards = [];
     private readonly LayoutDividerResizeController _layoutDividerResizeController = new();
@@ -55,6 +56,8 @@ public partial class MainWindow : Window
     private ResizeMode _previousResizeMode;
     private bool _shutdownStarted;
     private bool _allowClose;
+    private CancellationTokenSource? _profileReadCancellation;
+    private long _profileReadGeneration;
 
     public MainWindow()
     {
@@ -67,24 +70,35 @@ public partial class MainWindow : Window
         _credentialStore = new WindowsCredentialStore();
         _browserSessions = new AccountBrowserSessionService(paths);
         _xpTracker = new XpTrackerCoordinator(paths);
+        _playerProfileService = _xpTracker.ProfileService;
         _xpTracker.Changed += (_, _) => RefreshTrackerRows();
         FullscreenXpOverlayTray.EditRequested += (_, _) => SetXpOverlayEditing(true);
         FullscreenXpOverlayTray.DoneRequested += (_, _) => SetXpOverlayEditing(false);
-        TrackerPanel.ItemsSource = _xpTrackerRows;
-        TrackerPanel.LinkRequested += accountId =>
+        PluginSidebar.SetTrackerItemsSource(_xpTrackerRows);
+        PluginSidebar.SetAccounts(_accounts);
+        PluginSidebar.LinkRequested += accountId =>
         {
             AccountsListBox.SelectedItem = _accounts.FirstOrDefault(account => account.Id == accountId);
-            RenameAccount_Click(TrackerPanel, new RoutedEventArgs());
+            RenameAccount_Click(PluginSidebar, new RoutedEventArgs());
         };
-        TrackerPanel.ResetRateRequested += accountId =>
+        PluginSidebar.ResetRateRequested += accountId =>
         {
             _xpTracker.ResetRate(accountId);
             RefreshTrackerRows();
         };
-        TrackerPanel.ResetAllRequested += accountId =>
+        PluginSidebar.ResetAllRequested += accountId =>
         {
             _xpTracker.ResetAll(accountId);
             RefreshTrackerRows();
+        };
+        PluginSidebar.RefreshRequested += (_, _) => _ = RefreshSelectedProfileAsync();
+        PluginSidebar.AccountSelectionRequested += accountId =>
+        {
+            var account = _accounts.FirstOrDefault(candidate => candidate.Id == accountId);
+            if (account is not null && SelectedAccount?.Id != account.Id)
+            {
+                AccountsListBox.SelectedItem = account;
+            }
         };
         _browserSessions.NavigationBlocked += BrowserSessions_NavigationBlocked;
 
@@ -585,7 +599,83 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AccountsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e) => UpdateAccountActions();
+    private void AccountsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        UpdateAccountActions();
+        var selectedAccount = AccountsListBox.SelectedItem as AccountProfile;
+        CancelProfileRead();
+        PluginSidebar.SetSelectedAccount(selectedAccount);
+        UpdatePluginSidebarVisibility();
+        if (selectedAccount is not null && PluginSidebar.ActivePlugin is PluginKind.ClassComparison or PluginKind.XpCalculator)
+        {
+            _ = RefreshSelectedProfileAsync();
+        }
+    }
+
+    private async Task RefreshSelectedProfileAsync()
+    {
+        var account = SelectedAccount;
+        if (account is null)
+        {
+            PluginSidebar.SetProfileStatus("Select an account to load its profile.");
+            return;
+        }
+
+        CancelProfileRead();
+        var cancellation = new CancellationTokenSource();
+        _profileReadCancellation = cancellation;
+        var generation = ++_profileReadGeneration;
+        PluginSidebar.SetProfileStatus("Loading public profile…");
+
+        string? username = account.RankingUsername;
+        if (username is null)
+        {
+            try { username = _credentialStore.Read(account.Id)?.Username; }
+            catch { /* The profile status below explains the missing identity. */ }
+        }
+
+        try
+        {
+            var result = await _playerProfileService.ReadAsync(
+                account.Id,
+                username,
+                account.RankingPlayerId,
+                cancellation.Token);
+            if (generation != _profileReadGeneration || SelectedAccount?.Id != account.Id)
+            {
+                return;
+            }
+
+            if (result.Snapshot is not null)
+            {
+                PluginSidebar.SetProfileSnapshot(result.Snapshot);
+            }
+
+            if (!result.IsSuccess)
+            {
+                PluginSidebar.SetProfileStatus(result.Message);
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_profileReadCancellation, cancellation))
+            {
+                _profileReadCancellation = null;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    private void CancelProfileRead()
+    {
+        _profileReadGeneration++;
+        _profileReadCancellation?.Cancel();
+        _profileReadCancellation?.Dispose();
+        _profileReadCancellation = null;
+    }
 
     private async void LayoutPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -835,7 +925,7 @@ public partial class MainWindow : Window
         AccountsPanel.Visibility = Visibility.Collapsed;
         AccountsColumn.Width = new GridLength(0);
         AccountsGapColumn.Width = new GridLength(0);
-        UpdateTrackerPanelVisibility();
+        UpdatePluginSidebarVisibility();
         PanelToolbar.Visibility = Visibility.Collapsed;
         GlobalStatusText.Visibility = Visibility.Collapsed;
         PanelBorder.Padding = new Thickness(0);
@@ -875,7 +965,7 @@ public partial class MainWindow : Window
         AccountsPanel.Visibility = _accountsPanelVisible ? Visibility.Visible : Visibility.Collapsed;
         AccountsColumn.Width = _accountsPanelVisible ? new GridLength(232) : new GridLength(0);
         AccountsGapColumn.Width = _accountsPanelVisible ? new GridLength(16) : new GridLength(0);
-        UpdateTrackerPanelVisibility();
+        UpdatePluginSidebarVisibility();
         PanelToolbar.Visibility = Visibility.Visible;
         GlobalStatusText.Visibility = Visibility.Visible;
         PanelBorder.Padding = new Thickness(0);
@@ -958,13 +1048,16 @@ public partial class MainWindow : Window
         }
 
         FullscreenXpOverlayTray.SetChoices(trayChoices);
-        UpdateTrackerPanelVisibility();
+        UpdatePluginSidebarVisibility();
     }
 
-    private void UpdateTrackerPanelVisibility()
+    private void UpdatePluginSidebarVisibility()
     {
-        var visible = TrackerPanelPolicy.ShouldShow(_isFullScreen, _openAccountIds);
-        TrackerPanel.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        var visible = PluginSidebarPolicy.ShouldShow(
+            _isFullScreen,
+            PluginSidebar.SelectedAccountId,
+            _openAccountIds);
+        PluginSidebar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         TrackerGapColumn.Width = visible ? new GridLength(16) : new GridLength(0);
         TrackerColumn.Width = visible ? new GridLength(240) : new GridLength(0);
     }
@@ -2437,6 +2530,7 @@ public partial class MainWindow : Window
         _shutdownStarted = true;
         try
         {
+            CancelProfileRead();
             try
             {
                 await SaveSettingsAsync();
