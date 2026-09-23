@@ -60,11 +60,13 @@
                 </Grid.RowDefinitions>
                 <UniformGrid Columns="2" Margin="0,0,0,12">
                     <StackPanel Margin="0,0,8,0">
-                        <TextBlock Text="CURRENT ABSOLUTE" Style="{StaticResource QuietTextStyle}" />
+                        <TextBlock Text="CURRENT ABSOLUTE" Style="{StaticResource QuietTextStyle}" FontSize="10"
+                                   TextWrapping="Wrap" />
                         <TextBlock x:Name="CurrentAbsoluteText" Text="—" FontSize="14" FontWeight="SemiBold" Margin="0,3,0,0" />
                     </StackPanel>
                     <StackPanel>
-                        <TextBlock Text="TARGET ABSOLUTE" Style="{StaticResource QuietTextStyle}" />
+                        <TextBlock Text="TARGET ABSOLUTE" Style="{StaticResource QuietTextStyle}" FontSize="10"
+                                   TextWrapping="Wrap" />
                         <TextBlock x:Name="TargetAbsoluteText" Text="—" FontSize="14" FontWeight="SemiBold" Margin="0,3,0,0" />
                     </StackPanel>
                 </UniformGrid>
