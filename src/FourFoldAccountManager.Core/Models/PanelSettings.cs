@@ -18,6 +18,8 @@ public sealed record PanelSettings
 
     public bool FillGameToPanel { get; init; } = false;
 
+    public bool ShareLinkedAccounts { get; init; } = false;
+
     public bool ShowFullScreenExitButton { get; init; } = true;
 
     public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =

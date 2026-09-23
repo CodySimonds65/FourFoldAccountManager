@@ -148,6 +148,7 @@ public sealed class SettingsStore
         return new PanelSettings(settings.Layout, assignments)
         {
             FillGameToPanel = settings.FillGameToPanel,
+            ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,

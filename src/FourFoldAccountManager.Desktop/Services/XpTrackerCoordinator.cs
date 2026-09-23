@@ -69,6 +69,15 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         account.Session.HoursUntilNextLevel,
         account.Session.LastSuccessfulAt, account.Status, account.Session.IsStale)).ToArray();
 
+    public IReadOnlyList<(Guid AccountId, int PlayerId, string Username)> GetActiveLeaderboardProfiles()
+    {
+        _dispatcher.VerifyAccess();
+        return _active.Values
+            .Where(account => account.PlayerId is > 0 && !string.IsNullOrWhiteSpace(account.Username))
+            .Select(account => (account.Id, account.PlayerId!.Value, account.Username!))
+            .ToArray();
+    }
+
     internal XpTrackingSession? GetSessionForTesting(Guid accountId) =>
         _active.TryGetValue(accountId, out var account) ? account.Session : null;
 

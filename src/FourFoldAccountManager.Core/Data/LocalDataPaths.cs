@@ -14,6 +14,7 @@ public sealed class LocalDataPaths
         AccountsFilePath = Path.Combine(DataRoot, "accounts.json");
         SettingsFilePath = Path.Combine(DataRoot, "settings.json");
         XpTrackerFilePath = Path.Combine(DataRoot, "xp-tracker.json");
+        LeaderboardStateFilePath = Path.Combine(DataRoot, "leaderboard-state.json");
         WebViewUserDataRoot = Path.Combine(DataRoot, "WebView2");
     }
 
@@ -24,6 +25,8 @@ public sealed class LocalDataPaths
     public string SettingsFilePath { get; }
 
     public string XpTrackerFilePath { get; }
+
+    public string LeaderboardStateFilePath { get; }
 
     public string WebViewUserDataRoot { get; }
 }
