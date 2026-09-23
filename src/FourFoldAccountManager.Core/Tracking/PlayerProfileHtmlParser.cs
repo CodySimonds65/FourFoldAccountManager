@@ -61,6 +61,7 @@ public static class PlayerProfileHtmlParser
 
             classes.Add(className, new ClassProfileSnapshot(level, currentXp, nextLevelXp, ReadMeta(card, "Updated"))
             {
+                ClassName = className,
                 Hp = stats.Hp,
                 Sp = stats.Sp,
                 Attack = stats.Attack,

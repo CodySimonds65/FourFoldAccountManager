@@ -6,6 +6,7 @@ public sealed record ClassProfileSnapshot(
     long NextLevelXp,
     string? SourceUpdated)
 {
+    public string? ClassName { get; init; }
     public long? Hp { get; init; }
     public long? Sp { get; init; }
     public long? Attack { get; init; }
