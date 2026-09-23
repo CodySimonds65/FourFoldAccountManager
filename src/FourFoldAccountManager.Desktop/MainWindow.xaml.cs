@@ -33,6 +33,7 @@ public partial class MainWindow : Window
     private readonly WindowsCredentialStore _credentialStore;
     private readonly AccountBrowserSessionService _browserSessions;
     private readonly XpTrackerCoordinator _xpTracker;
+    private readonly PlayerProfileService _playerProfileService;
     private readonly ObservableCollection<XpTrackerRow> _xpTrackerRows = [];
     private readonly List<PanelSlotCard> _slotCards = [];
     private readonly LayoutDividerResizeController _layoutDividerResizeController = new();
@@ -55,6 +56,8 @@ public partial class MainWindow : Window
     private ResizeMode _previousResizeMode;
     private bool _shutdownStarted;
     private bool _allowClose;
+    private CancellationTokenSource? _profileReadCancellation;
+    private long _profileReadGeneration;
 
     public MainWindow()
     {
@@ -67,6 +70,7 @@ public partial class MainWindow : Window
         _credentialStore = new WindowsCredentialStore();
         _browserSessions = new AccountBrowserSessionService(paths);
         _xpTracker = new XpTrackerCoordinator(paths);
+        _playerProfileService = _xpTracker.ProfileService;
         _xpTracker.Changed += (_, _) => RefreshTrackerRows();
         FullscreenXpOverlayTray.EditRequested += (_, _) => SetXpOverlayEditing(true);
         FullscreenXpOverlayTray.DoneRequested += (_, _) => SetXpOverlayEditing(false);
@@ -86,6 +90,7 @@ public partial class MainWindow : Window
             _xpTracker.ResetAll(accountId);
             RefreshTrackerRows();
         };
+        PluginSidebar.RefreshRequested += (_, _) => _ = RefreshSelectedProfileAsync();
         _browserSessions.NavigationBlocked += BrowserSessions_NavigationBlocked;
 
         AccountsListBox.ItemsSource = _accounts;
@@ -588,8 +593,79 @@ public partial class MainWindow : Window
     private void AccountsListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         UpdateAccountActions();
-        PluginSidebar.SetSelectedAccount((AccountsListBox.SelectedItem as AccountProfile)?.Id);
+        var selectedAccount = AccountsListBox.SelectedItem as AccountProfile;
+        CancelProfileRead();
+        PluginSidebar.SetSelectedAccount(selectedAccount);
         UpdatePluginSidebarVisibility();
+        if (selectedAccount is not null && PluginSidebar.ActivePlugin is PluginKind.ClassComparison or PluginKind.XpCalculator)
+        {
+            _ = RefreshSelectedProfileAsync();
+        }
+    }
+
+    private async Task RefreshSelectedProfileAsync()
+    {
+        var account = SelectedAccount;
+        if (account is null)
+        {
+            PluginSidebar.SetProfileStatus("Select an account to load its profile.");
+            return;
+        }
+
+        CancelProfileRead();
+        var cancellation = new CancellationTokenSource();
+        _profileReadCancellation = cancellation;
+        var generation = ++_profileReadGeneration;
+        PluginSidebar.SetProfileStatus("Loading public profile…");
+
+        string? username = account.RankingUsername;
+        if (username is null)
+        {
+            try { username = _credentialStore.Read(account.Id)?.Username; }
+            catch { /* The profile status below explains the missing identity. */ }
+        }
+
+        try
+        {
+            var result = await _playerProfileService.ReadAsync(
+                account.Id,
+                username,
+                account.RankingPlayerId,
+                cancellation.Token);
+            if (generation != _profileReadGeneration || SelectedAccount?.Id != account.Id)
+            {
+                return;
+            }
+
+            if (result.Snapshot is not null)
+            {
+                PluginSidebar.SetProfileSnapshot(result.Snapshot);
+            }
+
+            if (!result.IsSuccess)
+            {
+                PluginSidebar.SetProfileStatus(result.Message);
+            }
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_profileReadCancellation, cancellation))
+            {
+                _profileReadCancellation = null;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    private void CancelProfileRead()
+    {
+        _profileReadGeneration++;
+        _profileReadCancellation?.Cancel();
+        _profileReadCancellation?.Dispose();
+        _profileReadCancellation = null;
     }
 
     private async void LayoutPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -2445,6 +2521,7 @@ public partial class MainWindow : Window
         _shutdownStarted = true;
         try
         {
+            CancelProfileRead();
             try
             {
                 await SaveSettingsAsync();

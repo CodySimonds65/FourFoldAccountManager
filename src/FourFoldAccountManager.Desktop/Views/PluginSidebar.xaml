@@ -27,17 +27,7 @@
         </UniformGrid>
         <Grid Grid.Row="2">
             <views:XpTrackerPanel x:Name="TrackerPanel" Loaded="TrackerPanel_Loaded" />
-            <Border x:Name="ClassComparisonPlaceholder" Visibility="Collapsed"
-                    Style="{StaticResource SidebarCardStyle}" Padding="14">
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="CLASS COMPARISON" FontSize="10" FontWeight="Bold"
-                               Foreground="{DynamicResource Brush.AccentGold}" />
-                    <TextBlock Text="Select an account to compare its active-class stats." TextWrapping="Wrap"
-                               Foreground="{DynamicResource Brush.TextMuted}" Margin="0,8,0,0" />
-                    <TextBlock x:Name="ProfileStatusText" Text="" TextWrapping="Wrap"
-                               Foreground="{DynamicResource Brush.TextMuted}" Margin="0,10,0,0" />
-                </StackPanel>
-            </Border>
+            <views:ClassComparisonPanel x:Name="ClassComparisonPanelView" Visibility="Collapsed" />
             <Border x:Name="XpCalculatorPlaceholder" Visibility="Collapsed"
                     Style="{StaticResource SidebarCardStyle}" Padding="14">
                 <StackPanel VerticalAlignment="Center">

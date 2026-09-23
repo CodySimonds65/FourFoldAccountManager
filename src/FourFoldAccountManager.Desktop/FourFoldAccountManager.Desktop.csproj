@@ -21,6 +21,7 @@
   <ItemGroup>
     <Resource Include="Assets\FourFold.png" />
     <Resource Include="Assets\FourFold.ico" />
+    <Resource Include="Assets\Calculator\classes\*.png" />
   </ItemGroup>
 
 </Project>

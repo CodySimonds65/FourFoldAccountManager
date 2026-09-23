@@ -8,10 +8,13 @@ namespace FourFoldAccountManager.Desktop.Views;
 
 public partial class PluginSidebar : UserControl
 {
+    private AccountProfile? _selectedAccount;
+
     public PluginSidebar()
     {
         InitializeComponent();
         ActivePlugin = PluginKind.XpTracker;
+        ClassComparisonPanelView.RefreshRequested += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
         UpdateActivePlugin();
     }
 
@@ -26,14 +29,31 @@ public partial class PluginSidebar : UserControl
 
     public void SetTrackerItemsSource(IEnumerable? itemsSource) => TrackerPanel.ItemsSource = itemsSource;
 
-    public void SetSelectedAccount(Guid? accountId) => SelectedAccountId = accountId;
+    public void SetSelectedAccount(Guid? accountId)
+    {
+        SelectedAccountId = accountId;
+        _selectedAccount = null;
+        ClassComparisonPanelView.ClearSnapshot(accountId.HasValue
+            ? "Select Refresh to load the selected profile." : "Select an account to load its profile.");
+    }
+
+    public void SetSelectedAccount(AccountProfile? account)
+    {
+        SelectedAccountId = account?.Id;
+        _selectedAccount = account;
+        ClassComparisonPanelView.ClearSnapshot(account is null
+            ? "Select an account to load its profile." : "Select Refresh to load the selected profile.");
+    }
 
     public void SetProfileSnapshot(PlayerProgressSnapshot? snapshot)
     {
-        ProfileStatusText.Text = snapshot is null ? string.Empty : $"Profile read: {snapshot.Username}";
+        if (snapshot is not null && _selectedAccount is not null)
+        {
+            ClassComparisonPanelView.SetSnapshot(_selectedAccount, snapshot);
+        }
     }
 
-    public void SetProfileStatus(string status) => ProfileStatusText.Text = status;
+    public void SetProfileStatus(string status) => ClassComparisonPanelView.SetProfileStatus(status);
 
     public void ShowPlugin(PluginKind plugin)
     {
@@ -56,7 +76,7 @@ public partial class PluginSidebar : UserControl
     private void UpdateActivePlugin()
     {
         TrackerPanel.Visibility = ActivePlugin == PluginKind.XpTracker ? Visibility.Visible : Visibility.Collapsed;
-        ClassComparisonPlaceholder.Visibility = ActivePlugin == PluginKind.ClassComparison
+        ClassComparisonPanelView.Visibility = ActivePlugin == PluginKind.ClassComparison
             ? Visibility.Visible : Visibility.Collapsed;
         XpCalculatorPlaceholder.Visibility = ActivePlugin == PluginKind.XpCalculator
             ? Visibility.Visible : Visibility.Collapsed;

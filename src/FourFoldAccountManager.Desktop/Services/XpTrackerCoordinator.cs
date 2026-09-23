@@ -55,6 +55,8 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
 
     public event EventHandler? Changed;
 
+    public PlayerProfileService ProfileService => _profileService;
+
     public async Task<bool> VerifyPlayerAsync(int playerId, string username)
     {
         var result = await _profileService.ReadAsync(Guid.NewGuid(), username, playerId, CancellationToken.None);
