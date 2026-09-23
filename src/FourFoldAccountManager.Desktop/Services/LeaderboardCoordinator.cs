@@ -47,8 +47,13 @@ public sealed class LeaderboardCoordinator : IAsyncDisposable
         {
             if (_state is not null) return;
             _state = await _store.LoadAsync(ct);
-            if (!_sharingEnabled && _state.PendingParticipation?.SharingEnabled == true)
-                _state = _state with { PendingParticipation = DisabledHeartbeat(_state.InstallationId) };
+            if (_state.PendingParticipation is { } pending)
+            {
+                var safePending = !_sharingEnabled
+                    ? DisabledHeartbeat(_state.InstallationId)
+                    : pending with { ActivePlayerIds = [] };
+                _state = _state with { PendingParticipation = safePending };
+            }
             await _store.SaveAsync(_state, ct);
         }
         finally { _stateGate.Release(); }
@@ -191,7 +196,9 @@ public sealed class LeaderboardCoordinator : IAsyncDisposable
             try
             {
                 _state ??= await _store.LoadAsync(ct);
-                var pages = _state.CachedPages.Where(candidate => candidate.Period != period).Append(fresh).ToArray();
+                var pages = _state.CachedPages.Where(candidate =>
+                        candidate.Period != period || candidate.Page != page || candidate.PageSize != pageSize)
+                    .Append(fresh).ToArray();
                 _state = _state with { CachedPages = pages };
                 await _store.SaveAsync(_state, ct);
             }

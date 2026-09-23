@@ -147,6 +147,59 @@ public sealed class LeaderboardCoordinatorTests
         Assert.Empty(handler.Bodies);
     }
 
+    [Fact]
+    public async Task RestartClearsPendingActivityBeforeRetryingHeartbeat()
+    {
+        using var temp = new TempDirectory();
+        var stateStore = new LeaderboardClientStateStore(new LocalDataPaths(temp.Path));
+        var installationId = Guid.NewGuid();
+        await stateStore.SaveAsync(new LeaderboardClientState(installationId, [],
+            new ParticipationHeartbeat(installationId, true, [new LeaderboardProfile(42, "Player")], [42])));
+        var handler = new RecordingHandler();
+        await using var coordinator = CreateCoordinator(temp.Path, handler, sharing: true);
+        await coordinator.InitializeAsync();
+        var persisted = await stateStore.LoadAsync();
+        Assert.Empty(persisted.PendingParticipation!.ActivePlayerIds);
+        await coordinator.FlushPendingAsync();
+        using var request = JsonDocument.Parse(Assert.Single(handler.Bodies));
+        Assert.Empty(request.RootElement.GetProperty("activePlayerIds").EnumerateArray());
+        Assert.Equal(installationId, request.RootElement.GetProperty("installationId").GetGuid());
+    }
+
+    [Fact]
+    public async Task SavingSecondPageKeepsFirstPageAvailableOffline()
+    {
+        using var temp = new TempDirectory();
+        await using (var online = CreateCoordinator(temp.Path, new RecordingHandler(), sharing: false))
+        {
+            await online.InitializeAsync();
+            Assert.Equal(1, (await online.GetPageAsync(LeaderboardPeriod.Daily, 1, 50, CancellationToken.None)).Page);
+            Assert.Equal(2, (await online.GetPageAsync(LeaderboardPeriod.Daily, 2, 50, CancellationToken.None)).Page);
+        }
+        await using var offline = CreateCoordinator(temp.Path, new RecordingHandler { Fail = true }, sharing: false);
+        await offline.InitializeAsync();
+        var first = await offline.GetPageAsync(LeaderboardPeriod.Daily, 1, 50, CancellationToken.None);
+        Assert.Equal("Player 1", Assert.Single(first.Entries).Username);
+        var second = await offline.GetPageAsync(LeaderboardPeriod.Daily, 2, 50, CancellationToken.None);
+        Assert.Equal("Player 2", Assert.Single(second.Entries).Username);
+    }
+
+    [Fact]
+    public async Task FailingLeaderboardDoesNotPreventLocalTrackerStart()
+    {
+        using var temp = new TempDirectory();
+        await using var coordinator = CreateCoordinator(temp.Path, new RecordingHandler { Fail = true }, sharing: true);
+        await coordinator.InitializeAsync();
+        await coordinator.SyncParticipationAsync([new LeaderboardProfile(42, "Player")], [42], CancellationToken.None);
+        await coordinator.FlushPendingAsync();
+        await using var tracker = new XpTrackerCoordinator(new LocalDataPaths(temp.Path), _ => Task.CompletedTask);
+        var accountId = Guid.NewGuid();
+        tracker.Start(accountId, "Player", 42);
+        Assert.Equal(accountId, Assert.Single(tracker.GetStates()).AccountId);
+        Assert.Equal(42, Assert.Single(tracker.GetActiveLeaderboardProfiles()).PlayerId);
+        Assert.True(coordinator.HasPendingParticipation);
+    }
+
     private static LeaderboardCoordinator CreateCoordinator(string path, RecordingHandler handler, bool sharing,
         Func<bool, CancellationToken, Task>? persist = null)
     {
@@ -167,8 +220,9 @@ public sealed class LeaderboardCoordinatorTests
             if (request.Content is not null) Bodies.Add(await request.Content.ReadAsStringAsync(ct));
             if (Fail) throw new HttpRequestException("offline");
             if (request.Method == HttpMethod.Put) return new HttpResponseMessage(HttpStatusCode.NoContent);
-            var body = BadJson ? "{broken" : """
-                {"period":0,"periodStartUtc":"2026-09-23T00:00:00Z","periodEndUtc":"2026-09-24T00:00:00Z","page":1,"pageSize":50,"totalEntries":1,"generatedAtUtc":"2026-09-23T12:00:00Z","entries":[{"rank":1,"playerId":42,"username":"Player","xpGained":100,"lastSampledAtUtc":"2026-09-23T12:00:00Z","isStale":false}]}
+            var page = request.RequestUri!.Query.Contains("page=2&", StringComparison.Ordinal) ? 2 : 1;
+            var body = BadJson ? "{broken" : $$"""
+                {"period":0,"periodStartUtc":"2026-09-23T00:00:00Z","periodEndUtc":"2026-09-24T00:00:00Z","page":{{page}},"pageSize":50,"totalEntries":2,"generatedAtUtc":"2026-09-23T12:00:00Z","entries":[{"rank":{{page}},"playerId":{{41 + page}},"username":"Player {{page}}","xpGained":100,"lastSampledAtUtc":"2026-09-23T12:00:00Z","isStale":false}]}
                 """;
             return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) };
         }
