@@ -1,0 +1,116 @@
+<UserControl x:Class="FourFoldAccountManager.Desktop.Views.LeaderboardPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border Background="{DynamicResource Brush.Surface}" BorderBrush="{DynamicResource Brush.Border}"
+            BorderThickness="1" CornerRadius="12" Padding="24">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="XP LEADERBOARD" FontSize="10" FontWeight="Bold"
+                               Foreground="{DynamicResource Brush.AccentGold}" />
+                    <TextBlock Text="Top XP gained" FontSize="23" FontWeight="SemiBold" Margin="0,5,0,0" />
+                    <TextBlock Text="Rankings update while linked game views are open. Times use UTC."
+                               FontSize="12" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,6,0,0" />
+                </StackPanel>
+                <Button x:Name="RefreshButton" Grid.Column="1" Content="Refresh" Click="Refresh_Click"
+                        Style="{StaticResource AppButtonStyle}" Height="34" Padding="16,0"
+                        VerticalAlignment="Top" />
+            </Grid>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,24,0,14">
+                <Button x:Name="DailyButton" Content="Daily" Tag="Daily" Click="Period_Click"
+                        Style="{StaticResource AppButtonStyle}" Height="36" MinWidth="94" Margin="0,0,8,0" />
+                <Button x:Name="WeeklyButton" Content="Weekly" Tag="Weekly" Click="Period_Click"
+                        Style="{StaticResource AppButtonStyle}" Height="36" MinWidth="94" Margin="0,0,8,0" />
+                <Button x:Name="MonthlyButton" Content="Monthly" Tag="Monthly" Click="Period_Click"
+                        Style="{StaticResource AppButtonStyle}" Height="36" MinWidth="94" />
+            </StackPanel>
+            <StackPanel Grid.Row="2" Margin="0,0,0,14">
+                <TextBlock x:Name="PeriodWindowText" FontSize="12" />
+                <TextBlock x:Name="FreshnessText" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
+                           Margin="0,5,0,0" />
+                <TextBlock x:Name="StateText" FontSize="12" TextWrapping="Wrap"
+                           Foreground="{DynamicResource Brush.AccentGold}" Margin="0,8,0,0" />
+            </StackPanel>
+            <Grid Grid.Row="3" MinHeight="180">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Border Background="{DynamicResource Brush.SurfaceRaised}" CornerRadius="7" Padding="12,9">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="58" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="145" />
+                            <ColumnDefinition Width="190" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="RANK" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" />
+                        <TextBlock Grid.Column="1" Text="PLAYER" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" />
+                        <TextBlock Grid.Column="2" Text="XP GAINED" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" />
+                        <TextBlock Grid.Column="3" Text="LAST SAMPLED" FontSize="10" Foreground="{DynamicResource Brush.TextMuted}" />
+                    </Grid>
+                </Border>
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl x:Name="RowsControl">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1" Padding="12,12">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="58" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="145" />
+                                            <ColumnDefinition Width="190" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="{Binding Rank}" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource Brush.AccentGold}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Username}" FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding Username}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding XpGained}" />
+                                        <StackPanel Grid.Column="3">
+                                            <TextBlock Text="{Binding LastSampled}" FontSize="11" />
+                                            <TextBlock Text="{Binding SampleStatus}" FontSize="10"
+                                                       Foreground="{DynamicResource Brush.TextMuted}" Margin="0,3,0,0" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Grid>
+            <Grid Grid.Row="4" Margin="0,18,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <CheckBox x:Name="ShareLinkedAccountsCheckBox" Content="Share linked accounts"
+                              Checked="SharingChanged" Unchecked="SharingChanged" FontWeight="SemiBold"
+                              VerticalAlignment="Center" />
+                    <TextBlock Text="When enabled, linked public profile names and XP gains appear on this shared board."
+                               TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
+                               Margin="0,6,16,0" />
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top">
+                    <Button x:Name="PreviousButton" Content="Previous" Click="Previous_Click"
+                            Style="{StaticResource AppButtonStyle}" Height="32" Padding="12,0" />
+                    <TextBlock x:Name="PageText" VerticalAlignment="Center" Margin="14,0" />
+                    <Button x:Name="NextButton" Content="Next" Click="Next_Click"
+                            Style="{StaticResource AppButtonStyle}" Height="32" Padding="12,0" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>

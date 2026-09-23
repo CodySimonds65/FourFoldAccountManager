@@ -42,6 +42,7 @@ public partial class MainWindow : Window
     private readonly LayoutDividerResizeController _layoutDividerResizeController = new();
     private readonly SemaphoreSlim _settingsMutationGate = new(1, 1);
     private readonly SemaphoreSlim _viewportSaveGate = new(1, 1);
+    private readonly DispatcherTimer _leaderboardRefreshTimer = new() { Interval = TimeSpan.FromMinutes(1) };
     private HwndSource? _windowSource;
     private GlobalHotkeyRegistrationCoordinator? _hotkeyCoordinator;
     private PanelSettings _panelSettings = PanelSettings.Default;
@@ -53,6 +54,7 @@ public partial class MainWindow : Window
     private bool _slotManagementVisible = true;
     private bool _viewAdjustmentVisible;
     private bool _isFullScreen;
+    private bool _showingLeaderboard;
     private bool _xpOverlayEditing;
     private WindowState _previousWindowState;
     private WindowStyle _previousWindowStyle;
@@ -127,6 +129,8 @@ public partial class MainWindow : Window
         };
 
         LayoutPicker.SelectedValuePath = nameof(LayoutChoice.Layout);
+        _leaderboardRefreshTimer.Tick += (_, _) => _ = LeaderboardPanelView.RefreshAsync();
+        UpdateTopLevelButtons();
 
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
@@ -204,6 +208,7 @@ public partial class MainWindow : Window
                 // An unavailable leaderboard must not prevent local account management.
                 _leaderboard = null;
             }
+            LeaderboardPanelView.Configure(_leaderboard, enabled => SetLeaderboardSharingAsync(enabled));
             _revealShortcutAvailable =
                 _hotkeyCoordinator?.TryInitialize(_panelSettings.RevealXpOverlayTabShortcut) == true;
             _toggleDividerResizeShortcutAvailable =
@@ -729,6 +734,7 @@ public partial class MainWindow : Window
 
     private void ToggleAccountsPanel_Click(object sender, RoutedEventArgs e)
     {
+        if (_showingLeaderboard) return;
         _accountsPanelVisible = !_accountsPanelVisible;
         AccountsPanel.Visibility = _accountsPanelVisible ? Visibility.Visible : Visibility.Collapsed;
         AccountsColumn.Width = _accountsPanelVisible ? new GridLength(232) : new GridLength(0);
@@ -737,6 +743,60 @@ public partial class MainWindow : Window
         ToggleAccountsButton.ToolTip = _accountsPanelVisible
             ? "Hide the accounts rail to expand the multi-box panel."
             : "Show account profiles and slot assignments.";
+    }
+
+    private void WorkspaceView_Click(object sender, RoutedEventArgs e) => ShowWorkspaceView();
+
+    private void LeaderboardView_Click(object sender, RoutedEventArgs e)
+    {
+        if (_isFullScreen || _showingLeaderboard) return;
+        _showingLeaderboard = true;
+        ApplyTopLevelView();
+        _leaderboardRefreshTimer.Start();
+        LeaderboardPanelView.SetVisible(true);
+    }
+
+    private void ShowWorkspaceView()
+    {
+        if (!_showingLeaderboard) return;
+        _showingLeaderboard = false;
+        _leaderboardRefreshTimer.Stop();
+        LeaderboardPanelView.Stop();
+        ApplyTopLevelView();
+    }
+
+    private void ApplyTopLevelView()
+    {
+        PanelGridHost.Visibility = _showingLeaderboard ? Visibility.Collapsed : Visibility.Visible;
+        LeaderboardPanelView.Visibility = _showingLeaderboard ? Visibility.Visible : Visibility.Collapsed;
+        WorkspaceControls.Visibility = _showingLeaderboard ? Visibility.Collapsed : Visibility.Visible;
+        ToggleAccountsButton.Visibility = _showingLeaderboard ? Visibility.Collapsed : Visibility.Visible;
+        GlobalStatusText.Visibility = _showingLeaderboard || _isFullScreen
+            ? Visibility.Collapsed : Visibility.Visible;
+        ViewSubtitle.Text = _showingLeaderboard
+            ? "Daily, weekly, and monthly XP gains."
+            : "Your accounts, together.";
+        var accountsVisible = _showingLeaderboard || _accountsPanelVisible;
+        AccountsPanel.Visibility = _isFullScreen || !accountsVisible
+            ? Visibility.Collapsed : Visibility.Visible;
+        AccountsColumn.Width = _isFullScreen || !accountsVisible
+            ? new GridLength(0) : new GridLength(232);
+        AccountsGapColumn.Width = _isFullScreen || !accountsVisible
+            ? new GridLength(0) : new GridLength(16);
+        UpdateTopLevelButtons();
+        UpdatePluginSidebarVisibility();
+    }
+
+    private void UpdateTopLevelButtons()
+    {
+        WorkspaceViewButton.Background = (Brush)FindResource(_showingLeaderboard
+            ? "Brush.SurfaceRaised" : "Brush.AccentSoft");
+        WorkspaceViewButton.Foreground = (Brush)FindResource(_showingLeaderboard
+            ? "Brush.TextPrimary" : "Brush.AccentGold");
+        LeaderboardViewButton.Background = (Brush)FindResource(_showingLeaderboard
+            ? "Brush.AccentSoft" : "Brush.SurfaceRaised");
+        LeaderboardViewButton.Foreground = (Brush)FindResource(_showingLeaderboard
+            ? "Brush.AccentGold" : "Brush.TextPrimary");
     }
 
     private void ManageSlots_Click(object sender, RoutedEventArgs e)
@@ -938,6 +998,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (_showingLeaderboard) ShowWorkspaceView();
+
         _previousWindowState = WindowState;
         _previousWindowStyle = WindowStyle;
         _previousResizeMode = ResizeMode;
@@ -1080,7 +1142,7 @@ public partial class MainWindow : Window
 
     private void UpdatePluginSidebarVisibility()
     {
-        var visible = PluginSidebarPolicy.ShouldShow(
+        var visible = !_showingLeaderboard && PluginSidebarPolicy.ShouldShow(
             _isFullScreen,
             PluginSidebar.SelectedAccountId,
             _openAccountIds);
@@ -2598,6 +2660,8 @@ public partial class MainWindow : Window
         }
 
         _shutdownStarted = true;
+        _leaderboardRefreshTimer.Stop();
+        LeaderboardPanelView.Disconnect();
         try
         {
             CancelProfileRead();

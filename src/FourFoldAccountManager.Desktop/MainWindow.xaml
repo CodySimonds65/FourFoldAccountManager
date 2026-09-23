@@ -163,10 +163,17 @@
                               Width="16" Height="14" Stretch="Uniform" />
                     </Button>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock Text="Workspace" FontSize="21" FontWeight="SemiBold" />
-                        <TextBlock Text="Your accounts, together." FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" Margin="0,3,0,0" />
+                        <StackPanel Orientation="Horizontal">
+                            <Button x:Name="WorkspaceViewButton" Content="Workspace" Click="WorkspaceView_Click"
+                                    Style="{StaticResource AppButtonStyle}" Height="34" Padding="14,0"
+                                    Margin="0,0,7,0" />
+                            <Button x:Name="LeaderboardViewButton" Content="Leaderboard" Click="LeaderboardView_Click"
+                                    Style="{StaticResource AppButtonStyle}" Height="34" Padding="14,0" />
+                        </StackPanel>
+                        <TextBlock x:Name="ViewSubtitle" Text="Your accounts, together." FontSize="11"
+                                   Foreground="{DynamicResource Brush.TextMuted}" Margin="0,5,0,0" />
                     </StackPanel>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel x:Name="WorkspaceControls" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                         <Button x:Name="AdjustViewsButton" Content="Adjust views" Click="AdjustViews_Click" Visibility="Collapsed"
                                 Style="{StaticResource AppButtonStyle}" Height="36" Padding="10,0" Margin="0,0,8,0"
                                 ToolTip="Resize each active game within its account panel" />
@@ -182,7 +189,10 @@
                 </Grid>
                 <Border x:Name="PanelBorder" Grid.Row="1" Padding="0" CornerRadius="0" BorderThickness="0"
                         Background="{DynamicResource Brush.AppBackground}">
-                    <Grid x:Name="PanelGridHost" />
+                    <Grid>
+                        <Grid x:Name="PanelGridHost" />
+                        <views:LeaderboardPanel x:Name="LeaderboardPanelView" Visibility="Collapsed" />
+                    </Grid>
                 </Border>
                 <TextBlock x:Name="GlobalStatusText" Grid.Row="2" Margin="6,10,6,0" Style="{StaticResource QuietTextStyle}"
                            Text="Add an account to get started." TextTrimming="CharacterEllipsis"
