@@ -9,14 +9,23 @@ public sealed class ClassComparisonDisplayStateTests
     [Fact]
     public void FromSnapshot_maps_active_class_rows_and_timestamp_in_order()
     {
+        var active = new ClassProfileSnapshot(278, 270_060, 387_810, "Sep 21, 2026")
+        {
+            ClassName = "Arctic Soldier",
+            Hp = 22_130,
+            Sp = 998,
+            Attack = 238,
+            Magic = 61,
+            Skill = 179,
+            Speed = 75,
+            Defense = 216,
+            Resistance = 30,
+            Luck = 75
+        };
         var snapshot = new PlayerProgressSnapshot("Dweebstify", "Arctic Soldier",
             new Dictionary<string, ClassProfileSnapshot>
             {
-                ["Arctic Soldier"] = new(278, 270_060, 387_810, "Sep 21, 2026")
-                {
-                    ClassName = "Arctic Soldier", Hp = 22_130, Sp = 998, Attack = 238, Magic = 61,
-                    Skill = 179, Speed = 75, Defense = 216, Resistance = 30, Luck = 75
-                }
+                ["Arctic Soldier"] = active
             }, []);
 
         var state = ClassComparisonDisplayState.FromSnapshot(snapshot);

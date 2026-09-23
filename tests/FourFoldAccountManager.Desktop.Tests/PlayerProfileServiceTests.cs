@@ -84,15 +84,28 @@ public sealed class PlayerProfileServiceTests
         Assert.Equal(2, transport.RankingCalls);
     }
 
-    private static PlayerProgressSnapshot Profile(string username) =>
-        new(username, "Arctic Soldier", new Dictionary<string, ClassProfileSnapshot>
+    private static PlayerProgressSnapshot Profile(string username)
+    {
+        var active = new ClassProfileSnapshot(25, 1_000, 3_250, "today")
         {
-            ["Arctic Soldier"] = new(25, 1_000, 3_250, "today")
-            {
-                Hp = 100, Sp = 20, Attack = 10, Magic = 10, Skill = 10,
-                Speed = 10, Defense = 10, Resistance = 10, Luck = 10
-            }
-        }, []);
+            ClassName = "Arctic Soldier",
+            Hp = 100,
+            Sp = 20,
+            Attack = 10,
+            Magic = 10,
+            Skill = 10,
+            Speed = 10,
+            Defense = 10,
+            Resistance = 10,
+            Luck = 10
+        };
+
+        return new PlayerProgressSnapshot(
+            username,
+            "Arctic Soldier",
+            new Dictionary<string, ClassProfileSnapshot> { ["Arctic Soldier"] = active },
+            []);
+    }
 
     private sealed class FakeTransport : IPlayerProfileTransport
     {

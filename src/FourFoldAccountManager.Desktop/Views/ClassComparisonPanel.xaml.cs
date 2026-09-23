@@ -44,6 +44,11 @@ public partial class ClassComparisonPanel : UserControl
         UpdatedText.Text = string.IsNullOrWhiteSpace(state.SourceUpdated)
             ? "Profile timestamp unavailable" : $"Updated {state.SourceUpdated}";
         StatusText.Text = state.Status;
+        var activeProfile = state.ActiveClassName is null ? null : snapshot.Classes.FirstOrDefault(pair =>
+            string.Equals(pair.Key, state.ActiveClassName, StringComparison.OrdinalIgnoreCase)).Value;
+        EquipmentText.Text = activeProfile?.Equipment is { Count: > 0 } equipment
+            ? $"Equipment context: {string.Join(" · ", equipment.Select(item => $"{item.Key}: {item.Value}"))}"
+            : "Equipment context: not listed; comparison uses displayed base stats only.";
         _rows.Clear();
         foreach (var row in state.Rows)
         {
@@ -72,12 +77,15 @@ public partial class ClassComparisonPanel : UserControl
         ClassText.Text = string.Empty;
         UpdatedText.Text = string.Empty;
         StatusText.Text = status;
+        EquipmentText.Text = string.Empty;
         AboveText.Text = "—";
         BelowText.Text = "—";
         MeanText.Text = "—";
         _rows.Clear();
         ProfileImage.Source = null;
         ProfileImage.Visibility = Visibility.Collapsed;
+        ProfileMonogram.Text = "??";
+        ProfileMonogram.Visibility = Visibility.Visible;
     }
 
     public void SetProfileStatus(string status) => StatusText.Text = status;
@@ -90,9 +98,13 @@ public partial class ClassComparisonPanel : UserControl
         {
             ProfileImage.Source = null;
             ProfileImage.Visibility = Visibility.Collapsed;
+            ProfileMonogram.Text = "??";
+            ProfileMonogram.Visibility = Visibility.Visible;
             return;
         }
 
+        ProfileMonogram.Text = BuildMonogram(className);
+        ProfileMonogram.Visibility = Visibility.Visible;
         var slug = className.Trim().ToLowerInvariant().Replace(' ', '_');
         try
         {
@@ -100,11 +112,22 @@ public partial class ClassComparisonPanel : UserControl
                 $"/FourFoldAccountManager.Desktop;component/Assets/Calculator/classes/{slug}.png",
                 UriKind.Relative));
             ProfileImage.Visibility = Visibility.Visible;
+            ProfileMonogram.Visibility = Visibility.Collapsed;
         }
         catch (IOException)
         {
             ProfileImage.Source = null;
             ProfileImage.Visibility = Visibility.Collapsed;
         }
+    }
+
+    private static string BuildMonogram(string className)
+    {
+        var words = className.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return words.Length >= 2
+            ? string.Concat(words[0][0], words[1][0]).ToUpperInvariant()
+            : className.Trim().Length >= 2
+                ? className.Trim()[..2].ToUpperInvariant()
+                : className.Trim().ToUpperInvariant();
     }
 }

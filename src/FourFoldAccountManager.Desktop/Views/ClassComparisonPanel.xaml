@@ -17,7 +17,12 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Border Width="42" Height="42" CornerRadius="10" Background="{DynamicResource Brush.AccentSoft}">
-                    <Image x:Name="ProfileImage" Stretch="UniformToFill" Visibility="Collapsed" />
+                    <Grid>
+                        <TextBlock x:Name="ProfileMonogram" Text="??" FontWeight="SemiBold"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Foreground="{DynamicResource Brush.AccentGold}" />
+                        <Image x:Name="ProfileImage" Stretch="UniformToFill" Visibility="Collapsed" />
+                    </Grid>
                 </Border>
                 <StackPanel Grid.Column="1" Margin="10,0,8,0" VerticalAlignment="Center">
                     <TextBlock x:Name="AccountText" FontSize="13" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
@@ -29,8 +34,12 @@
                 <Button Grid.Column="2" Content="Refresh" Click="Refresh_Click" Style="{StaticResource AppButtonStyle}"
                         Height="30" Padding="10,0" VerticalAlignment="Top" />
             </Grid>
-            <TextBlock x:Name="StatusText" Grid.Row="1" Text="Select an account to load its profile." TextWrapping="Wrap"
-                       Foreground="{DynamicResource Brush.TextMuted}" Margin="2,0,2,10" />
+            <StackPanel Grid.Row="1" Margin="2,0,2,10">
+                <TextBlock x:Name="StatusText" Text="Select an account to load its profile." TextWrapping="Wrap"
+                           Foreground="{DynamicResource Brush.TextMuted}" />
+                <TextBlock x:Name="EquipmentText" Text="" TextWrapping="Wrap"
+                           Foreground="{DynamicResource Brush.TextMuted}" FontSize="10" Margin="0,4,0,0" />
+            </StackPanel>
             <UniformGrid Grid.Row="2" Columns="3" Margin="0,0,0,12">
                 <Border Background="{DynamicResource Brush.SurfaceRaised}" BorderBrush="{DynamicResource Brush.Border}"
                         BorderThickness="1" CornerRadius="7" Padding="8" Margin="0,0,5,0">
