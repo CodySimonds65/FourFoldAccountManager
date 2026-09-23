@@ -174,7 +174,7 @@ public sealed class LeaderboardApiTests
         using var client = fixture.CreateClient();
         using var content = new StringContent("{\"extra\":\"" + new string('x', 512 * 1024) + "\"}",
             System.Text.Encoding.UTF8, "application/json");
-        Assert.NotEqual(HttpStatusCode.NoContent,
+        Assert.Equal(HttpStatusCode.RequestEntityTooLarge,
             (await client.PutAsync("/v1/participation", content)).StatusCode);
         Assert.Null(fixture.Store.LastHeartbeat);
     }
@@ -192,6 +192,60 @@ public sealed class LeaderboardApiTests
     }
 
     [Fact]
+    public async Task TrustedCloudflareClientIpsReceiveSeparateRateLimitBuckets()
+    {
+        using var fixture = new ApiFactory(trustCloudflareIp: true);
+        using var first = fixture.CreateClient();
+        using var second = fixture.CreateClient();
+        first.DefaultRequestHeaders.Add("CF-Connecting-IP", "198.51.100.10");
+        second.DefaultRequestHeaders.Add("CF-Connecting-IP", "198.51.100.11");
+        var payload = new ParticipationHeartbeat(Guid.NewGuid(), false, [], []);
+
+        for (var i = 0; i < 30; i++)
+            Assert.Equal(HttpStatusCode.NoContent,
+                (await first.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests,
+            (await first.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,
+            (await second.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
+    }
+
+    [Fact]
+    public async Task CloudflareHeaderIsIgnoredUntilExplicitlyEnabled()
+    {
+        using var fixture = new ApiFactory();
+        using var first = fixture.CreateClient();
+        using var second = fixture.CreateClient();
+        first.DefaultRequestHeaders.Add("CF-Connecting-IP", "198.51.100.10");
+        second.DefaultRequestHeaders.Add("CF-Connecting-IP", "198.51.100.11");
+        var payload = new ParticipationHeartbeat(Guid.NewGuid(), false, [], []);
+
+        for (var i = 0; i < 30; i++)
+            Assert.Equal(HttpStatusCode.NoContent,
+                (await first.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests,
+            (await second.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("198.51.100.10, 198.51.100.11")]
+    [InlineData("1")]
+    public async Task MalformedCloudflareIpFallsBackToSocketIp(string badValue)
+    {
+        using var fixture = new ApiFactory(trustCloudflareIp: true);
+        using var malformed = fixture.CreateClient();
+        using var noHeader = fixture.CreateClient();
+        malformed.DefaultRequestHeaders.Add("CF-Connecting-IP", badValue);
+        var payload = new ParticipationHeartbeat(Guid.NewGuid(), false, [], []);
+
+        for (var i = 0; i < 30; i++)
+            Assert.Equal(HttpStatusCode.NoContent,
+                (await malformed.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
+        Assert.Equal(HttpStatusCode.TooManyRequests,
+            (await noHeader.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
+    }
+
+    [Fact]
     public async Task LivenessDoesNotRequireDatabaseButReadinessDoes()
     {
         using var fixture = new ApiFactory();
@@ -200,7 +254,7 @@ public sealed class LeaderboardApiTests
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/health/ready")).StatusCode);
     }
 
-    private sealed class ApiFactory : WebApplicationFactory<Program>
+    private sealed class ApiFactory(bool trustCloudflareIp = false) : WebApplicationFactory<Program>
     {
         public RecordingStore Store { get; } = new();
 
@@ -209,7 +263,8 @@ public sealed class LeaderboardApiTests
             builder.ConfigureAppConfiguration((_, configuration) =>
                 configuration.AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["ConnectionStrings:Leaderboard"] = "Host=127.0.0.1;Port=1;Database=unavailable;Username=none;Password=none;Timeout=1"
+                    ["ConnectionStrings:Leaderboard"] = "Host=127.0.0.1;Port=1;Database=unavailable;Username=none;Password=none;Timeout=1",
+                    ["RateLimiting:TrustCloudflareConnectingIp"] = trustCloudflareIp.ToString()
                 }));
             builder.ConfigureTestServices(services =>
             {

@@ -23,7 +23,9 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.AddPolicy("participation", context =>
         RateLimitPartition.GetFixedWindowLimiter(
-            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            RateLimitClientIp.GetPartitionKey(context,
+                context.RequestServices.GetRequiredService<IConfiguration>()
+                    .GetValue<bool>("RateLimiting:TrustCloudflareConnectingIp")),
             _ => new FixedWindowRateLimiterOptions
             {
                 PermitLimit = 30,
