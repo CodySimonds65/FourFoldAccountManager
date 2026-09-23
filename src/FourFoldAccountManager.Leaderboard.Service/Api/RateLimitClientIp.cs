@@ -5,9 +5,13 @@ namespace FourFoldAccountManager.Leaderboard.Service.Api;
 
 public static class RateLimitClientIp
 {
+    private const string RenderEnvironmentVariable = "RENDER";
+
     public static string GetPartitionKey(HttpContext context, bool trustCloudflareConnectingIp)
     {
         if (trustCloudflareConnectingIp &&
+            string.Equals(Environment.GetEnvironmentVariable(RenderEnvironmentVariable),
+                "true", StringComparison.OrdinalIgnoreCase) &&
             context.Request.Headers.TryGetValue("CF-Connecting-IP", out var values) &&
             values.Count == 1)
         {

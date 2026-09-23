@@ -192,22 +192,57 @@ public sealed class LeaderboardApiTests
     }
 
     [Fact]
-    public async Task TrustedCloudflareClientIpsReceiveSeparateRateLimitBuckets()
+    public async Task TrustedCloudflareClientIpsReceiveSeparateRateLimitBucketsOnRender()
     {
-        using var fixture = new ApiFactory(trustCloudflareIp: true);
-        using var first = fixture.CreateClient();
-        using var second = fixture.CreateClient();
-        first.DefaultRequestHeaders.Add("CF-Connecting-IP", "198.51.100.10");
-        second.DefaultRequestHeaders.Add("CF-Connecting-IP", "198.51.100.11");
-        var payload = new ParticipationHeartbeat(Guid.NewGuid(), false, [], []);
+        var previous = Environment.GetEnvironmentVariable("RENDER");
+        Environment.SetEnvironmentVariable("RENDER", "true");
+        try
+        {
+            using var fixture = new ApiFactory(trustCloudflareIp: true);
+            using var first = fixture.CreateClient();
+            using var second = fixture.CreateClient();
+            first.DefaultRequestHeaders.Add("CF-Connecting-IP", "198.51.100.10");
+            second.DefaultRequestHeaders.Add("CF-Connecting-IP", "198.51.100.11");
+            var payload = new ParticipationHeartbeat(Guid.NewGuid(), false, [], []);
 
-        for (var i = 0; i < 30; i++)
-            Assert.Equal(HttpStatusCode.NoContent,
+            for (var i = 0; i < 30; i++)
+                Assert.Equal(HttpStatusCode.NoContent,
+                    (await first.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
+            Assert.Equal(HttpStatusCode.TooManyRequests,
                 (await first.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
-        Assert.Equal(HttpStatusCode.TooManyRequests,
-            (await first.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent,
-            (await second.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
+            Assert.Equal(HttpStatusCode.NoContent,
+                (await second.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RENDER", previous);
+        }
+    }
+
+    [Fact]
+    public async Task ConfiguredCloudflareTrustIsIgnoredOutsideRender()
+    {
+        var previous = Environment.GetEnvironmentVariable("RENDER");
+        Environment.SetEnvironmentVariable("RENDER", null);
+        try
+        {
+            using var fixture = new ApiFactory(trustCloudflareIp: true);
+            using var first = fixture.CreateClient();
+            using var second = fixture.CreateClient();
+            first.DefaultRequestHeaders.Add("CF-Connecting-IP", "198.51.100.10");
+            second.DefaultRequestHeaders.Add("CF-Connecting-IP", "198.51.100.11");
+            var payload = new ParticipationHeartbeat(Guid.NewGuid(), false, [], []);
+
+            for (var i = 0; i < 30; i++)
+                Assert.Equal(HttpStatusCode.NoContent,
+                    (await first.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
+            Assert.Equal(HttpStatusCode.TooManyRequests,
+                (await second.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("RENDER", previous);
+        }
     }
 
     [Fact]
@@ -232,6 +267,7 @@ public sealed class LeaderboardApiTests
     [InlineData("1")]
     public async Task MalformedCloudflareIpFallsBackToSocketIp(string badValue)
     {
+        using var renderMarker = new RenderMarkerScope("true");
         using var fixture = new ApiFactory(trustCloudflareIp: true);
         using var malformed = fixture.CreateClient();
         using var noHeader = fixture.CreateClient();
@@ -252,6 +288,15 @@ public sealed class LeaderboardApiTests
         using var client = fixture.CreateClient();
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/live")).StatusCode);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/health/ready")).StatusCode);
+    }
+
+    private sealed class RenderMarkerScope : IDisposable
+    {
+        private readonly string? _previous = Environment.GetEnvironmentVariable("RENDER");
+
+        public RenderMarkerScope(string? value) => Environment.SetEnvironmentVariable("RENDER", value);
+
+        public void Dispose() => Environment.SetEnvironmentVariable("RENDER", _previous);
     }
 
     private sealed class ApiFactory(bool trustCloudflareIp = false) : WebApplicationFactory<Program>
