@@ -76,21 +76,21 @@
                 </Grid.RowDefinitions>
                 <Grid Margin="2,0,2,4">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="0.68*" MinWidth="28" />
-                        <ColumnDefinition Width="1.25*" MinWidth="52" />
-                        <ColumnDefinition Width="1.25*" MinWidth="52" />
-                        <ColumnDefinition Width="0.9*" MinWidth="38" />
-                        <ColumnDefinition Width="1.02*" MinWidth="43" />
+                        <ColumnDefinition Width="32" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
-                    <TextBlock Text="STAT" Style="{StaticResource QuietTextStyle}" />
+                    <TextBlock Text="STAT" Style="{StaticResource QuietTextStyle}" HorizontalAlignment="Stretch" TextAlignment="Center" />
                     <TextBlock Grid.Column="1" Text="PROFILE" Style="{StaticResource QuietTextStyle}" HorizontalAlignment="Stretch"
-                               TextAlignment="Right" Margin="2,0,0,0" />
+                               TextAlignment="Center" />
                     <TextBlock Grid.Column="2" Text="AVG" Style="{StaticResource QuietTextStyle}" HorizontalAlignment="Stretch"
-                               TextAlignment="Right" Margin="2,0,0,0" />
+                               TextAlignment="Center" />
                     <TextBlock Grid.Column="3" Text="DELTA" Style="{StaticResource QuietTextStyle}" HorizontalAlignment="Stretch"
-                               TextAlignment="Right" Margin="2,0,0,0" />
+                               TextAlignment="Center" />
                     <TextBlock Grid.Column="4" Text="%" Style="{StaticResource QuietTextStyle}" HorizontalAlignment="Stretch"
-                               TextAlignment="Right" Margin="2,0,0,0" />
+                               TextAlignment="Center" />
                 </Grid>
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                     <ItemsControl x:Name="RowsControl">
@@ -99,11 +99,11 @@
                                 <Border BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1" Padding="2,9">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="0.68*" MinWidth="28" />
-                                            <ColumnDefinition Width="1.25*" MinWidth="52" />
-                                            <ColumnDefinition Width="1.25*" MinWidth="52" />
-                                            <ColumnDefinition Width="0.9*" MinWidth="38" />
-                                            <ColumnDefinition Width="1.02*" MinWidth="43" />
+                                            <ColumnDefinition Width="32" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
                                         <TextBlock Text="{Binding StatLabel}" FontWeight="SemiBold" />
                                         <TextBlock Grid.Column="1" Text="{Binding ProfileText}" HorizontalAlignment="Stretch" TextAlignment="Right"
