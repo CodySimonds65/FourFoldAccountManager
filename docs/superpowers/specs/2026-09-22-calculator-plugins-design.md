@@ -11,7 +11,7 @@ Add a reusable right-side Plugins surface to FourFold Account Manager with three
 
 - The existing XP Tracker becomes a plugin inside a reusable sidebar.
 - Class Comparison is limited to actual character stats versus the selected class average; damage prediction, equipment, buffs, and DPS ranking are out of scope.
-- Class Comparison reads the selected account's live character data from its existing WebView session rather than asking the user to re-enter stats.
+- Class Comparison reads the selected account's public player-profile snapshot rather than asking the user to re-enter stats. The active-class stat block is the authoritative base-stat block; listed equipment is descriptive metadata and does not modify those values.
 - XP Calculator uses the selected account's active class, level, and current XP when available, and lets the user choose a target level.
 - All new UI follows the Account Manager's existing dark graphite, warm-gold, green-status, and danger-status palette.
 - Stats and calculator inputs are live/in-memory tool state; they are not added to the persisted account profile schema.
@@ -38,29 +38,42 @@ Create a right-sidebar host with:
 
 The host should expose the selected account context and a refresh/selection lifecycle to child views through explicit events or methods, not by reaching into `MainWindow` fields.
 
-### Live account snapshot
+### Public account snapshot
 
-Add a Core-facing immutable snapshot model with the fields required by both calculator plugins:
+Extend the existing public-profile data path used by `FourFoldRankingClient` and `PlayerProfileHtmlParser`. The profile page provides the active class and a repeated progression block for every tracked class. Each class record must capture the displayed base-stat values and progression fields:
 
 ```text
-AccountGameSnapshot
-  AccountId: Guid
-  Username: string?
+ClassProfileSnapshot
+  ClassName: string
+  Level: int
+  CurrentXp: long
+  NextLevelXp: long
+  Hp: long
+  Sp: long
+  Attack: long
+  Magic: long
+  Skill: long
+  Speed: long
+  Defense: long
+  Resistance: long
+  Luck: long
+  UpdatedAt: DateTimeOffset?
+  Equipment: IReadOnlyDictionary<string, string>
+
+PlayerProfileSnapshot
+  Username: string
   ActiveClassName: string?
-  Level: int?
-  CurrentXpInLevel: long?
-  NextLevelXp: long?
-  BaseStats: IReadOnlyDictionary<CharacterStat, double>
+  Classes: IReadOnlyDictionary<string, ClassProfileSnapshot>
   CapturedAt: DateTimeOffset
 ```
 
-`CharacterStat` has the fixed order `Hp`, `Sp`, `Attack`, `Magic`, `Skill`, `Speed`, `Luck`, `Defense`, `Resistance`.
+`ClassProfileSnapshot` contains the fixed comparison order `Hp`, `Sp`, `Attack`, `Magic`, `Skill`, `Speed`, `Luck`, `Defense`, `Resistance`. The active class is selected by `ActiveClassName`; all other class records remain available for future plugins and for the XP Calculator's class selector if that is added later.
 
-Extend `AccountBrowserSessionService` with a read-only operation for an open account session. The operation executes a bounded extraction script in that account's existing WebView and returns a parsed `AccountGameSnapshot` or a typed unavailable result. It must not navigate, submit forms, expose credentials, or send data anywhere.
+Extend `PlayerProfileHtmlParser` to parse the full `.class-grid` cards, not only Level/EXP/Updated. The parser must read the `HP current / max` and `SP current / max` fields as the displayed maximum HP/SP values, and read ATT, MAG, SKL, SPD, DEF, RES, and LCK as numeric base stats. Equipment names are captured for context only; no item-stat calculation or subtraction is performed.
 
-Keep the browser-facing selector logic isolated in a dedicated extractor/parser. The extraction contract is a JSON object with a version/kind marker, optional identity/progression fields, and the nine numeric stats. The parser normalizes comma-separated numbers, rejects missing or contradictory required fields, and returns a user-visible reason such as `account view is not open`, `game page is still loading`, or `required stat labels were not found`. The UI must never depend directly on DOM selectors.
+Use the selected account's verified `RankingPlayerId` when available. If it is not available, reuse the existing ranking-username resolution flow; if the profile cannot be resolved, show the existing link-profile guidance rather than issuing an unbounded request. The parser normalizes comma-separated numbers, rejects missing or contradictory required fields, and returns a typed unavailable result for malformed or incomplete public profiles.
 
-The first read happens when Class Comparison or XP Calculator becomes active and whenever the selected account changes. A visible `Refresh stats`/`Refresh profile` action performs another read. Cancel an in-flight read when the selected account changes. Do not poll the browser on a timer in this first version.
+The first read happens when Class Comparison or XP Calculator becomes active and whenever the selected account changes. A visible `Refresh profile` action performs another read. Cancel an in-flight read when the selected account changes. Do not add a second polling loop; reuse the existing XP Tracker profile polling/cache where possible, and otherwise perform one bounded public-profile request for the selected account.
 
 When a refresh fails after a successful read for the same account, keep the last snapshot visible and show the failure beside its timestamp. When the selected account changes, clear the prior account's snapshot immediately so data cannot appear under the wrong profile.
 
@@ -75,9 +88,9 @@ expectedStats(className, level, stat) = classBase[className, stat]
 
 Match the source calculator's whole-number display behavior by rounding projected averages with `Math.Round` before comparison. The comparison engine returns one row per stat with:
 
-- Actual selected-profile value.
+- Selected-profile base value.
 - Projected average.
-- Actual minus average.
+- Profile minus average.
 - Percentage difference when the average is nonzero.
 - A direction of above, below, or equal.
 
@@ -90,7 +103,7 @@ Show:
 - Account label, active class, level, and last-read timestamp.
 - Class portrait when the matching source asset exists; otherwise a two-letter monogram.
 - Summary cards for above average, below average, and average difference.
-- A scrollable nine-row table in the fixed stat order.
+- A scrollable nine-row table in the fixed stat order, with the value column labeled `Profile` and a note that the values are the active class's displayed base stats; equipment names are context only.
 - Refresh action and explicit loading/unavailable states.
 
 Use `Brush.AccentGold` or `Brush.AccentGreen` for positive/healthy values, `Brush.Danger` for below-average values, and the existing muted/neutral brushes for equal or unavailable values. Do not add a second calculator-specific color system.
@@ -131,19 +144,19 @@ The plugin UI shows selected account, class, current level, current progress sta
 
 `MainWindow` passes the selected `AccountProfile.Id` to the plugin host whenever the left account selection changes. The host forwards it to the active plugin. Class Comparison and XP Calculator request a fresh snapshot only for the current selected account. XP Tracker keeps its existing open-slot tracking lifecycle and reset behavior.
 
-If no account is selected, all calculator plugins show an instructional empty state. If the account is selected but its WebView is closed, they show an unavailable state with the account label and explain that the client must be open; they do not launch or navigate the account automatically.
+If no account is selected, all calculator plugins show an instructional empty state. If the selected account has no verified public-profile identity, they show the existing link-profile guidance. The calculators do not launch a game client or navigate a WebView to obtain public profile data.
 
 ## Data and asset handling
 
 - Copy the 16 class portrait PNGs from `C:\Users\Cody\Desktop\assests\fourfold_assets\classes` into the desktop project's resource assets under a calculator/classes folder.
 - Add only the resources needed for native Class Comparison; do not copy the full HTML calculator or its JavaScript into the application.
 - Do not change `AccountProfile`, `AccountStore`, or the persisted account JSON schema for this feature.
-- Keep the linked XP tracker public-profile data path intact; use its latest progression when available as a fallback for current XP, but live WebView data remains the preferred source for selected-profile stats.
+- Keep the linked XP tracker public-profile data path intact and promote its full parsed `PlayerProfileSnapshot` into the shared source for current XP and base stats.
 
 ## Failure and safety behavior
 
-- Never read or persist passwords, cookies, or arbitrary page content beyond the bounded snapshot fields.
-- A missing WebView session, loading page, unknown class, malformed number, or incomplete stat set becomes a typed unavailable state with actionable UI copy.
+- Never read or persist passwords, cookies, or arbitrary page content beyond the bounded public-profile fields.
+- A missing profile identity, unavailable public profile, unknown class, malformed number, or incomplete stat set becomes a typed unavailable state with actionable UI copy.
 - A failed refresh never replaces a valid same-account snapshot with blank data.
 - Account switching immediately clears the old account's calculator view.
 - No calculator action changes the game client or account profile.
