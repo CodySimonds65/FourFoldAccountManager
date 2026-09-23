@@ -15,6 +15,7 @@
 - Use the existing public `player.php?id=<resolved-id>` profile path; WebView DOM extraction is not part of this feature.
 - A username is sufficient for normal top-200 unique matches; manual profile ID/URL remains required only for ambiguous or out-of-ranking users.
 - The active-class profile block is the authoritative base-stat block; equipment names are descriptive metadata and never change comparison values.
+- The class-average catalog is the only intentionally static data: it contains the 16 class base/growth definitions from the supplied calculator source. The selected account's active class and all displayed profile values are resolved dynamically from `PlayerProgressSnapshot.ActiveClassName` and its matching `ClassProfileSnapshot`.
 - Class Comparison includes only HP, SP, ATT, MAG, SKL, SPD, LCK, DEF, and RES versus projected class averages.
 - XP Calculator uses `5 * level * (level + 1)` for the next-level cap and `(5 / 3) * (level^3 - level)` for cumulative XP.
 - Do not add calculator stats to `AccountProfile` or the persisted account JSON schema.
@@ -173,7 +174,7 @@ Run: `dotnet test tests/FourFoldAccountManager.Core.Tests/FourFoldAccountManager
 
 Expected: FAIL because the calculation namespace, catalog, and result types do not exist.
 
-- [ ] **Step 3: Implement the stat catalog and comparison engine.** Port only the `classData` base/growth values from `C:\Users\Cody\Desktop\assests\fourfold-calculator-tight.html`; preserve class names and seasons. Compute `base + (level - 1) * growth`, apply `Math.Round` before display/comparison, compute percentage only when average is nonzero, and return explicit direction values rather than UI color strings.
+- [ ] **Step 3: Implement the stat catalog and comparison engine.** Port only the `classData` base/growth values from `C:\Users\Cody\Desktop\assests\fourfold-calculator-tight.html`; preserve all 16 class names and seasons as the static reference catalog required to calculate averages. Do not hard-code the user's active class or profile stats: select `profile.ActiveClassName` at runtime and read its matching `ClassProfileSnapshot`. Compute `base + (level - 1) * growth`, apply `Math.Round` before display/comparison, compute percentage only when average is nonzero, and return explicit direction values rather than UI color strings.
 
 - [ ] **Step 4: Write failing XP-curve tests.** Pin the formula with exact values:
 
@@ -254,7 +255,7 @@ Commit: `git add src/FourFoldAccountManager.Core/Panel src/FourFoldAccountManage
 - Create: `src/FourFoldAccountManager.Desktop/Assets/Calculator/classes/*.png` copied from `C:\Users\Cody\Desktop\assests\fourfold_assets\classes`
 
 **Interfaces:**
-- `ClassComparisonPanel.SetSnapshot(AccountProfile account, PlayerProgressSnapshot snapshot)` renders the selected account’s active class only.
+- `ClassComparisonPanel.SetSnapshot(AccountProfile account, PlayerProgressSnapshot snapshot)` resolves and renders the selected account’s current `ActiveClassName` only; it does not assume a particular class such as Arctic Soldier.
 - `ClassComparisonPanel.ClearSnapshot(string status)` clears old-account data and shows an empty/loading/unavailable message.
 - `ClassComparisonPanel.RefreshRequested` tells MainWindow to request the selected account’s public profile through `PlayerProfileService`.
 
