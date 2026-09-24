@@ -52,6 +52,8 @@ Windows releases include a framework-dependent ZIP, standalone executable, and c
 
 The Workspace tab ranks XP gained during the current UTC day, ISO week, or calendar month. The desktop uses `https://fourfold-shared-xp-leaderboard.onrender.com` by default; developers can override it with `FOURFOLD_LEADERBOARD_URL`. Local XP tracking works without the service.
 
+Session XP and leaderboard XP cover different scopes: the tracker counts the active class from its local session start or reset, while the leaderboard totals valid gains across all classes in the selected UTC period after its first baseline. A saved leaderboard page may lag; interrupted participation or uncertain samples are not backfilled.
+
 ### Backup and recovery
 
 Use PostgreSQL 16+ tools with Neon's direct TLS endpoint. Supply credentials through `PG*` environment variables and keep encrypted dumps private; they contain profile IDs and XP data.

@@ -278,6 +278,22 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
+    public async Task LeaderboardCountsAllClassesWhileLocalSessionCountsActiveClass()
+    {
+        var before = Snapshot("Alice", 10, 10) with { ActiveClassName = "Warrior" };
+        var after = Snapshot("Alice", 35, 20) with { ActiveClassName = "Warrior" };
+        var local = new XpTrackingSession();
+        local.ApplySnapshot(before, Now);
+        local.ApplySnapshot(after, Now.AddMinutes(1));
+
+        var store = Seed(10, 10);
+        await Create(store, new FakeSource(after)).RunOnceAsync(Now.AddMinutes(1), default);
+
+        Assert.Equal(25, local.SessionGain);
+        Assert.Equal(35, Assert.Single(store.Gains));
+    }
+
+    [Fact]
     public async Task AttributesGainWhenSourceResponseWasObservedAcrossUtcBoundary()
     {
         var beforeMidnight = new DateTimeOffset(2026, 9, 23, 23, 59, 59, 990, TimeSpan.Zero);
