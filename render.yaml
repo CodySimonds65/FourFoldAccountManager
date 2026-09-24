@@ -14,11 +14,11 @@ services:
       - key: ConnectionStrings__Leaderboard
         sync: false
       - key: Collection__Enabled
-        value: "false"
+        sync: false
       - key: Collection__MinimumSampleInterval
-        value: "00:00:00"
+        sync: false
       - key: Collection__ProfileUrlTemplate
-        value: ""
+        sync: false
       - key: Collection__ActiveLeaseDuration
         value: "00:03:00"
       - key: Collection__RetentionDays
