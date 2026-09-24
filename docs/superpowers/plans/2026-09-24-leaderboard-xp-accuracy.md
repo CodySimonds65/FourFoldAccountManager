@@ -286,3 +286,7 @@ dotnet test src/FourFoldAccountManager.Leaderboard.Tests/FourFoldAccountManager.
 git add README.md src/FourFoldAccountManager.Leaderboard.Tests/Collection/LeaderboardSamplingServiceTests.cs
 git commit -m "docs: explain leaderboard and session xp scopes"
 ```
+
+### Review amendment: use completed-pass timing
+
+The count-based cutoff in Task 2 fails when the active queue shrinks between passes or successful profile fetches add latency. Replace it with a singleton sampling schedule shared by the worker's scoped samplers. For a player sampled in the previous successful pass, accept the actual prior pass duration, the short idle period before the next pass, and the time spent reaching that player's new observation, with the existing three-interval floor. If the worker was idle for more than three intervals, the previous pass failed, or the player was absent from that pass, use the three-interval cutoff and rebaseline uncertain gaps. Keep fetch failures and participation rules unchanged. Regression tests cover queue shrinkage across new sampler scopes, successful fetch latency, and an idle worker.

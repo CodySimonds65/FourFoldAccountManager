@@ -19,6 +19,7 @@ if (capacity.MaxInstallations is < 1 or > 5_000 || capacity.MaxProfileLinks is <
     throw new InvalidOperationException("Capacity ceilings must be positive and may not exceed 5,000 installations or 50,000 profile links.");
 builder.Services.AddSingleton(capacity);
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<LeaderboardSamplingSchedule>();
 builder.Services.AddDbContext<LeaderboardDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Leaderboard") ??
                       "Host=127.0.0.1;Port=1;Database=unconfigured;Username=unconfigured;Password=unconfigured;Timeout=1"));

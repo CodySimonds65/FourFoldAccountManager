@@ -257,6 +257,67 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
+    public async Task ShrinkingQueueDoesNotDiscardContinuouslyActivePlayersGain()
+    {
+        var store = new FakeStore();
+        foreach (var id in Enumerable.Range(1, 5)) store.Activate(id, "Alice", Now);
+        var interval = TimeSpan.FromMilliseconds(20);
+        var schedule = new LeaderboardSamplingSchedule();
+        var source = new PerPlayerSource(1, 2, 3, 4, 5);
+        var options = new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = interval };
+        var service = new LeaderboardSamplingService(store,
+            source, options, null, schedule);
+        var elapsed = Stopwatch.StartNew();
+
+        await service.RunOnceAsync(Now, default);
+        elapsed.Stop();
+        store.Deactivate(4);
+        store.Deactivate(5);
+        await new LeaderboardSamplingService(store, source, options, null, schedule)
+            .RunOnceAsync(Now + elapsed.Elapsed + interval, default);
+
+        Assert.Equal(new long[] { 25, 25, 25 }, store.Gains.Order().ToArray());
+    }
+
+    [Fact]
+    public async Task SuccessfulFetchLatencyDoesNotDiscardNextPassGain()
+    {
+        var store = new FakeStore();
+        foreach (var id in Enumerable.Range(1, 5)) store.Activate(id, "Alice", Now);
+        var interval = TimeSpan.FromMilliseconds(20);
+        var service = new LeaderboardSamplingService(store,
+            new PerPlayerSource(TimeSpan.FromMilliseconds(8), 1, 2, 3, 4, 5),
+            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = interval });
+        var elapsed = Stopwatch.StartNew();
+
+        await service.RunOnceAsync(Now, default);
+        elapsed.Stop();
+        await service.RunOnceAsync(Now + elapsed.Elapsed + interval, default);
+
+        Assert.Equal(new long[] { 25, 25, 25, 25, 25 }, store.Gains.Order().ToArray());
+    }
+
+    [Fact]
+    public async Task IdleWorkerRebaselinesAfterUncertainGap()
+    {
+        var store = new FakeStore();
+        foreach (var id in new[] { 1, 2, 3 }) store.Activate(id, "Alice", Now);
+        var interval = TimeSpan.FromMilliseconds(20);
+        var service = new LeaderboardSamplingService(store, new PerPlayerSource(1, 2, 3),
+            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = interval });
+        var elapsed = Stopwatch.StartNew();
+
+        await service.RunOnceAsync(Now, default);
+        elapsed.Stop();
+        await service.RunOnceAsync(Now + elapsed.Elapsed + interval * 4, default);
+
+        Assert.Empty(store.Gains);
+        Assert.All(store.States.Values, state =>
+            Assert.Equal(25, XpSnapshotJson.Deserialize(state.SnapshotJson, state.Username)
+                .Classes["Warrior"].CurrentXp));
+    }
+
+    [Fact]
     public async Task GapBeyondQueueAllowanceStillCreatesFreshBaseline()
     {
         var store = Seed(10);
@@ -361,14 +422,23 @@ public sealed class LeaderboardSamplingServiceTests
     private sealed class PerPlayerSource : ILeaderboardPublicProfileSource
     {
         private readonly Dictionary<int, Queue<PlayerProgressSnapshot>> _responses;
+        private readonly TimeSpan _delay;
 
-        public PerPlayerSource(params int[] playerIds) => _responses = playerIds.ToDictionary(
-            id => id, _ => new Queue<PlayerProgressSnapshot>(
+        public PerPlayerSource(params int[] playerIds) : this(TimeSpan.Zero, playerIds) { }
+
+        public PerPlayerSource(TimeSpan delay, params int[] playerIds)
+        {
+            _delay = delay;
+            _responses = playerIds.ToDictionary(id => id, _ => new Queue<PlayerProgressSnapshot>(
                 [Snapshot("Alice", 10) with { ActiveClassName = "Warrior" },
                  Snapshot("Alice", 35) with { ActiveClassName = "Warrior" }]));
+        }
 
-        public Task<PlayerProgressSnapshot> FetchAsync(int playerId, CancellationToken ct) =>
-            Task.FromResult(_responses[playerId].Dequeue());
+        public async Task<PlayerProgressSnapshot> FetchAsync(int playerId, CancellationToken ct)
+        {
+            if (_delay > TimeSpan.Zero) await Task.Delay(_delay, ct);
+            return _responses[playerId].Dequeue();
+        }
     }
 
     private sealed class DelayedSource(PlayerProgressSnapshot response, TimeSpan delay) : ILeaderboardPublicProfileSource

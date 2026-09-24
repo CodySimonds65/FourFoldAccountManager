@@ -7,10 +7,12 @@ public sealed class LeaderboardSamplingService(
     ILeaderboardStore store,
     ILeaderboardPublicProfileSource source,
     LeaderboardCollectionOptions options,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    LeaderboardSamplingSchedule? schedule = null)
 {
     private readonly SemaphoreSlim _runGate = new(1, 1);
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
+    private readonly LeaderboardSamplingSchedule _schedule = schedule ?? new();
 
     public async Task RunOnceAsync(DateTimeOffset nowUtc, CancellationToken ct)
     {
@@ -20,10 +22,14 @@ public sealed class LeaderboardSamplingService(
         try
         {
             var start = _clock.GetTimestamp();
+            var priorPass = _schedule.LastPass;
+            var idle = priorPass is null ? TimeSpan.Zero : now - priorPass.FinishedAtUtc;
+            var continuous = priorPass is not null && idle >= TimeSpan.Zero &&
+                idle <= options.MinimumSampleInterval * 3;
+            var sampledPlayerIds = new HashSet<int>();
             var active = await store.GetActiveProfilesAsync(now - options.ActiveLeaseDuration, ct);
             var profiles = active.GroupBy(x => x.PlayerId).Select(x => x.First())
                 .OrderBy(x => x.PlayerId).ToArray();
-            var maxSampleGap = options.MinimumSampleInterval * Math.Max(3, profiles.Length + 1);
             var fetched = false;
             foreach (var profile in profiles)
             {
@@ -34,8 +40,17 @@ public sealed class LeaderboardSamplingService(
                 var currentProfile = currentActive.FirstOrDefault(x => x.PlayerId == profile.PlayerId);
                 if (currentProfile is null) continue;
                 fetched = await SampleAsync(currentProfile.PlayerId, currentProfile.Username,
-                    observedAt, maxSampleGap, ct);
+                    observedAt, now, continuous && priorPass!.SampledPlayerIds.Contains(profile.PlayerId)
+                        ? priorPass.Elapsed + idle : null, ct);
+                if (fetched) sampledPlayerIds.Add(profile.PlayerId);
             }
+            _schedule.Complete(now + _clock.GetElapsedTime(start),
+                _clock.GetElapsedTime(start), sampledPlayerIds);
+        }
+        catch
+        {
+            _schedule.Clear();
+            throw;
         }
         finally
         {
@@ -44,7 +59,7 @@ public sealed class LeaderboardSamplingService(
     }
 
     private async Task<bool> SampleAsync(int playerId, string username, DateTimeOffset now,
-        TimeSpan maxSampleGap, CancellationToken ct)
+        DateTimeOffset passStartedAt, TimeSpan? continuousGap, CancellationToken ct)
     {
         var previous = await store.GetPlayerStateAsync(playerId, ct);
         if (previous is not null && !previous.NeedsBaseline &&
@@ -84,6 +99,10 @@ public sealed class LeaderboardSamplingService(
             return true;
         }
 
+        var maxSampleGap = options.MinimumSampleInterval * 3;
+        if (continuousGap is { } knownGap)
+            maxSampleGap = TimeSpan.FromTicks(Math.Max(maxSampleGap.Ticks,
+                (knownGap + (now - passStartedAt)).Ticks));
         if (now - previous.LastSampledAtUtc > maxSampleGap)
         {
             await SaveAsync(null);
