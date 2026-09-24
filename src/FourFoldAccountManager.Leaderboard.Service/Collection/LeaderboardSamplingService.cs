@@ -21,8 +21,11 @@ public sealed class LeaderboardSamplingService(
         {
             var start = _clock.GetTimestamp();
             var active = await store.GetActiveProfilesAsync(now - options.ActiveLeaseDuration, ct);
+            var profiles = active.GroupBy(x => x.PlayerId).Select(x => x.First())
+                .OrderBy(x => x.PlayerId).ToArray();
+            var maxSampleGap = options.MinimumSampleInterval * Math.Max(3, profiles.Length + 1);
             var fetched = false;
-            foreach (var profile in active.GroupBy(x => x.PlayerId).Select(x => x.First()).OrderBy(x => x.PlayerId))
+            foreach (var profile in profiles)
             {
                 ct.ThrowIfCancellationRequested();
                 if (fetched) await Task.Delay(options.MinimumSampleInterval, _clock, ct);
@@ -30,7 +33,8 @@ public sealed class LeaderboardSamplingService(
                 var currentActive = await store.GetActiveProfilesAsync(observedAt - options.ActiveLeaseDuration, ct);
                 var currentProfile = currentActive.FirstOrDefault(x => x.PlayerId == profile.PlayerId);
                 if (currentProfile is null) continue;
-                fetched = await SampleAsync(currentProfile.PlayerId, currentProfile.Username, observedAt, ct);
+                fetched = await SampleAsync(currentProfile.PlayerId, currentProfile.Username,
+                    observedAt, maxSampleGap, ct);
             }
         }
         finally
@@ -39,7 +43,8 @@ public sealed class LeaderboardSamplingService(
         }
     }
 
-    private async Task<bool> SampleAsync(int playerId, string username, DateTimeOffset now, CancellationToken ct)
+    private async Task<bool> SampleAsync(int playerId, string username, DateTimeOffset now,
+        TimeSpan maxSampleGap, CancellationToken ct)
     {
         var previous = await store.GetPlayerStateAsync(playerId, ct);
         if (previous is not null && !previous.NeedsBaseline &&
@@ -79,7 +84,7 @@ public sealed class LeaderboardSamplingService(
             return true;
         }
 
-        if (now - previous.LastSampledAtUtc > options.MinimumSampleInterval * 3)
+        if (now - previous.LastSampledAtUtc > maxSampleGap)
         {
             await SaveAsync(null);
             return true;

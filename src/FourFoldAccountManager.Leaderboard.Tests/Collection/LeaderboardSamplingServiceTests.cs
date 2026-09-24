@@ -232,6 +232,52 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
+    public async Task ThreeContinuouslyActivePlayersDoNotLoseQueuedGain()
+    {
+        var store = new FakeStore();
+        foreach (var id in new[] { 1, 2, 3 }) store.Activate(id, "Alice", Now);
+        var before = Snapshot("Alice", 10) with { ActiveClassName = "Warrior" };
+        var after = Snapshot("Alice", 35) with { ActiveClassName = "Warrior" };
+        var local = new XpTrackingSession();
+        local.ApplySnapshot(before, Now);
+        local.ApplySnapshot(after, Now.AddMilliseconds(61));
+        Assert.Equal(25, local.SessionGain);
+
+        var service = new LeaderboardSamplingService(store, new PerPlayerSource(1, 2, 3),
+            new LeaderboardCollectionOptions
+            {
+                Enabled = true,
+                MinimumSampleInterval = TimeSpan.FromMilliseconds(20)
+            });
+
+        await service.RunOnceAsync(Now, default);
+        await service.RunOnceAsync(Now.AddMilliseconds(61), default);
+
+        Assert.Equal(new long[] { 25, 25, 25 }, store.Gains.Order().ToArray());
+    }
+
+    [Fact]
+    public async Task GapBeyondQueueAllowanceStillCreatesFreshBaseline()
+    {
+        var store = Seed(10);
+        store.Activate(2, "Alice", Now);
+        store.Activate(3, "Alice", Now);
+        var source = new FakeSource(Snapshot("Alice", 35), Snapshot("Alice", 10),
+            Snapshot("Alice", 10));
+        var service = new LeaderboardSamplingService(store, source,
+            new LeaderboardCollectionOptions
+            {
+                Enabled = true,
+                MinimumSampleInterval = TimeSpan.FromMilliseconds(20)
+            });
+
+        await service.RunOnceAsync(Now.AddMilliseconds(100), default);
+
+        Assert.Empty(store.Gains);
+        Assert.False(store.States[1].NeedsBaseline);
+    }
+
+    [Fact]
     public async Task AttributesGainWhenSourceResponseWasObservedAcrossUtcBoundary()
     {
         var beforeMidnight = new DateTimeOffset(2026, 9, 23, 23, 59, 59, 990, TimeSpan.Zero);
@@ -294,6 +340,19 @@ public sealed class LeaderboardSamplingServiceTests
             return response is Exception ex ? Task.FromException<PlayerProgressSnapshot>(ex) :
                 Task.FromResult((PlayerProgressSnapshot)response);
         }
+    }
+
+    private sealed class PerPlayerSource : ILeaderboardPublicProfileSource
+    {
+        private readonly Dictionary<int, Queue<PlayerProgressSnapshot>> _responses;
+
+        public PerPlayerSource(params int[] playerIds) => _responses = playerIds.ToDictionary(
+            id => id, _ => new Queue<PlayerProgressSnapshot>(
+                [Snapshot("Alice", 10) with { ActiveClassName = "Warrior" },
+                 Snapshot("Alice", 35) with { ActiveClassName = "Warrior" }]));
+
+        public Task<PlayerProgressSnapshot> FetchAsync(int playerId, CancellationToken ct) =>
+            Task.FromResult(_responses[playerId].Dequeue());
     }
 
     private sealed class DelayedSource(PlayerProgressSnapshot response, TimeSpan delay) : ILeaderboardPublicProfileSource
