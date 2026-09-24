@@ -31,7 +31,7 @@ Choose an account directly from the dropdown on the **Stats** or **XP Calculator
 
 ## XP Tracker
 
-The tracker polls every minute and shows XP/hour, session XP, active class, XP to next level, and time-to-level estimates. Right-click a row to reset its XP/hour rate or all tracking data. Tracker behavior and overlays remain available inside the Plugins sidebar.
+The tracker polls every minute and measures the active class for XP/hour and session XP. It also shows XP to next level and time-to-level estimates. Right-click a row to reset its XP/hour rate or all tracking data. Tracker behavior and overlays remain available inside the Plugins sidebar.
 
 ## Requirements
 
@@ -55,7 +55,7 @@ The Workspace tab ranks XP gained during the current UTC day, ISO week, or calen
 ### Privacy and scoring
 
 - **Sharing:** New installs default on; uncheck **Share linked accounts** to opt out. Existing choices are kept. The app sends a random installation ID and public player identities, never credentials or client-computed XP. Ownership is not verified; share only profiles you control. Server logs may contain request IPs.
-- **Sampling:** The service samples public profiles only while collection is enabled and a linked game view is active. The first sample sets a baseline; failed or uncertain samples add no XP.
+- **Sampling:** The service counts valid XP gains across all classes while collection is enabled and a linked game view is active. The first sample sets a baseline; failed or uncertain samples add no XP.
 - **Visibility:** Only current UTC periods are shown. Turning off sharing stops this device; gains already recorded remain visible until their periods end. Events are retained 31–40 days (40 by default); stale installations and unreferenced profile snapshots are cleaned up.
 
 ### Hosting and deployment
