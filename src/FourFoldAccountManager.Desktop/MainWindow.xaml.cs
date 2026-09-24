@@ -2471,17 +2471,18 @@ public partial class MainWindow : Window
                 .ToDictionary(profile => profile.AccountId);
             var profiles = _accounts.Select(account =>
             {
-                var playerId = account.RankingPlayerId ??
-                    (activeProfiles.TryGetValue(account.Id, out var active) ? active.PlayerId : 0);
-                return new { account.Id, PlayerId = playerId, Username = account.RankingUsername?.Trim() };
+                if (activeProfiles.TryGetValue(account.Id, out var active))
+                    return new LeaderboardProfile(active.PlayerId, active.Username);
+
+                return new LeaderboardProfile(account.RankingPlayerId ?? 0,
+                    account.RankingUsername?.Trim() ?? string.Empty);
             }).Where(profile => profile.PlayerId > 0 && !string.IsNullOrWhiteSpace(profile.Username))
                 .GroupBy(profile => profile.PlayerId)
                 .Select(group => group.First()).ToArray();
-            var linked = profiles.Select(profile => new LeaderboardProfile(profile.PlayerId, profile.Username!)).ToArray();
-            var linkedIds = linked.Select(profile => profile.PlayerId).ToHashSet();
+            var linkedIds = profiles.Select(profile => profile.PlayerId).ToHashSet();
             var activeIds = activeProfiles.Values.Select(profile => profile.PlayerId)
                 .Where(linkedIds.Contains).Distinct().ToArray();
-            await leaderboard.SyncParticipationAsync(linked, activeIds, CancellationToken.None);
+            await leaderboard.SyncParticipationAsync(profiles, activeIds, CancellationToken.None);
         }
         catch
         {
