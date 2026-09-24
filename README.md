@@ -52,17 +52,11 @@ Windows releases include a framework-dependent ZIP, standalone executable, and c
 
 The Workspace tab ranks XP gained during the current UTC day, ISO week, or calendar month. The desktop uses `https://fourfold-shared-xp-leaderboard.onrender.com` by default; developers can override it with `FOURFOLD_LEADERBOARD_URL`. Local XP tracking works without the service.
 
-### Privacy and scoring
-
-- **Sharing:** New installs default on; uncheck **Share linked accounts** to opt out. Existing choices are kept. The app sends a random installation ID and public player identities, never credentials or client-computed XP. Server logs may contain request IPs.
-- **Sampling:** The service counts valid XP gains across all classes while collection is enabled and a linked game view is active. The first sample sets a baseline; failed or uncertain samples add no XP.
-- **Visibility:** Only current UTC periods are shown. Turning off sharing stops this device; gains already recorded remain visible until their periods end. Events are retained 31–40 days (40 by default); stale installations and unreferenced profile snapshots are cleaned up.
-
 ### Hosting and deployment
 
-The service uses one Render Free web instance and a Neon Free PostgreSQL database. The Blueprint disables automatic deploys; migrations run at startup, and `/health/ready` checks database connectivity. Render Free services may sleep when idle. The current pilot samples every five minutes; change this to ten minutes before release.
+The service uses one Render Free web instance and a Neon Free PostgreSQL database. The Blueprint disables automatic deploys; migrations run at startup, and `/health/ready` checks database connectivity. Render Free services may sleep when idle. Keep XP sampling at five-minute intervals for release.
 
-Use the free Render and Neon plans; do not add a payment method or paid fallback without approval. Keep one service instance. Store the direct Neon connection string in Render as `ConnectionStrings__Leaderboard`, with `SSL Mode=VerifyFull`; never commit credentials. Keep the database secret and collection URL, interval, and enabled flag dashboard-managed (`sync: false`). New deployments should start with collection disabled, an empty profile URL, and a zero interval. Enable collection only after source permission and sampling cadence are approved, using an approved HTTPS profile URL containing `{playerId}`; restart the service after changing settings. See [Render Free limits](https://render.com/docs/free) and [Neon Free limits](https://neon.com/blog/neon-backend-is-ga); disable collection if quotas run low.
+Use the free Render and Neon plans; do not add a payment method or paid fallback without approval. Keep one service instance. Store the direct Neon connection string in Render as `ConnectionStrings__Leaderboard`, with `SSL Mode=VerifyFull`; never commit credentials. Keep the database secret and collection URL, interval, and enabled flag dashboard-managed (`sync: false`). New deployments should start with collection disabled, an empty profile URL, and a zero interval. Enable collection only after source permission and sampling cadence are approved, using an approved HTTPS profile URL containing `{playerId}` and `Collection__MinimumSampleInterval=00:05:00`; restart the service after changing settings. See [Render Free limits](https://render.com/docs/free) and [Neon Free limits](https://neon.com/blog/neon-backend-is-ga); disable collection if quotas run low.
 
 ### Backup and recovery
 
