@@ -8,8 +8,8 @@ var builder = WebApplication.CreateBuilder(args);
 
 var collection = new LeaderboardCollectionOptions();
 builder.Configuration.GetSection(LeaderboardCollectionOptions.SectionName).Bind(collection);
-if (collection.RetentionDays is < 1 or > 40)
-    throw new InvalidOperationException("Collection:RetentionDays must be between 1 and 40.");
+if (collection.RetentionDays is < 31 or > 40)
+    throw new InvalidOperationException("Collection:RetentionDays must be between 31 and 40 to retain a complete calendar month.");
 if (collection.ActiveLeaseDuration != TimeSpan.FromMinutes(3))
     throw new InvalidOperationException("Collection:ActiveLeaseDuration must be three minutes.");
 builder.Services.AddSingleton(collection);

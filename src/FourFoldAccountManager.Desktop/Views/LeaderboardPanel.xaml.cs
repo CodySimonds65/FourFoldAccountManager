@@ -279,7 +279,7 @@ public partial class LeaderboardPanel : UserControl
             await _setSharing(enabled);
             StateText.Text = enabled
                 ? "Sharing enabled for linked accounts. Active game views can contribute XP gains."
-                : "Sharing disabled for linked accounts.";
+                : "Sharing disabled on this device. Previously recorded gains remain visible until their UTC periods end.";
         }
         catch
         {

@@ -273,6 +273,10 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
             $"SELECT pg_advisory_xact_lock({EnrollmentLockKey})", ct);
         await db.Installations.Where(x => x.LastHeartbeatAtUtc < cutoffUtc.ToUniversalTime())
             .ExecuteDeleteAsync(ct);
+        await db.PlayerSampleStates
+            .Where(state => !db.InstallationProfiles.Any(profile => profile.PlayerId == state.PlayerId) &&
+                            !db.XpGainEvents.Any(gain => gain.PlayerId == state.PlayerId))
+            .ExecuteDeleteAsync(ct);
         await transaction.CommitAsync(ct);
     }
 }
