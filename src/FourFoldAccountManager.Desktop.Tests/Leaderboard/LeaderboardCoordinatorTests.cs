@@ -13,6 +13,23 @@ namespace FourFoldAccountManager.Desktop.Tests.Leaderboard;
 public sealed class LeaderboardCoordinatorTests
 {
     [Fact]
+    public async Task RenewalRetriesAfterOneLocalSaveFailure()
+    {
+        var calls = 0;
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+
+        await LeaderboardCoordinator.RunRenewalLoopCoreAsync(_ =>
+        {
+            calls++;
+            if (calls == 1) throw new IOException("temporary state-save failure");
+            cancellation.Cancel();
+            return Task.CompletedTask;
+        }, TimeSpan.FromMilliseconds(20), cancellation.Token);
+
+        Assert.Equal(2, calls);
+    }
+
+    [Fact]
     public async Task OldSettingsDefaultToPrivateAndOptInSurvivesRestart()
     {
         using var temp = new TempDirectory();
