@@ -2,6 +2,8 @@ namespace FourFoldAccountManager.Desktop.Services;
 
 public sealed record LeaderboardApiOptions(Uri BaseAddress)
 {
+    private const string DefaultServiceUrl = "https://fourfold-shared-xp-leaderboard.onrender.com";
+
     public static LeaderboardApiOptions? FromConfiguredUrl(string? configured)
     {
         if (!Uri.TryCreate(configured, UriKind.Absolute, out var uri) ||
@@ -17,6 +19,7 @@ public sealed record LeaderboardApiOptions(Uri BaseAddress)
 
     public static LeaderboardApiOptions? FromEnvironment()
     {
-        return FromConfiguredUrl(Environment.GetEnvironmentVariable("FOURFOLD_LEADERBOARD_URL"));
+        var configured = Environment.GetEnvironmentVariable("FOURFOLD_LEADERBOARD_URL");
+        return FromConfiguredUrl(configured ?? DefaultServiceUrl);
     }
 }
