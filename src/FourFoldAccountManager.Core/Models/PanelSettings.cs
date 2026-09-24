@@ -38,5 +38,8 @@ public sealed record PanelSettings
     public IReadOnlyDictionary<Guid, XpOverlayBounds> XpOverlayBoundsByAccount { get; init; } =
         new Dictionary<Guid, XpOverlayBounds>();
 
-    public static PanelSettings Default => new(PanelLayout.TwoByTwo, new Guid?[5]);
+    public static PanelSettings Default => new(PanelLayout.TwoByTwo, new Guid?[5])
+    {
+        ShareLinkedAccounts = true
+    };
 }
