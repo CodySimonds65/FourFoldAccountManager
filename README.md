@@ -31,7 +31,7 @@ Choose an account directly from the dropdown on the **Stats** or **XP Calculator
 
 ## XP Tracker
 
-The tracker polls every minute and shows XP/hour, session XP, active class, XP to next level, and time-to-level estimates. Right-click a row to reset its XP/hour rate or all tracking data. Tracker behavior and overlays remain available inside the Plugins sidebar.
+The tracker polls every minute and measures the active class for XP/hour and session XP. It also shows XP to next level and time-to-level estimates. Right-click a row to reset its XP/hour rate or all tracking data. Tracker behavior and overlays remain available inside the Plugins sidebar.
 
 ## Requirements
 
@@ -47,3 +47,24 @@ dotnet run --project src/FourFoldAccountManager.Desktop/FourFoldAccountManager.D
 ```
 
 Windows releases include a framework-dependent ZIP, standalone executable, and checksums file. The release workflow currently publishes `win-x64` assets only.
+
+## Shared XP leaderboard
+
+The Workspace tab ranks XP gained during the current UTC day, ISO week, or calendar month. The desktop uses `https://fourfold-shared-xp-leaderboard.onrender.com` by default; developers can override it with `FOURFOLD_LEADERBOARD_URL`. Local XP tracking works without the service.
+
+### Hosting and deployment
+
+The service uses one Render Free web instance and a Neon Free PostgreSQL database. The Blueprint disables automatic deploys; migrations run at startup, and `/health/ready` checks database connectivity. Render Free services may sleep when idle. Keep XP sampling at five-minute intervals for release.
+
+Use the free Render and Neon plans; do not add a payment method or paid fallback without approval. Keep one service instance. Store the direct Neon connection string in Render as `ConnectionStrings__Leaderboard`, with `SSL Mode=VerifyFull`; never commit credentials. Keep the database secret and collection URL, interval, and enabled flag dashboard-managed (`sync: false`). New deployments should start with collection disabled, an empty profile URL, and a zero interval. Enable collection only after source permission and sampling cadence are approved, using an approved HTTPS profile URL containing `{playerId}` and `Collection__MinimumSampleInterval=00:05:00`; restart the service after changing settings. See [Render Free limits](https://render.com/docs/free) and [Neon Free limits](https://neon.com/blog/neon-backend-is-ga); disable collection if quotas run low.
+
+### Backup and recovery
+
+Use PostgreSQL 16+ tools with Neon's direct TLS endpoint. Supply credentials through `PG*` environment variables and keep encrypted dumps private; they contain profile IDs and XP data.
+
+```powershell
+pg_dump --format=custom --no-owner --no-acl --file=leaderboard.dump
+pg_restore --list leaderboard.dump
+```
+
+Restore into a new empty database, then verify table counts and `/health/ready` before switching the service. For rollback, disable collection and restart; deploy only an image compatible with the current schema because code rollback does not undo migrations. To erase data, disconnect clients, disable collection, purge the four application tables and provider backups, and remove local caches.

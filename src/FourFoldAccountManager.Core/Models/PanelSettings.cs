@@ -18,6 +18,8 @@ public sealed record PanelSettings
 
     public bool FillGameToPanel { get; init; } = false;
 
+    public bool ShareLinkedAccounts { get; init; } = false;
+
     public bool ShowFullScreenExitButton { get; init; } = true;
 
     public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =
@@ -36,5 +38,8 @@ public sealed record PanelSettings
     public IReadOnlyDictionary<Guid, XpOverlayBounds> XpOverlayBoundsByAccount { get; init; } =
         new Dictionary<Guid, XpOverlayBounds>();
 
-    public static PanelSettings Default => new(PanelLayout.TwoByTwo, new Guid?[5]);
+    public static PanelSettings Default => new(PanelLayout.TwoByTwo, new Guid?[5])
+    {
+        ShareLinkedAccounts = true
+    };
 }

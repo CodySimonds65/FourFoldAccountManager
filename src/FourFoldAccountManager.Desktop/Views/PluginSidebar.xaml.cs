@@ -2,6 +2,7 @@ using System.Collections;
 using System.Windows;
 using System.Windows.Controls;
 using FourFoldAccountManager.Core.Models;
+using FourFoldAccountManager.Core.Panel;
 using FourFoldAccountManager.Core.Tracking;
 
 namespace FourFoldAccountManager.Desktop.Views;
@@ -30,6 +31,15 @@ public partial class PluginSidebar : UserControl
     public event Action<Guid>? ResetAllRequested;
     public event Action<Guid>? AccountSelectionRequested;
     public event EventHandler? RefreshRequested;
+
+    public bool UpdateHostVisibility(bool workspaceVisible, bool isFullScreen,
+        IReadOnlyCollection<Guid> openAccountIds)
+    {
+        var visible = workspaceVisible &&
+                      PluginSidebarPolicy.ShouldShow(isFullScreen, SelectedAccountId, openAccountIds);
+        Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+        return visible;
+    }
 
     public void SetTrackerItemsSource(IEnumerable? itemsSource) => TrackerPanel.ItemsSource = itemsSource;
 

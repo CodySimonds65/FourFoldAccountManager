@@ -22,7 +22,11 @@ public sealed class SettingsStore
     {
         if (!File.Exists(_paths.SettingsFilePath))
         {
-            return Validate(PanelSettings.Default);
+            // An existing account file may predate the sharing setting. Keep that installation private.
+            return Validate(PanelSettings.Default with
+            {
+                ShareLinkedAccounts = !File.Exists(_paths.AccountsFilePath)
+            });
         }
 
         try
@@ -148,6 +152,7 @@ public sealed class SettingsStore
         return new PanelSettings(settings.Layout, assignments)
         {
             FillGameToPanel = settings.FillGameToPanel,
+            ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,

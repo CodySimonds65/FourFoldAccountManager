@@ -24,6 +24,9 @@ public sealed class XpTrackingSession
     public bool IsStale { get; private set; }
     public bool IsStopped { get; private set; }
     public bool HasUncertainInterval { get; private set; }
+    public bool MissedPreviousSample { get; private set; }
+    public bool ActiveClassUnavailable { get; private set; }
+    public IReadOnlyList<string> InvalidClassNames { get; private set; } = [];
 
     public void ApplySnapshot(PlayerProgressSnapshot snapshot, DateTimeOffset sampledAt)
     {
@@ -32,19 +35,38 @@ public sealed class XpTrackingSession
         if (LastSuccessfulAt is { } previousTime && sampledAt <= previousTime)
             throw new ArgumentOutOfRangeException(nameof(sampledAt));
 
+        MissedPreviousSample = _hasFailedPoll;
+        ActiveClassUnavailable = string.IsNullOrWhiteSpace(snapshot.ActiveClassName);
+        InvalidClassNames = [];
         if (_hasFailedPoll)
         {
             HasUncertainInterval = true;
             _hasFailedPoll = false;
         }
+        else if (ActiveClassUnavailable)
+        {
+            HasUncertainInterval = true;
+        }
         else if (_baselineSnapshot is { } baseline && _baselineSampledAt is { } from)
         {
-            var gain = XpProgressCalculator.Calculate(baseline, snapshot);
-            HasUncertainInterval = gain.InvalidClasses.Count > 0;
+            var activeClassName = snapshot.ActiveClassName!;
+            var gain = XpProgressCalculator.Calculate(
+                ForClass(baseline, activeClassName), ForClass(snapshot, activeClassName));
+            InvalidClassNames = gain.InvalidClasses;
+            HasUncertainInterval = InvalidClassNames.Count > 0;
             if (gain.ValidClassCount > 0)
             {
                 _window.Add(from, sampledAt, gain.ValidGain);
             }
+        }
+        else
+        {
+            var activeClassName = snapshot.ActiveClassName!;
+            InvalidClassNames = snapshot.InvalidClasses.Contains(activeClassName,
+                    StringComparer.OrdinalIgnoreCase) || !snapshot.Classes.ContainsKey(activeClassName)
+                ? [activeClassName]
+                : [];
+            HasUncertainInterval = InvalidClassNames.Count > 0;
         }
 
         RatePerHour = _window.GetRate(sampledAt);
@@ -66,6 +88,18 @@ public sealed class XpTrackingSession
 
     public void Stop() => IsStopped = true;
 
+    private static PlayerProgressSnapshot ForClass(PlayerProgressSnapshot snapshot, string name)
+    {
+        var classes = new Dictionary<string, ClassProfileSnapshot>(StringComparer.OrdinalIgnoreCase);
+        if (snapshot.Classes.TryGetValue(name, out var progress)) classes.Add(name, progress);
+        return snapshot with
+        {
+            Classes = classes,
+            InvalidClasses = snapshot.InvalidClasses.Where(value =>
+                string.Equals(value, name, StringComparison.OrdinalIgnoreCase)).ToArray()
+        };
+    }
+
     public void ResetRate()
     {
         _window.ClearIntervals();
@@ -74,6 +108,9 @@ public sealed class XpTrackingSession
         _hasFailedPoll = false;
         RatePerHour = null;
         HasUncertainInterval = false;
+        MissedPreviousSample = false;
+        ActiveClassUnavailable = false;
+        InvalidClassNames = [];
     }
 
     public void ResetAll()

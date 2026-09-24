@@ -153,6 +153,7 @@ public static class PanelLayoutPolicy
         return new PanelSettings(layout, settings.SlotAccountIds)
         {
             FillGameToPanel = settings.FillGameToPanel,
+            ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
@@ -197,6 +198,7 @@ public static class PanelLayoutPolicy
         return new PanelSettings(settings.Layout, assignments)
         {
             FillGameToPanel = settings.FillGameToPanel,
+            ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
@@ -230,6 +232,7 @@ public static class PanelLayoutPolicy
         return new PanelSettings(settings.Layout, assignments)
         {
             FillGameToPanel = settings.FillGameToPanel,
+            ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
@@ -355,6 +358,7 @@ public static class PanelLayoutPolicy
         new(settings.Layout, settings.SlotAccountIds)
         {
             FillGameToPanel = settings.FillGameToPanel,
+            ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,

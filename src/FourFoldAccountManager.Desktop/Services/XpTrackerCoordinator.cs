@@ -69,6 +69,15 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         account.Session.HoursUntilNextLevel,
         account.Session.LastSuccessfulAt, account.Status, account.Session.IsStale)).ToArray();
 
+    public IReadOnlyList<(Guid AccountId, int PlayerId, string Username)> GetActiveLeaderboardProfiles()
+    {
+        _dispatcher.VerifyAccess();
+        return _active.Values
+            .Where(account => account.PlayerId is > 0 && !string.IsNullOrWhiteSpace(account.Username))
+            .Select(account => (account.Id, account.PlayerId!.Value, account.Username!))
+            .ToArray();
+    }
+
     internal XpTrackingSession? GetSessionForTesting(Guid accountId) =>
         _active.TryGetValue(accountId, out var account) ? account.Session : null;
 
@@ -202,6 +211,15 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
             }
 
             var result = await _profileService.ReadAsync(account.Id, account.Username, playerId, cancellationToken);
+            if (!result.IsSuccess && account.CanRetryProfileRead &&
+                result.Status is PlayerProfileReadStatus.RankingUnavailable or
+                    PlayerProfileReadStatus.ProfileUnavailable or PlayerProfileReadStatus.MalformedProfile)
+            {
+                account.CanRetryProfileRead = false;
+                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                if (!_active.TryGetValue(account.Id, out current) || !ReferenceEquals(current, account)) return;
+                result = await _profileService.ReadAsync(account.Id, account.Username, playerId, cancellationToken);
+            }
             if (!result.IsSuccess)
             {
                 if (result.Status == PlayerProfileReadStatus.Ambiguous)
@@ -235,11 +253,17 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
 
             var profile = result.Snapshot!;
             if (!_active.TryGetValue(account.Id, out current) || !ReferenceEquals(current, account)) return;
+            account.CanRetryProfileRead = true;
             account.PlayerId = result.PlayerId;
             var sampledAt = DateTimeOffset.UtcNow;
             account.Session.ApplySnapshot(profile, sampledAt);
-            account.Status = account.Session.HasUncertainInterval ? "Partial interval; sample missed or class reset" :
-                account.Session.RatePerHour is null ? "Collecting baseline" : "Tracking";
+            account.Status = account.Session.MissedPreviousSample
+                ? "Partial interval; previous tracker sample failed"
+                : account.Session.ActiveClassUnavailable
+                    ? "Active class unavailable in public profile"
+                    : account.Session.InvalidClassNames.Count > 0
+                        ? $"Could not compare XP for {account.Session.ActiveClassName}"
+                        : account.Session.RatePerHour is null ? "Collecting baseline" : "Tracking";
             _stored[account.Id] = new XpStoredAccount(account.Id, result.PlayerId!.Value, sampledAt, profile,
                 account.Session.Intervals.ToArray());
             await _store.SaveAsync(_stored.Values.ToArray(), sampledAt, cancellationToken);
@@ -278,5 +302,6 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         public int? PlayerId { get => Identity.ResolvedPlayerId; set => Identity.ResolvedPlayerId = value; }
         public XpTrackingSession Session { get; } = new();
         public string Status { get; set; } = "Collecting baseline";
+        public bool CanRetryProfileRead { get; set; } = true;
     }
 }
