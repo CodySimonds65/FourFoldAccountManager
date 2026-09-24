@@ -54,7 +54,7 @@ The Workspace tab ranks XP gained during the current UTC day, ISO week, or calen
 
 ### Privacy and scoring
 
-- **Sharing:** New installs default on; uncheck **Share linked accounts** to opt out. Existing choices are kept. The app sends a random installation ID and public player identities, never credentials or client-computed XP. Ownership is not verified; share only profiles you control. Server logs may contain request IPs.
+- **Sharing:** New installs default on; uncheck **Share linked accounts** to opt out. Existing choices are kept. The app sends a random installation ID and public player identities, never credentials or client-computed XP. Server logs may contain request IPs.
 - **Sampling:** The service counts valid XP gains across all classes while collection is enabled and a linked game view is active. The first sample sets a baseline; failed or uncertain samples add no XP.
 - **Visibility:** Only current UTC periods are shown. Turning off sharing stops this device; gains already recorded remain visible until their periods end. Events are retained 31–40 days (40 by default); stale installations and unreferenced profile snapshots are cleaned up.
 

@@ -98,8 +98,8 @@
                 <StackPanel>
                     <CheckBox x:Name="ShareLinkedAccountsCheckBox" Content="Share linked accounts"
                               Checked="SharingChanged" Unchecked="SharingChanged" FontWeight="SemiBold"
-                              VerticalAlignment="Center" />
-                    <TextBlock Text="Sharing is on by default for new installs. Uncheck to opt out on this device. While linked game views are open, public profile names and measured XP gains appear on the shared board. Ownership isn't verified, so only share profiles you control. Recorded gains stay visible until their UTC period ends; service records are retained for up to 40 days."
+                              VerticalAlignment="Center" Foreground="{DynamicResource Brush.TextPrimary}" />
+                    <TextBlock Text="Sharing is on by default for new installs. Uncheck to opt out on this device. While linked game views are open, public profile names and measured XP gains appear on the shared board. Recorded gains stay visible until their UTC period ends; service records are retained for up to 40 days."
                                TextWrapping="Wrap" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
                                Margin="0,6,16,0" />
                 </StackPanel>
