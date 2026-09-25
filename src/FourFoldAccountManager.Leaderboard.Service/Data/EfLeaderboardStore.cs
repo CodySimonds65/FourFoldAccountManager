@@ -129,6 +129,23 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
             .ToArray();
     }
 
+    public async Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesNeedingBaselineAsync(
+        DateTimeOffset activeAfterUtc, CancellationToken ct)
+    {
+        var cutoff = activeAfterUtc.ToUniversalTime();
+        var pending = await db.InstallationProfiles.AsNoTracking()
+            .Where(x => x.Installation.SharingEnabled && x.IsActive && x.LastActiveAtUtc > cutoff &&
+                !db.PlayerSampleStates.Any(state => state.PlayerId == x.PlayerId && !state.NeedsBaseline))
+            .Select(x => new { x.PlayerId, x.Username, x.LastActiveAtUtc })
+            .ToListAsync(ct);
+        return pending.GroupBy(x => x.PlayerId)
+            .Select(group => group.OrderByDescending(x => x.LastActiveAtUtc)
+                .ThenBy(x => x.Username, StringComparer.OrdinalIgnoreCase).First())
+            .OrderBy(x => x.PlayerId)
+            .Select(x => new ActiveLeaderboardProfile(x.PlayerId, x.Username))
+            .ToArray();
+    }
+
     public async Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct)
     {
         if (playerId <= 0) throw new ArgumentOutOfRangeException(nameof(playerId));

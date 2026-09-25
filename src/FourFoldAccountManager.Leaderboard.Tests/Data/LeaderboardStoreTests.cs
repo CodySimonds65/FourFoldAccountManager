@@ -121,6 +121,26 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PendingBaselineQueryTracksActivationAndEstablishedBaseline()
+    {
+        var installation = Guid.NewGuid();
+        await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now, default);
+        var pending = await _store.GetActiveProfilesNeedingBaselineAsync(Now.AddMilliseconds(-1), default);
+        Assert.Equal([1], pending.Select(x => x.PlayerId).ToArray());
+
+        await SeedObservationAsync(Observation(1, "Alice", null, Now));
+        await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now.AddMinutes(1), default);
+        Assert.Empty(await _store.GetActiveProfilesNeedingBaselineAsync(Now, default));
+
+        await _store.ApplyHeartbeatAsync(new ParticipationHeartbeat(installation, true,
+            [new LeaderboardProfile(1, "Alice")], []), Now.AddMinutes(2), default);
+        Assert.Empty(await _store.GetActiveProfilesNeedingBaselineAsync(Now, default));
+        await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now.AddMinutes(3), default);
+        pending = await _store.GetActiveProfilesNeedingBaselineAsync(Now.AddMinutes(2), default);
+        Assert.Equal([1], pending.Select(x => x.PlayerId).ToArray());
+    }
+
+    [Fact]
     public async Task ConcurrentHeartbeatsKeepOneCompleteProfileSet()
     {
         var installationId = Guid.NewGuid();

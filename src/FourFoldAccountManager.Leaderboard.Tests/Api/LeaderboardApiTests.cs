@@ -365,6 +365,9 @@ public sealed class LeaderboardApiTests
 
         public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([]);
+        public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesNeedingBaselineAsync(
+            DateTimeOffset activeAfterUtc, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([]);
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) => Task.FromResult<PlayerSampleState?>(null);
         public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
             TimeSpan activeLeaseDuration, CancellationToken ct) => Task.CompletedTask;

@@ -472,6 +472,10 @@ public sealed class LeaderboardSamplingServiceTests
         public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>(_active.Where(x => x.At > activeAfterUtc)
                 .Select(x => x.Profile).ToArray());
+        public async Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesNeedingBaselineAsync(
+            DateTimeOffset activeAfterUtc, CancellationToken ct) =>
+            (await GetActiveProfilesAsync(activeAfterUtc, ct)).Where(profile =>
+                !States.TryGetValue(profile.PlayerId, out var state) || state.NeedsBaseline).ToArray();
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) =>
             Task.FromResult(States.GetValueOrDefault(playerId));
         public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,

@@ -23,6 +23,8 @@ public interface ILeaderboardStore
 {
     Task ApplyHeartbeatAsync(ParticipationHeartbeat heartbeat, DateTimeOffset receivedAtUtc, CancellationToken ct);
     Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct);
+    Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesNeedingBaselineAsync(
+        DateTimeOffset activeAfterUtc, CancellationToken ct);
     Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct);
     Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
         TimeSpan activeLeaseDuration, CancellationToken ct);
