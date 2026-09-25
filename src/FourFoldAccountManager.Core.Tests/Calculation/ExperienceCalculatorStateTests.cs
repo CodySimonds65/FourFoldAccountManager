@@ -40,6 +40,20 @@ public sealed class ExperienceCalculatorStateTests
     }
 
     [Fact]
+    public void TargetAboveTheCapIsInvalidWithoutProjecting()
+    {
+        var state = ExperienceCalculatorState.FromProfile(Warrior).WithTarget(XpCalculatorTargets.MaxTargetLevel + 1);
+
+        Assert.False(state.IsValid);
+        Assert.Equal("Target level must be 9,999 or lower.", state.Status);
+        Assert.Equal("—", state.RemainingXpText);
+        Assert.Equal("—", state.CurrentAbsoluteXpText);
+        Assert.Equal("—", state.TargetAbsoluteXpText);
+        Assert.Equal(0, state.LevelsRemaining);
+        Assert.Null(state.Projection);
+    }
+
+    [Fact]
     public void SnapshotWithActiveClassDoesNotChooseNextLevel()
     {
         var snapshot = new PlayerProgressSnapshot("Alice", "Warrior",

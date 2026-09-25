@@ -22,11 +22,22 @@ public sealed record PanelSettings
 
     public bool ShowFullScreenExitButton { get; init; } = true;
 
+    public bool PluginsSidebarExpanded { get; init; } = true;
+
     public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =
         GlobalHotkeyChord.DefaultRevealXpOverlayTab;
 
     public GlobalHotkeyChord ToggleDividerResizingShortcut { get; init; } =
         GlobalHotkeyChord.DefaultToggleDividerResizing;
+
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    public GlobalHotkeyChord TimerSplitShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerSplit;
+
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    public GlobalHotkeyChord TimerFinishShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerFinish;
+
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    public GlobalHotkeyChord TimerResetShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerReset;
 
     public double TwoByThreeTopRowFraction { get; init; } = 0.6;
 
@@ -34,6 +45,9 @@ public sealed record PanelSettings
 
     public IReadOnlyDictionary<Guid, GameViewportSize> GameViewportSizes { get; init; } =
         new Dictionary<Guid, GameViewportSize>();
+
+    [JsonConverter(typeof(LenientTargetLevelsJsonConverter))]
+    public IReadOnlyDictionary<Guid, long> XpCalculatorTargetLevels { get; init; } = new Dictionary<Guid, long>();
 
     [JsonConverter(typeof(OverlayCardListJsonConverter))]
     public IReadOnlyList<OverlayCardPlacement> OverlayCards { get; init; } = Array.Empty<OverlayCardPlacement>();

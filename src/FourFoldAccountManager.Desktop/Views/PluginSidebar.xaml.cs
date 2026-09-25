@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Panel;
 using FourFoldAccountManager.Core.Tracking;
+using FourFoldAccountManager.Desktop.Services;
 
 namespace FourFoldAccountManager.Desktop.Views;
 
@@ -19,6 +20,8 @@ public partial class PluginSidebar : UserControl
         XpCalculatorPanelView.RefreshRequested += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
         ClassComparisonPanelView.AccountSelectionRequested += accountId => AccountSelectionRequested?.Invoke(accountId);
         XpCalculatorPanelView.AccountSelectionRequested += accountId => AccountSelectionRequested?.Invoke(accountId);
+        XpCalculatorPanelView.TargetLevelChanged += (accountId, targetLevel) =>
+            XpTargetLevelChanged?.Invoke(accountId, targetLevel);
         UpdateActivePlugin();
     }
 
@@ -31,17 +34,27 @@ public partial class PluginSidebar : UserControl
     public event Action<Guid>? ResetAllRequested;
     public event Action<Guid>? AccountSelectionRequested;
     public event EventHandler? RefreshRequested;
+    public event Action<Guid, long?>? XpTargetLevelChanged;
 
-    public bool UpdateHostVisibility(bool workspaceVisible, bool isFullScreen,
+    public bool UpdateHostVisibility(bool workspaceVisible, bool isFullScreen, bool expanded,
         IReadOnlyCollection<Guid> openAccountIds)
     {
         var visible = workspaceVisible &&
-                      PluginSidebarPolicy.ShouldShow(isFullScreen, SelectedAccountId, openAccountIds);
+                      PluginSidebarPolicy.ShouldShow(isFullScreen, expanded, SelectedAccountId, openAccountIds);
         Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         return visible;
     }
 
     public void SetTrackerItemsSource(IEnumerable? itemsSource) => TrackerPanel.ItemsSource = itemsSource;
+
+    // Flushes a pending 500 ms XP target save immediately, so a target typed just before the app
+    // closes is not lost. FlushPendingTargetSave is internal on the panel; both are in this assembly.
+    public void FlushPendingXpTarget() => XpCalculatorPanelView.FlushPendingTargetSave();
+
+    public void AttachTimer(TimerCoordinator coordinator) => TimerPanelView.Attach(coordinator);
+
+    public void SetTimerHotkeys(string splitKeys, string finishKeys, string resetKeys, bool anyUnavailable) =>
+        TimerPanelView.SetHotkeys(splitKeys, finishKeys, resetKeys, anyUnavailable);
 
     public void SetAccounts(IEnumerable<AccountProfile> accounts)
     {
@@ -73,12 +86,12 @@ public partial class PluginSidebar : UserControl
             ? "Select an account to load its profile." : "Select Refresh to load the selected profile.");
     }
 
-    public void SetProfileSnapshot(PlayerProgressSnapshot? snapshot)
+    public void SetProfileSnapshot(PlayerProgressSnapshot? snapshot, long? savedXpTargetLevel = null)
     {
         if (snapshot is not null && _selectedAccount is not null)
         {
             ClassComparisonPanelView.SetSnapshot(_selectedAccount, snapshot);
-            XpCalculatorPanelView.SetSnapshot(_selectedAccount, snapshot);
+            XpCalculatorPanelView.SetSnapshot(_selectedAccount, snapshot, savedXpTargetLevel);
         }
     }
 
@@ -113,10 +126,12 @@ public partial class PluginSidebar : UserControl
             ? Visibility.Visible : Visibility.Collapsed;
         XpCalculatorPanelView.Visibility = ActivePlugin == PluginKind.XpCalculator
             ? Visibility.Visible : Visibility.Collapsed;
+        TimerPanelView.Visibility = ActivePlugin == PluginKind.Timer ? Visibility.Visible : Visibility.Collapsed;
 
         XpTrackerButton.Opacity = ActivePlugin == PluginKind.XpTracker ? 1d : 0.65d;
         ClassComparisonButton.Opacity = ActivePlugin == PluginKind.ClassComparison ? 1d : 0.65d;
         XpCalculatorButton.Opacity = ActivePlugin == PluginKind.XpCalculator ? 1d : 0.65d;
+        TimerButton.Opacity = ActivePlugin == PluginKind.Timer ? 1d : 0.65d;
     }
 
     private void TrackerPanel_Loaded(object sender, RoutedEventArgs e)
