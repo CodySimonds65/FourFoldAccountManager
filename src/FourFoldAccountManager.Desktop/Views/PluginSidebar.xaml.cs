@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Panel;
 using FourFoldAccountManager.Core.Tracking;
+using FourFoldAccountManager.Desktop.Services;
 
 namespace FourFoldAccountManager.Desktop.Views;
 
@@ -42,6 +43,11 @@ public partial class PluginSidebar : UserControl
     }
 
     public void SetTrackerItemsSource(IEnumerable? itemsSource) => TrackerPanel.ItemsSource = itemsSource;
+
+    public void AttachTimer(TimerCoordinator coordinator) => TimerPanelView.Attach(coordinator);
+
+    public void SetTimerHotkeys(string splitKeys, string finishKeys, string resetKeys, bool anyUnavailable) =>
+        TimerPanelView.SetHotkeys(splitKeys, finishKeys, resetKeys, anyUnavailable);
 
     public void SetAccounts(IEnumerable<AccountProfile> accounts)
     {
@@ -113,10 +119,12 @@ public partial class PluginSidebar : UserControl
             ? Visibility.Visible : Visibility.Collapsed;
         XpCalculatorPanelView.Visibility = ActivePlugin == PluginKind.XpCalculator
             ? Visibility.Visible : Visibility.Collapsed;
+        TimerPanelView.Visibility = ActivePlugin == PluginKind.Timer ? Visibility.Visible : Visibility.Collapsed;
 
         XpTrackerButton.Opacity = ActivePlugin == PluginKind.XpTracker ? 1d : 0.65d;
         ClassComparisonButton.Opacity = ActivePlugin == PluginKind.ClassComparison ? 1d : 0.65d;
         XpCalculatorButton.Opacity = ActivePlugin == PluginKind.XpCalculator ? 1d : 0.65d;
+        TimerButton.Opacity = ActivePlugin == PluginKind.Timer ? 1d : 0.65d;
     }
 
     private void TrackerPanel_Loaded(object sender, RoutedEventArgs e)
