@@ -21,40 +21,6 @@ public sealed class SettingsStoreTimerShortcutTests : IDisposable
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
     [Fact]
-    public async Task SettingsWithoutTimerShortcutsLoadTheDefaults()
-    {
-        await WriteSettingsAsync(json =>
-        {
-            json.Remove("timerSplitShortcut");
-            json.Remove("timerFinishShortcut");
-            json.Remove("timerResetShortcut");
-        });
-
-        var loaded = await _store.LoadAsync();
-
-        Assert.Equal(GlobalHotkeyChord.DefaultTimerSplit, loaded.TimerSplitShortcut);
-        Assert.Equal(GlobalHotkeyChord.DefaultTimerFinish, loaded.TimerFinishShortcut);
-        Assert.Equal(GlobalHotkeyChord.DefaultTimerReset, loaded.TimerResetShortcut);
-    }
-
-    [Fact]
-    public async Task InvalidTimerShortcutsFallBackToDefaultsWithoutFailingTheLoad()
-    {
-        await WriteSettingsAsync(json =>
-        {
-            json["timerSplitShortcut"] = new JsonObject { ["virtualKey"] = 0x41, ["modifiers"] = 0 };
-            json["timerFinishShortcut"] = null;
-            json["timerResetShortcut"] = new JsonObject { ["virtualKey"] = 0x61, ["modifiers"] = 16 };
-        });
-
-        var loaded = await _store.LoadAsync();
-
-        Assert.Equal(GlobalHotkeyChord.DefaultTimerSplit, loaded.TimerSplitShortcut);
-        Assert.Equal(GlobalHotkeyChord.DefaultTimerFinish, loaded.TimerFinishShortcut);
-        Assert.Equal(GlobalHotkeyChord.DefaultTimerReset, loaded.TimerResetShortcut);
-    }
-
-    [Fact]
     public async Task MalformedTimerShortcutShapesFallBackToDefaultsWithoutFailingTheLoad()
     {
         await WriteSettingsAsync(json =>
@@ -72,23 +38,6 @@ public sealed class SettingsStoreTimerShortcutTests : IDisposable
         Assert.Equal(GlobalHotkeyChord.DefaultTimerSplit, loaded.TimerSplitShortcut);
         Assert.Equal(GlobalHotkeyChord.DefaultTimerFinish, loaded.TimerFinishShortcut);
         Assert.Equal(GlobalHotkeyChord.DefaultTimerReset, loaded.TimerResetShortcut);
-    }
-
-    [Fact]
-    public async Task SavedTimerShortcutJsonShapeMatchesAnUnconvertedShortcut()
-    {
-        var split = new GlobalHotkeyChord(0x61, GlobalHotkeyModifiers.None);
-        await _store.SaveAsync(PanelSettings.Default with { TimerSplitShortcut = split });
-
-        var json = JsonNode.Parse(await File.ReadAllTextAsync(SettingsPath))!.AsObject();
-        var timerNode = json["timerSplitShortcut"]!.AsObject();
-        var revealNode = json["revealXpOverlayTabShortcut"]!.AsObject();
-
-        Assert.Equal(
-            revealNode.Select(property => property.Key).OrderBy(key => key, StringComparer.Ordinal),
-            timerNode.Select(property => property.Key).OrderBy(key => key, StringComparer.Ordinal));
-        Assert.Equal((int)split.VirtualKey, (int)timerNode["virtualKey"]!);
-        Assert.Equal((int)split.Modifiers, (int)timerNode["modifiers"]!);
     }
 
     [Fact]

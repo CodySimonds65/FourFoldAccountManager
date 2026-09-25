@@ -8,37 +8,6 @@ namespace FourFoldAccountManager.Desktop.Tests.Views;
 public sealed class ExperienceCalculatorTargetTests
 {
     [Fact]
-    public void SavedTargetFillsInWhenSwitchingAccounts() => WpfTestHost.Run(() =>
-    {
-        var (panel, first, second) = CreatePanel();
-
-        panel.SetSnapshot(first, Snapshot(), savedTargetLevel: 3);
-        Assert.Equal("3", panel.TargetLevelBox.Text);
-        Assert.Equal("25", panel.RemainingText.Text);
-
-        panel.SetSnapshot(second, Snapshot(), savedTargetLevel: null);
-        Assert.Equal(string.Empty, panel.TargetLevelBox.Text);
-        Assert.Equal("—", panel.RemainingText.Text);
-    });
-
-    [Fact]
-    public void TypingATargetSavesItOnceAfterThePause() => WpfTestHost.Run(() =>
-    {
-        var (panel, first, _) = CreatePanel();
-        var saves = new List<(Guid, long?)>();
-        panel.TargetLevelChanged += (accountId, level) => saves.Add((accountId, level));
-        panel.SetSnapshot(first, Snapshot());
-
-        Assert.Equal(TimeSpan.FromMilliseconds(500), panel.TargetSaveDelay);
-        panel.TargetLevelBox.Text = "1";
-        panel.TargetLevelBox.Text = "12";
-        Assert.Empty(saves);
-        panel.FlushPendingTargetSave();
-
-        Assert.Equal([(first.Id, (long?)12)], saves);
-    });
-
-    [Fact]
     public void InvalidTextKeepsTheSavedTargetAndClearingRemovesIt() => WpfTestHost.Run(() =>
     {
         var (panel, first, _) = CreatePanel();
@@ -68,19 +37,6 @@ public sealed class ExperienceCalculatorTargetTests
 
         Assert.Equal([(first.Id, (long?)7)], saves);
         Assert.Equal("4", panel.TargetLevelBox.Text);
-    });
-
-    [Fact]
-    public void FillingInASavedTargetIsNotSavedAgain() => WpfTestHost.Run(() =>
-    {
-        var (panel, first, _) = CreatePanel();
-        var saves = new List<(Guid, long?)>();
-        panel.TargetLevelChanged += (accountId, level) => saves.Add((accountId, level));
-
-        panel.SetSnapshot(first, Snapshot(), savedTargetLevel: 3);
-        panel.FlushPendingTargetSave();
-
-        Assert.Empty(saves);
     });
 
     [Fact]

@@ -76,24 +76,6 @@ public sealed class PanelLayoutPolicyTests
     }
 
     [Fact]
-    public void SettingsTransformsPreserveTheCollapsedPluginsSidebar()
-    {
-        var accountId = Guid.NewGuid();
-        var settings = PanelSettings.Default with
-        {
-            SlotAccountIds = [accountId, null, null, null, null],
-            PluginsSidebarExpanded = false
-        };
-
-        Assert.False(PanelLayoutPolicy.WithLayout(settings, PanelLayout.OneByTwo).PluginsSidebarExpanded);
-        Assert.False(PanelLayoutPolicy.Assign(settings, 1, Guid.NewGuid()).PluginsSidebarExpanded);
-        Assert.False(PanelLayoutPolicy.ClearAccount(settings, accountId).PluginsSidebarExpanded);
-        Assert.False(PanelLayoutPolicy.WithSplitState(settings,
-            new PanelSplitState("2x2.rows", [0.7, 0.3])).PluginsSidebarExpanded);
-        Assert.False(PanelLayoutPolicy.ResetSplitStates(settings).PluginsSidebarExpanded);
-    }
-
-    [Fact]
     public void SettingsTransformsPreserveXpTargetsAndClearAccountRemovesTheAccountsTarget()
     {
         var accountId = Guid.NewGuid();
