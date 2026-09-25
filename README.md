@@ -26,7 +26,7 @@ A Windows desktop client for managing FourFold accounts, saved logins, multi-cli
 Choose an account directly from the dropdown on the **Stats** or **XP Calculator** tab. The selected profile refreshes automatically.
 
 - **Class Comparison** reads the profile’s active class and compares its displayed HP, SP, ATT, MAG, SKL, SPD, LCK, DEF, and RES values against projected class averages. Equipment is shown for context only.
-- **XP Calculator** shows the active class and calculates progress after you enter a target level, using `5 × level × (level + 1)` for next-level caps and `(5 / 3) × (level³ - level)` for cumulative XP.
+- **XP Calculator** shows the active class and calculates progress after you enter a target level, using `5 × level × (level + 1)` for next-level caps and `(5 / 3) × (level³ - level)` for cumulative XP. The target level is remembered per account and capped at level 9,999.
 - Usernames in the top-200 ranking resolve to profile IDs automatically. Ambiguous or out-of-ranking users can be linked with a verified profile ID or URL.
 
 ## XP Tracker
