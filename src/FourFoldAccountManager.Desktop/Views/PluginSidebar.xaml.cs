@@ -20,6 +20,8 @@ public partial class PluginSidebar : UserControl
         XpCalculatorPanelView.RefreshRequested += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
         ClassComparisonPanelView.AccountSelectionRequested += accountId => AccountSelectionRequested?.Invoke(accountId);
         XpCalculatorPanelView.AccountSelectionRequested += accountId => AccountSelectionRequested?.Invoke(accountId);
+        XpCalculatorPanelView.TargetLevelChanged += (accountId, targetLevel) =>
+            XpTargetLevelChanged?.Invoke(accountId, targetLevel);
         UpdateActivePlugin();
     }
 
@@ -32,6 +34,7 @@ public partial class PluginSidebar : UserControl
     public event Action<Guid>? ResetAllRequested;
     public event Action<Guid>? AccountSelectionRequested;
     public event EventHandler? RefreshRequested;
+    public event Action<Guid, long?>? XpTargetLevelChanged;
 
     public bool UpdateHostVisibility(bool workspaceVisible, bool isFullScreen, bool expanded,
         IReadOnlyCollection<Guid> openAccountIds)
@@ -79,12 +82,12 @@ public partial class PluginSidebar : UserControl
             ? "Select an account to load its profile." : "Select Refresh to load the selected profile.");
     }
 
-    public void SetProfileSnapshot(PlayerProgressSnapshot? snapshot)
+    public void SetProfileSnapshot(PlayerProgressSnapshot? snapshot, long? savedXpTargetLevel = null)
     {
         if (snapshot is not null && _selectedAccount is not null)
         {
             ClassComparisonPanelView.SetSnapshot(_selectedAccount, snapshot);
-            XpCalculatorPanelView.SetSnapshot(_selectedAccount, snapshot);
+            XpCalculatorPanelView.SetSnapshot(_selectedAccount, snapshot, savedXpTargetLevel);
         }
     }
 

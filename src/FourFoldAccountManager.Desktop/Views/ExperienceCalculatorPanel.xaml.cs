@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using FourFoldAccountManager.Core.Calculation;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Tracking;
@@ -17,15 +18,23 @@ public partial class ExperienceCalculatorPanel : UserControl
     private Guid? _snapshotAccountId;
     private bool _updatingTarget;
     private bool _suppressAccountSelection;
+    private readonly DispatcherTimer _targetSaveTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
+    private (Guid AccountId, long? TargetLevel)? _pendingTargetSave;
 
     public ExperienceCalculatorPanel()
     {
         InitializeComponent();
         TransitionsControl.ItemsSource = _transitions;
+        _targetSaveTimer.Tick += (_, _) => FlushPendingTargetSave();
     }
 
     public event EventHandler? RefreshRequested;
     public event Action<Guid>? AccountSelectionRequested;
+
+    // Raised once typing pauses; a null level removes the account's saved target.
+    public event Action<Guid, long?>? TargetLevelChanged;
+
+    internal TimeSpan TargetSaveDelay => _targetSaveTimer.Interval;
 
     public void SetAccounts(IEnumerable<AccountProfile> accounts) => AccountPicker.ItemsSource = accounts;
 
@@ -42,9 +51,18 @@ public partial class ExperienceCalculatorPanel : UserControl
         }
     }
 
-    public void SetSnapshot(AccountProfile account, PlayerProgressSnapshot snapshot)
+    public void SetSnapshot(AccountProfile account, PlayerProgressSnapshot snapshot, long? savedTargetLevel = null)
     {
-        var targetText = _snapshotAccountId == account.Id ? TargetLevelBox.Text : string.Empty;
+        var sameAccount = _snapshotAccountId == account.Id;
+        if (!sameAccount)
+        {
+            // Save what was typed for the previous account before its text is replaced.
+            FlushPendingTargetSave();
+        }
+
+        var targetText = sameAccount
+            ? TargetLevelBox.Text
+            : savedTargetLevel?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
         _snapshotAccountId = account.Id;
         SetSelectedAccount(account);
         _state = ExperienceCalculatorState.FromSnapshot(snapshot);
@@ -59,6 +77,7 @@ public partial class ExperienceCalculatorPanel : UserControl
 
     public void ClearSnapshot(string status)
     {
+        FlushPendingTargetSave();
         _snapshotAccountId = null;
         _state = null;
         ClassText.Text = string.Empty;
@@ -68,7 +87,9 @@ public partial class ExperienceCalculatorPanel : UserControl
         LevelsText.Text = "Levels remaining: —";
         StatusText.Text = status;
         _transitions.Clear();
+        _updatingTarget = true;
         TargetLevelBox.Text = string.Empty;
+        _updatingTarget = false;
     }
 
     public void SetProfileStatus(string status) => StatusText.Text = status;
@@ -90,6 +111,7 @@ public partial class ExperienceCalculatorPanel : UserControl
         if (!_updatingTarget)
         {
             ApplyTarget();
+            ScheduleTargetSave();
         }
     }
 
@@ -107,6 +129,45 @@ public partial class ExperienceCalculatorPanel : UserControl
 
         _state = _state.WithTarget(targetLevel);
         Render();
+    }
+
+    private void ScheduleTargetSave()
+    {
+        _targetSaveTimer.Stop();
+        _pendingTargetSave = null;
+        if (_snapshotAccountId is not { } accountId)
+        {
+            return;
+        }
+
+        var text = TargetLevelBox.Text.Trim();
+        if (text.Length == 0)
+        {
+            _pendingTargetSave = (accountId, null);
+        }
+        else if (long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var level) && level > 0)
+        {
+            _pendingTargetSave = (accountId, level);
+        }
+        else
+        {
+            // Invalid text never changes the saved target.
+            return;
+        }
+
+        _targetSaveTimer.Start();
+    }
+
+    internal void FlushPendingTargetSave()
+    {
+        _targetSaveTimer.Stop();
+        if (_pendingTargetSave is not { } pending)
+        {
+            return;
+        }
+
+        _pendingTargetSave = null;
+        TargetLevelChanged?.Invoke(pending.AccountId, pending.TargetLevel);
     }
 
     private void Render()

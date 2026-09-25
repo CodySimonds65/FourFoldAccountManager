@@ -9,6 +9,7 @@ using System.Windows.Data;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using FourFoldAccountManager.Core.Calculation;
 using FourFoldAccountManager.Core.Data;
 using FourFoldAccountManager.Core.Launch;
 using FourFoldAccountManager.Core.Leaderboard;
@@ -105,6 +106,8 @@ public partial class MainWindow : Window
             RefreshTrackerRows();
         };
         PluginSidebar.RefreshRequested += (_, _) => _ = RefreshSelectedProfileAsync();
+        PluginSidebar.XpTargetLevelChanged += (accountId, targetLevel) =>
+            _ = SaveXpTargetLevelAsync(accountId, targetLevel);
         PluginSidebar.AccountSelectionRequested += accountId =>
         {
             var account = _accounts.FirstOrDefault(candidate => candidate.Id == accountId);
@@ -697,7 +700,7 @@ public partial class MainWindow : Window
 
             if (result.Snapshot is not null)
             {
-                PluginSidebar.SetProfileSnapshot(result.Snapshot);
+                PluginSidebar.SetProfileSnapshot(result.Snapshot, XpCalculatorTargets.Get(_panelSettings, account.Id));
             }
 
             if (!result.IsSuccess)
@@ -715,6 +718,19 @@ public partial class MainWindow : Window
                 _profileReadCancellation = null;
             }
             cancellation.Dispose();
+        }
+    }
+
+    private async Task SaveXpTargetLevelAsync(Guid accountId, long? targetLevel)
+    {
+        try
+        {
+            await UpdateSettingsAsync(settings => XpCalculatorTargets.WithTarget(settings, accountId, targetLevel));
+            RefreshTrackerRows();
+        }
+        catch
+        {
+            GlobalStatusText.Text = "The XP calculator target could not be saved.";
         }
     }
 
