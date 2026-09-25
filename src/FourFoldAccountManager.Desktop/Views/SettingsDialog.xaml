@@ -69,7 +69,7 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                        <TextBlock Text="Reveal XP overlay tab" FontWeight="SemiBold" />
+                        <TextBlock Text="Reveal overlays tab" FontWeight="SemiBold" />
                         <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource Brush.TextMuted}"
                                    Text="Show the hidden edge arrow without opening its tray." />
                     </StackPanel>

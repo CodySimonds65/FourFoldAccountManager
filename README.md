@@ -31,7 +31,7 @@ Choose an account directly from the dropdown on the **Stats** or **XP Calculator
 
 ## XP Tracker
 
-The tracker polls every minute and measures the active class for XP/hour and session XP. It also shows XP to next level and time-to-level estimates. Right-click a row to reset its XP/hour rate or all tracking data. Tracker behavior and overlays remain available inside the Plugins sidebar.
+The tracker polls every minute and measures the active class for XP/hour and session XP. It also shows XP to next level and time-to-level estimates. Right-click a row to reset its XP/hour rate or all tracking data. Tracker behavior remains available inside the Plugins sidebar. In full screen, open the edge tab (or press the reveal shortcut) to show the Overlays panel, switch each account's XP/hr card on or off, and drag cards into place.
 
 ## Requirements
 

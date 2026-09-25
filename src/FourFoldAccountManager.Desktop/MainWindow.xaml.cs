@@ -56,7 +56,7 @@ public partial class MainWindow : Window
     private bool _viewAdjustmentVisible;
     private bool _isFullScreen;
     private bool _showingLeaderboard;
-    private bool _xpOverlayEditing;
+    private bool _overlayEditing;
     private WindowState _previousWindowState;
     private WindowStyle _previousWindowStyle;
     private ResizeMode _previousResizeMode;
@@ -83,8 +83,10 @@ public partial class MainWindow : Window
             RefreshTrackerRows();
             _ = SyncLeaderboardParticipationAsync();
         };
-        FullscreenXpOverlayTray.EditRequested += (_, _) => SetXpOverlayEditing(true);
-        FullscreenXpOverlayTray.DoneRequested += (_, _) => SetXpOverlayEditing(false);
+        FullscreenOverlayTray.EditRequested += (_, _) => SetOverlayEditing(true);
+        FullscreenOverlayTray.DoneRequested += (_, _) => SetOverlayEditing(false);
+        FullscreenOverlayTray.CardToggleRequested += FullscreenOverlayTray_CardToggleRequested;
+        GlobalOverlayLayer.BoundsCommitted += OverlayLayer_BoundsCommitted;
         PluginSidebar.SetTrackerItemsSource(_xpTrackerRows);
         PluginSidebar.SetAccounts(_accounts);
         PluginSidebar.LinkRequested += accountId =>
@@ -165,7 +167,7 @@ public partial class MainWindow : Window
         {
             if (chord == _panelSettings.RevealXpOverlayTabShortcut)
             {
-                FullscreenXpOverlayTray.RevealEdgeTab();
+                FullscreenOverlayTray.RevealEdgeTab();
                 handled = true;
             }
             else if (chord == _panelSettings.ToggleDividerResizingShortcut)
@@ -722,7 +724,7 @@ public partial class MainWindow : Window
             await UpdateSettingsAsync(currentSettings =>
                 PanelLayoutPolicy.WithLayout(currentSettings, layout));
             await RebuildPanelAsync(closeExistingViews: false);
-            FullscreenXpOverlayTray.RevealEdgeTab();
+            FullscreenOverlayTray.RevealEdgeTab();
             GlobalStatusText.Text = $"Layout changed to {FormatLayout(layout)}. Slot assignments were preserved.";
         }
         catch
@@ -1005,9 +1007,9 @@ public partial class MainWindow : Window
         _previousWindowStyle = WindowStyle;
         _previousResizeMode = ResizeMode;
         _isFullScreen = true;
-        _xpOverlayEditing = false;
-        FullscreenXpOverlayTray.SetFullscreen(true);
-        FullscreenXpOverlayTray.SetEditing(false);
+        _overlayEditing = false;
+        FullscreenOverlayTray.SetFullscreen(true);
+        FullscreenOverlayTray.SetEditing(false);
 
         AppHeaderBorder.Visibility = Visibility.Collapsed;
         AppHeaderRow.Height = new GridLength(0);
@@ -1045,9 +1047,9 @@ public partial class MainWindow : Window
         WindowStyle = _previousWindowStyle;
         ResizeMode = _previousResizeMode;
 
-        _xpOverlayEditing = false;
-        FullscreenXpOverlayTray.SetEditing(false);
-        FullscreenXpOverlayTray.SetFullscreen(false);
+        _overlayEditing = false;
+        FullscreenOverlayTray.SetEditing(false);
+        FullscreenOverlayTray.SetFullscreen(false);
         _isFullScreen = false;
         AppHeaderBorder.Visibility = Visibility.Visible;
         AppHeaderRow.Height = new GridLength(60);
@@ -1069,10 +1071,10 @@ public partial class MainWindow : Window
         WindowState = _previousWindowState;
     }
 
-    private void SetXpOverlayEditing(bool isEditing)
+    private void SetOverlayEditing(bool isEditing)
     {
-        _xpOverlayEditing = _isFullScreen && isEditing;
-        FullscreenXpOverlayTray.SetEditing(_xpOverlayEditing);
+        _overlayEditing = _isFullScreen && isEditing;
+        FullscreenOverlayTray.SetEditing(_overlayEditing);
         RefreshTrackerRows();
     }
 
@@ -1095,7 +1097,8 @@ public partial class MainWindow : Window
     private void RefreshTrackerRows()
     {
         var states = _xpTracker.GetStates().ToDictionary(state => state.AccountId);
-        var trayChoices = new List<XpOverlayAccountChoice>();
+        var accountRows = new List<OverlayTrayAccountRow>();
+        var editing = _isFullScreen && _overlayEditing;
         _xpTrackerRows.Clear();
         foreach (var slot in _slotCards.OrderBy(slot => slot.SlotIndex))
         {
@@ -1106,10 +1109,11 @@ public partial class MainWindow : Window
             var label = account?.Label ?? "Account";
             var isOpen = assignedAccountId is { } openAccountId &&
                 _openAccountIds.Contains(openAccountId) && slot.View is not null;
-            XpTrackerRow? trackerRow = null;
+            var cards = new List<OverlayCardModel>();
 
             if (isOpen && assignedAccountId is { } trackedAccountId)
             {
+                XpTrackerRow? trackerRow = null;
                 if (states.TryGetValue(trackedAccountId, out var state))
                 {
                     trackerRow = XpTrackerRow.FromState(slot.SlotIndex + 1, label, state);
@@ -1118,30 +1122,71 @@ public partial class MainWindow : Window
 
                 if (account is not null)
                 {
-                    trayChoices.Add(new XpOverlayAccountChoice(
-                        trackedAccountId,
-                        label,
-                        trackerRow?.XpPerHourText ?? "— XP/hr"));
+                    var switches = new List<OverlayTraySwitch>();
+                    foreach (var definition in OverlayAddOnCatalog.All.Where(
+                                 definition => definition.Scope == OverlayAddOnScope.Account))
+                    {
+                        AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, trackedAccountId),
+                            label, trackerRow, cards, switches);
+                    }
+
+                    accountRows.Add(new OverlayTrayAccountRow(trackedAccountId, label, switches));
                 }
             }
 
-            var overlayAccountId = _isFullScreen && isOpen ? assignedAccountId : null;
-            var overlayBounds = overlayAccountId is { } overlayId &&
-                OverlayCardPolicy.Get(_panelSettings, new OverlayCardKey(OverlayAddOnKind.Xp, overlayId)) is
-                    { Enabled: true, Bounds: { } savedBounds }
-                ? savedBounds
-                : null;
-            slot.XpOverlayLayer.SetSlot(
-                overlayAccountId,
-                label,
-                trackerRow?.XpPerHourText ?? "— XP/hr",
-                overlayBounds,
-                _isFullScreen && _xpOverlayEditing);
+            slot.OverlayLayer.SetCards(cards, editing);
         }
 
-        FullscreenXpOverlayTray.SetChoices(trayChoices);
+        var globalCards = new List<OverlayCardModel>();
+        var globalSwitches = new List<OverlayTraySwitch>();
+        foreach (var definition in OverlayAddOnCatalog.All.Where(
+                     definition => definition.Scope == OverlayAddOnScope.Global))
+        {
+            AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, null),
+                string.Empty, null, globalCards, globalSwitches);
+        }
+
+        GlobalOverlayLayer.SetCards(globalCards, editing);
+        FullscreenOverlayTray.SetRows(globalSwitches, accountRows);
         UpdatePluginSidebarVisibility();
     }
+
+    private void AddOverlayAddOn(
+        OverlayAddOnDefinition definition,
+        OverlayCardKey key,
+        string accountLabel,
+        XpTrackerRow? trackerRow,
+        List<OverlayCardModel> cards,
+        List<OverlayTraySwitch> switches)
+    {
+        if (CreateOverlayCardData(definition.Kind, accountLabel, trackerRow) is not { } data)
+        {
+            return;
+        }
+
+        var placement = OverlayCardPolicy.Get(_panelSettings, key);
+        switches.Add(new OverlayTraySwitch(key, definition.DisplayName, DescribeOverlayCard(data),
+            placement?.Enabled == true));
+        if (_isFullScreen && placement is { Enabled: true })
+        {
+            cards.Add(new OverlayCardModel(key, definition, placement.Bounds, cards.Count, data));
+        }
+    }
+
+    // Each overlay add-on supplies its card data here; a kind without data is not offered in the Overlays panel.
+    private static object? CreateOverlayCardData(OverlayAddOnKind kind, string accountLabel, XpTrackerRow? trackerRow) =>
+        kind switch
+        {
+            OverlayAddOnKind.Xp => new XpOverlayCardData(accountLabel, trackerRow?.XpPerHourText ?? "— XP/hr"),
+            _ => null
+        };
+
+    private static string DescribeOverlayCard(object data) =>
+        data switch
+        {
+            XpOverlayCardData xp => xp.XpPerHourText,
+            _ => string.Empty
+        };
 
     private void UpdatePluginSidebarVisibility()
     {
@@ -1151,59 +1196,63 @@ public partial class MainWindow : Window
         TrackerColumn.Width = visible ? new GridLength(250) : new GridLength(0);
     }
 
-    private async void XpOverlayLayer_AccountDropped(object? sender, XpOverlayAccountDroppedEventArgs args)
+    private async void FullscreenOverlayTray_CardToggleRequested(object? sender, OverlayCardToggleRequestedEventArgs args)
     {
-        if (sender is not XpOverlayLayer layer || !_isFullScreen || !_xpOverlayEditing)
+        if (!_isFullScreen || !_overlayEditing || !OverlayCardPolicy.IsValidKey(args.Key))
         {
             return;
         }
 
-        var slot = _slotCards.FirstOrDefault(candidate => ReferenceEquals(candidate.XpOverlayLayer, layer));
-        if (slot is null || _panelSettings.SlotAccountIds[slot.SlotIndex] != args.AccountId ||
-            !_openAccountIds.Contains(args.AccountId) || slot.View is null)
-        {
-            return;
-        }
-
-        var bounds = layer.CreateDefaultBoundsAt(args.NormalizedDropPoint);
-        await SaveXpOverlayBoundsAsync(slot, args.AccountId, bounds);
-    }
-
-    private async void XpOverlayLayer_BoundsCommitted(object? sender, XpOverlayBoundsCommittedEventArgs args)
-    {
-        if (sender is not XpOverlayLayer layer || !_isFullScreen || !_xpOverlayEditing)
-        {
-            return;
-        }
-
-        var slot = _slotCards.FirstOrDefault(candidate => ReferenceEquals(candidate.XpOverlayLayer, layer));
-        if (slot is null || _panelSettings.SlotAccountIds[slot.SlotIndex] != args.AccountId ||
-            !_openAccountIds.Contains(args.AccountId) || slot.View is null)
-        {
-            return;
-        }
-
-        await SaveXpOverlayBoundsAsync(slot, args.AccountId, args.Bounds);
-    }
-
-    private async Task SaveXpOverlayBoundsAsync(PanelSlotCard slot, Guid accountId, OverlayBounds bounds)
-    {
         try
         {
-            await UpdateSettingsAsync(settings =>
-                OverlayCardPolicy.WithEnabled(
-                    OverlayCardPolicy.WithBounds(settings, new OverlayCardKey(OverlayAddOnKind.Xp, accountId), bounds),
-                    new OverlayCardKey(OverlayAddOnKind.Xp, accountId),
-                    true));
+            await UpdateSettingsAsync(settings => OverlayCardPolicy.WithEnabled(settings, args.Key, args.Enabled));
+        }
+        catch
+        {
+            MessageBox.Show(this,
+                "The overlay card setting could not be saved. Its previous setting was restored.",
+                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            // Rebuild from saved settings so a failed save also reverts the switch.
+            RefreshTrackerRows();
+        }
+    }
+
+    private async void OverlayLayer_BoundsCommitted(object? sender, OverlayCardBoundsCommittedEventArgs args)
+    {
+        if (sender is not OverlayCardLayer layer || !_isFullScreen || !_overlayEditing ||
+            !IsOverlayCardOwnedByLayer(layer, args.Key))
+        {
+            return;
+        }
+
+        try
+        {
+            await UpdateSettingsAsync(settings => OverlayCardPolicy.WithBounds(settings, args.Key, args.Bounds));
             RefreshTrackerRows();
         }
         catch
         {
-            slot.XpOverlayLayer.RestoreSavedBounds();
+            layer.RestoreSavedBounds();
             MessageBox.Show(this,
-                "The XP overlay placement could not be saved. Its previous position was restored.",
+                "The overlay placement could not be saved. Its previous position was restored.",
                 "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    private bool IsOverlayCardOwnedByLayer(OverlayCardLayer layer, OverlayCardKey key)
+    {
+        if (ReferenceEquals(layer, GlobalOverlayLayer))
+        {
+            return key.AccountId is null;
+        }
+
+        var slot = _slotCards.FirstOrDefault(candidate => ReferenceEquals(candidate.OverlayLayer, layer));
+        return slot is not null && key.AccountId is { } accountId &&
+            _panelSettings.SlotAccountIds[slot.SlotIndex] == accountId &&
+            _openAccountIds.Contains(accountId) && slot.View is not null;
     }
 
     private void UpdateAllSlotPresentations()
@@ -2078,9 +2127,9 @@ public partial class MainWindow : Window
         placeholder.Children.Add(emptyTitle);
         placeholder.Children.Add(emptyDescription);
         browserHost.Children.Add(placeholder);
-        var xpOverlayLayer = new XpOverlayLayer();
-        Panel.SetZIndex(xpOverlayLayer, 50);
-        browserHost.Children.Add(xpOverlayLayer);
+        var overlayLayer = new OverlayCardLayer();
+        Panel.SetZIndex(overlayLayer, 50);
+        browserHost.Children.Add(overlayLayer);
 
         var viewportSize = assignedId is { } accountId
             ? PanelLayoutPolicy.GetGameViewportSize(_panelSettings, accountId)
@@ -2130,10 +2179,9 @@ public partial class MainWindow : Window
         Grid.SetRow(browserHost, 2);
         content.Children.Add(browserHost);
         var slot = new PanelSlotCard(slotIndex, root, header, relaunchButton, accountPicker, accountLabel, status, browserHost,
-            xpOverlayLayer, placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider,
+            overlayLayer, placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider,
             widthValue, heightValue);
-        xpOverlayLayer.AccountDropped += XpOverlayLayer_AccountDropped;
-        xpOverlayLayer.BoundsCommitted += XpOverlayLayer_BoundsCommitted;
+        overlayLayer.BoundsCommitted += OverlayLayer_BoundsCommitted;
         widthSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
         heightSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
         resetViewButton.Click += (_, _) => SetViewportSliderValues(slot, GameViewportSize.Default);
@@ -2778,7 +2826,7 @@ public partial class MainWindow : Window
         TextBlock accountLabel,
         TextBlock status,
         Grid browserHost,
-        XpOverlayLayer xpOverlayLayer,
+        OverlayCardLayer overlayLayer,
         FrameworkElement placeholder,
         TextBlock emptyTitle,
         TextBlock emptyDescription,
@@ -2796,7 +2844,7 @@ public partial class MainWindow : Window
         public TextBlock AccountLabel { get; } = accountLabel;
         public TextBlock Status { get; } = status;
         public Grid BrowserHost { get; } = browserHost;
-        public XpOverlayLayer XpOverlayLayer { get; } = xpOverlayLayer;
+        public OverlayCardLayer OverlayLayer { get; } = overlayLayer;
         public FrameworkElement Placeholder { get; } = placeholder;
         public TextBlock EmptyTitle { get; } = emptyTitle;
         public TextBlock EmptyDescription { get; } = emptyDescription;
