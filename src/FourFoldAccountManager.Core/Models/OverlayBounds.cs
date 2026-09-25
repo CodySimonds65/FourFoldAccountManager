@@ -18,10 +18,22 @@ public sealed record OverlayBounds(double X, double Y, double Width, double Heig
 
         var width = Math.Min(Width, 1d);
         var height = Math.Min(Height, 1d);
-        return new OverlayBounds(
-            Math.Clamp(X, 0d, 1d - width),
-            Math.Clamp(Y, 0d, 1d - height),
-            width,
-            height);
+        var x = Math.Max(0d, Math.Min(X, 1d - width));
+        var y = Math.Max(0d, Math.Min(Y, 1d - height));
+
+        // Belt and suspenders: two independent divisions/subtractions can each round in a way
+        // that leaves x + width (or y + height) a hair above 1, even though x and y were just
+        // clamped against 1 - width/height. Shrink instead of ever handing back an invalid result.
+        if (x + width > 1d)
+        {
+            width = 1d - x;
+        }
+
+        if (y + height > 1d)
+        {
+            height = 1d - y;
+        }
+
+        return new OverlayBounds(x, y, width, height);
     }
 }

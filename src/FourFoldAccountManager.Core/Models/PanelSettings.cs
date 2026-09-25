@@ -35,6 +35,7 @@ public sealed record PanelSettings
     public IReadOnlyDictionary<Guid, GameViewportSize> GameViewportSizes { get; init; } =
         new Dictionary<Guid, GameViewportSize>();
 
+    [JsonConverter(typeof(OverlayCardListJsonConverter))]
     public IReadOnlyList<OverlayCardPlacement> OverlayCards { get; init; } = Array.Empty<OverlayCardPlacement>();
 
     // Migration input from settings written before overlay add-ons; validation converts it and never writes it back.

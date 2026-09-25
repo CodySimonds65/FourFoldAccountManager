@@ -215,7 +215,16 @@ public sealed class OverlayCardLayer : Canvas
         var height = Math.Clamp(frame.Height, minimumHeight, ActualHeight);
         var left = Math.Clamp(GetLeft(frame), 0d, ActualWidth - width);
         var top = Math.Clamp(GetTop(frame), 0d, ActualHeight - height);
-        return new OverlayBounds(left / ActualWidth, top / ActualHeight, width / ActualWidth, height / ActualHeight);
+
+        // Compute the normalized width/height first, then cap x/y against (1 - w)/(1 - h).
+        // Dividing left and width independently can otherwise round x + w a hair above 1 for a
+        // card dragged flush to the right or bottom edge, which OverlayCardPolicy.WithBounds
+        // rejects as invalid.
+        var w = width / ActualWidth;
+        var h = height / ActualHeight;
+        var x = Math.Max(0d, Math.Min(left / ActualWidth, 1d - w));
+        var y = Math.Max(0d, Math.Min(top / ActualHeight, 1d - h));
+        return new OverlayBounds(x, y, w, h);
     }
 
     private bool TryGetEntry(OverlayCardFrame frame, out CardEntry entry)

@@ -5,7 +5,12 @@ using FourFoldAccountManager.Core.Models;
 
 namespace FourFoldAccountManager.Desktop.Views;
 
-public sealed record OverlayTraySwitch(OverlayCardKey Key, string Label, string Detail, bool IsEnabled);
+public sealed record OverlayTraySwitch(
+    OverlayCardKey Key,
+    string Label,
+    string Detail,
+    bool IsEnabled,
+    string AccessibleName);
 
 public sealed record OverlayTrayAccountRow(
     Guid AccountId,

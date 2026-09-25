@@ -86,6 +86,29 @@ public sealed class OverlayCardLayerTests
     });
 
     [Fact]
+    public void DraggingFlushToTheRightEdgeCommitsValidBounds() => WpfTestHost.Run(() =>
+    {
+        // These concrete dimensions reproduce a real edge-drag: dividing the flush-right left
+        // offset and the card width by ActualWidth independently rounds their sum to
+        // 1.0000000000000002, so the raw (pre-fix) bounds fail IsValid.
+        const double layerWidth = 1436.8036476135271;
+        const double cardWidthFraction = 0.23263519398525134;
+        var layer = MeasuredLayer(layerWidth, 500);
+        var key = NewKey();
+        layer.SetCards([Model(key, new OverlayBounds(0.05, 0.05, cardWidthFraction, 0.1), "A")], editing: true);
+        OverlayCardBoundsCommittedEventArgs? committed = null;
+        layer.BoundsCommitted += (_, args) => committed = args;
+
+        var frame = layer.Frames[key];
+        frame.MoveThumb.RaiseEvent(new DragDeltaEventArgs(1_000_000, 0));
+        frame.MoveThumb.RaiseEvent(new DragCompletedEventArgs(1_000_000, 0, false));
+
+        Assert.NotNull(committed);
+        Assert.True(committed.Bounds.IsValid);
+        Assert.True(committed.Bounds.X + committed.Bounds.Width <= 1d);
+    });
+
+    [Fact]
     public void CanceledDragRestoresSavedBoundsWithoutCommitting() => WpfTestHost.Run(() =>
     {
         var layer = MeasuredLayer(1000, 500);

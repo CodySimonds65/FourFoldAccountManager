@@ -1165,8 +1165,11 @@ public partial class MainWindow : Window
         }
 
         var placement = OverlayCardPolicy.Get(_panelSettings, key);
-        switches.Add(new OverlayTraySwitch(key, definition.DisplayName, DescribeOverlayCard(data),
-            placement?.Enabled == true));
+        var accessibleName = accountLabel.Length > 0
+            ? $"{accountLabel} {definition.DisplayName}"
+            : definition.DisplayName;
+        switches.Add(new OverlayTraySwitch(key, definition.DisplayName, data.Summary,
+            placement?.Enabled == true, accessibleName));
         if (_isFullScreen && placement is { Enabled: true })
         {
             cards.Add(new OverlayCardModel(key, definition, placement.Bounds, cards.Count, data));
@@ -1174,18 +1177,11 @@ public partial class MainWindow : Window
     }
 
     // Each overlay add-on supplies its card data here; a kind without data is not offered in the Overlays panel.
-    private static object? CreateOverlayCardData(OverlayAddOnKind kind, string accountLabel, XpTrackerRow? trackerRow) =>
+    private static IOverlayCardData? CreateOverlayCardData(OverlayAddOnKind kind, string accountLabel, XpTrackerRow? trackerRow) =>
         kind switch
         {
             OverlayAddOnKind.Xp => new XpOverlayCardData(accountLabel, trackerRow?.XpPerHourText ?? "— XP/hr"),
             _ => null
-        };
-
-    private static string DescribeOverlayCard(object data) =>
-        data switch
-        {
-            XpOverlayCardData xp => xp.XpPerHourText,
-            _ => string.Empty
         };
 
     private void UpdatePluginSidebarVisibility()

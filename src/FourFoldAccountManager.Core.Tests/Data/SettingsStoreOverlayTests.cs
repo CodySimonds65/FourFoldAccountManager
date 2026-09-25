@@ -90,6 +90,61 @@ public sealed class SettingsStoreOverlayTests : IDisposable
         Assert.Empty((await _store.LoadAsync()).OverlayCards);
     }
 
+    [Fact]
+    public async Task StringKindIsSkippedWhileAValidSiblingIsKept()
+    {
+        var accountId = Guid.NewGuid();
+        await WriteSettingsAsync(accountId, json => json["overlayCards"] = new JsonArray
+        {
+            new JsonObject { ["kind"] = "Xp", ["accountId"] = accountId.ToString(), ["enabled"] = true },
+            new JsonObject { ["kind"] = 0, ["accountId"] = accountId.ToString(), ["enabled"] = true }
+        });
+
+        var loaded = await _store.LoadAsync();
+
+        Assert.Equal([new OverlayCardPlacement(OverlayAddOnKind.Xp, accountId, true, null)], loaded.OverlayCards);
+    }
+
+    [Fact]
+    public async Task StringEnabledIsSkippedWhileAValidSiblingIsKept()
+    {
+        var accountId = Guid.NewGuid();
+        await WriteSettingsAsync(accountId, json => json["overlayCards"] = new JsonArray
+        {
+            new JsonObject { ["kind"] = 0, ["accountId"] = accountId.ToString(), ["enabled"] = "true" },
+            new JsonObject { ["kind"] = 0, ["accountId"] = accountId.ToString(), ["enabled"] = true }
+        });
+
+        var loaded = await _store.LoadAsync();
+
+        Assert.Equal([new OverlayCardPlacement(OverlayAddOnKind.Xp, accountId, true, null)], loaded.OverlayCards);
+    }
+
+    [Fact]
+    public async Task OverlayCardsAsAnObjectLoadsAsEmptyInsteadOfThrowing()
+    {
+        await WriteSettingsAsync(Guid.NewGuid(), json => json["overlayCards"] = new JsonObject());
+
+        var loaded = await _store.LoadAsync();
+
+        Assert.Empty(loaded.OverlayCards);
+    }
+
+    [Fact]
+    public async Task SavedOverlayCardsDoNotContainAKeyProperty()
+    {
+        var accountId = Guid.NewGuid();
+        await _store.SaveAsync(PanelSettings.Default with
+        {
+            SlotAccountIds = [accountId, null, null, null, null],
+            OverlayCards = [new OverlayCardPlacement(OverlayAddOnKind.Xp, accountId, true, null)]
+        });
+
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(SettingsPath))!.AsObject();
+        var card = Assert.Single(json["overlayCards"]!.AsArray());
+        Assert.DoesNotContain("key", card!.AsObject().Select(property => property.Key));
+    }
+
     private async Task WriteSettingsAsync(Guid accountId, Action<JsonObject> edit)
     {
         await _store.SaveAsync(PanelSettings.Default with { SlotAccountIds = [accountId, null, null, null, null] });
