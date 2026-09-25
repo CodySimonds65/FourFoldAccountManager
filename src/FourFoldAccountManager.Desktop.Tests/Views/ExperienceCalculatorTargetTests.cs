@@ -83,6 +83,20 @@ public sealed class ExperienceCalculatorTargetTests
         Assert.Empty(saves);
     });
 
+    [Fact]
+    public void TypingAboveTheCapSchedulesNoSave() => WpfTestHost.Run(() =>
+    {
+        var (panel, first, _) = CreatePanel();
+        var saves = new List<(Guid, long?)>();
+        panel.TargetLevelChanged += (accountId, level) => saves.Add((accountId, level));
+        panel.SetSnapshot(first, Snapshot());
+
+        panel.TargetLevelBox.Text = "10000";
+        panel.FlushPendingTargetSave();
+
+        Assert.Empty(saves);
+    });
+
     private static (ExperienceCalculatorPanel Panel, AccountProfile First, AccountProfile Second) CreatePanel()
     {
         var panel = new ExperienceCalculatorPanel();
