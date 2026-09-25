@@ -91,6 +91,7 @@ The collapsible Plugins sidebar, whose state is saved across restarts, was built
 - **Target reached or invalid:** a target at or below the current level shows "Target reached". An unusable target falls back to the next level.
 - **Account removed:** its saved target and its cards are removed.
 - **Bad settings data:** wrong types, negative targets, or empty IDs are dropped, and the settings still load.
+- **Target cap:** target levels above 9,999 are ignored: they are not saved, they are dropped on load, and the card falls back to the next level.
 - **Small cards:** content shrinks to fit; it never clips or scrolls.
 
 ## Testing
