@@ -19,7 +19,7 @@ public sealed class XpOverlayLayer : Canvas
     public const double MinimumCardHeight = 40;
 
     private Guid? _accountId;
-    private XpOverlayBounds? _settingsBounds;
+    private OverlayBounds? _settingsBounds;
     private XpOverlayCard? _card;
     private bool _editing;
 
@@ -42,7 +42,7 @@ public sealed class XpOverlayLayer : Canvas
         Guid? accountId,
         string accountLabel,
         string xpPerHourText,
-        XpOverlayBounds? bounds,
+        OverlayBounds? bounds,
         bool editing)
     {
         var accountChanged = _accountId != accountId;
@@ -78,7 +78,7 @@ public sealed class XpOverlayLayer : Canvas
         }
     }
 
-    public XpOverlayBounds CreateDefaultBoundsAt(Point normalizedDropPoint)
+    public OverlayBounds CreateDefaultBoundsAt(Point normalizedDropPoint)
     {
         if (ActualWidth <= 0 || ActualHeight <= 0)
         {
@@ -89,7 +89,7 @@ public sealed class XpOverlayLayer : Canvas
         var height = Math.Min(DefaultCardHeight, ActualHeight) / ActualHeight;
         var centerX = Math.Clamp(normalizedDropPoint.X, 0d, 1d);
         var centerY = Math.Clamp(normalizedDropPoint.Y, 0d, 1d);
-        return new XpOverlayBounds(
+        return new OverlayBounds(
             Math.Clamp(centerX - width / 2d, 0d, 1d - width),
             Math.Clamp(centerY - height / 2d, 0d, 1d - height),
             width,
@@ -213,7 +213,7 @@ public sealed class XpOverlayLayer : Canvas
         }
     }
 
-    private XpOverlayBounds? GetVisualBounds()
+    private OverlayBounds? GetVisualBounds()
     {
         if (_card is null || ActualWidth <= 0 || ActualHeight <= 0)
         {
@@ -224,7 +224,7 @@ public sealed class XpOverlayLayer : Canvas
         var height = Math.Clamp(_card.Height, Math.Min(MinimumCardHeight, ActualHeight), ActualHeight);
         var left = Math.Clamp(GetLeft(_card), 0d, ActualWidth - width);
         var top = Math.Clamp(GetTop(_card), 0d, ActualHeight - height);
-        return new XpOverlayBounds(left / ActualWidth, top / ActualHeight, width / ActualWidth, height / ActualHeight);
+        return new OverlayBounds(left / ActualWidth, top / ActualHeight, width / ActualWidth, height / ActualHeight);
     }
 
     private void OnDragOver(object sender, DragEventArgs args)
@@ -272,9 +272,9 @@ public sealed class XpOverlayAccountDroppedEventArgs(Guid accountId, Point norma
     public Point NormalizedDropPoint { get; } = normalizedDropPoint;
 }
 
-public sealed class XpOverlayBoundsCommittedEventArgs(Guid accountId, XpOverlayBounds bounds) : EventArgs
+public sealed class XpOverlayBoundsCommittedEventArgs(Guid accountId, OverlayBounds bounds) : EventArgs
 {
     public Guid AccountId { get; } = accountId;
 
-    public XpOverlayBounds Bounds { get; } = bounds;
+    public OverlayBounds Bounds { get; } = bounds;
 }

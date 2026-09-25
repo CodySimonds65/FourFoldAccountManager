@@ -148,7 +148,7 @@ public sealed class SettingsStore
 
         var splitStates = ValidateSplitStates(settings);
         var assignments = settings.SlotAccountIds.Concat(new Guid?[5]).Take(5).ToArray();
-        var overlayBounds = new Dictionary<Guid, XpOverlayBounds>(settings.XpOverlayBoundsByAccount);
+        var overlayBounds = new Dictionary<Guid, OverlayBounds>(settings.XpOverlayBoundsByAccount);
         return new PanelSettings(settings.Layout, assignments)
         {
             FillGameToPanel = settings.FillGameToPanel,

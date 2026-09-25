@@ -1,6 +1,6 @@
 namespace FourFoldAccountManager.Core.Models;
 
-public sealed record XpOverlayBounds(double X, double Y, double Width, double Height)
+public sealed record OverlayBounds(double X, double Y, double Width, double Height)
 {
     public bool IsValid =>
         double.IsFinite(X) && double.IsFinite(Y) &&
@@ -8,7 +8,7 @@ public sealed record XpOverlayBounds(double X, double Y, double Width, double He
         X >= 0 && Y >= 0 && Width > 0 && Height > 0 &&
         Width <= 1 && Height <= 1 && X + Width <= 1 && Y + Height <= 1;
 
-    public XpOverlayBounds ClampToViewport()
+    public OverlayBounds ClampToViewport()
     {
         if (!double.IsFinite(X) || !double.IsFinite(Y) ||
             !double.IsFinite(Width) || !double.IsFinite(Height) || Width <= 0 || Height <= 0)
@@ -18,7 +18,7 @@ public sealed record XpOverlayBounds(double X, double Y, double Width, double He
 
         var width = Math.Min(Width, 1d);
         var height = Math.Min(Height, 1d);
-        return new XpOverlayBounds(
+        return new OverlayBounds(
             Math.Clamp(X, 0d, 1d - width),
             Math.Clamp(Y, 0d, 1d - height),
             width,

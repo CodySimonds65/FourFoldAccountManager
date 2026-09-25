@@ -227,7 +227,7 @@ public static class PanelLayoutPolicy
             .ToArray();
         var viewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes);
         viewportSizes.Remove(accountId);
-        var overlayBounds = new Dictionary<Guid, XpOverlayBounds>(settings.XpOverlayBoundsByAccount);
+        var overlayBounds = new Dictionary<Guid, OverlayBounds>(settings.XpOverlayBoundsByAccount);
         overlayBounds.Remove(accountId);
         return new PanelSettings(settings.Layout, assignments)
         {
@@ -280,7 +280,7 @@ public static class PanelLayoutPolicy
         return settings with { GameViewportSizes = viewportSizes };
     }
 
-    public static XpOverlayBounds? GetXpOverlayBounds(PanelSettings settings, Guid accountId)
+    public static OverlayBounds? GetXpOverlayBounds(PanelSettings settings, Guid accountId)
     {
         ArgumentNullException.ThrowIfNull(settings);
         if (accountId == Guid.Empty)
@@ -296,7 +296,7 @@ public static class PanelLayoutPolicy
     public static PanelSettings WithXpOverlayBounds(
         PanelSettings settings,
         Guid accountId,
-        XpOverlayBounds bounds)
+        OverlayBounds bounds)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(bounds);
@@ -310,7 +310,7 @@ public static class PanelLayoutPolicy
             throw new ArgumentException("Overlay bounds must be valid and within the normalized viewport.", nameof(bounds));
         }
 
-        var overlayBounds = new Dictionary<Guid, XpOverlayBounds>(settings.XpOverlayBoundsByAccount)
+        var overlayBounds = new Dictionary<Guid, OverlayBounds>(settings.XpOverlayBoundsByAccount)
         {
             [accountId] = bounds
         };

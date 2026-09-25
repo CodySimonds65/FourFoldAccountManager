@@ -1183,7 +1183,7 @@ public partial class MainWindow : Window
         await SaveXpOverlayBoundsAsync(slot, args.AccountId, args.Bounds);
     }
 
-    private async Task SaveXpOverlayBoundsAsync(PanelSlotCard slot, Guid accountId, XpOverlayBounds bounds)
+    private async Task SaveXpOverlayBoundsAsync(PanelSlotCard slot, Guid accountId, OverlayBounds bounds)
     {
         try
         {
