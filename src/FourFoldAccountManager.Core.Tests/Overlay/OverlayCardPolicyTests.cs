@@ -10,22 +10,29 @@ public sealed class OverlayCardPolicyTests
     private static readonly OverlayBounds Second = new(0.5, 0.5, 0.2, 0.1);
 
     [Fact]
-    public void CatalogRegistersTheXpAndTimerCards()
+    public void CatalogRegistersEveryAddOnInPanelOrder()
     {
-        Assert.Equal([OverlayAddOnKind.Xp, OverlayAddOnKind.Timer], OverlayAddOnCatalog.All.Select(d => d.Kind));
+        Assert.Equal(
+            [OverlayAddOnKind.Xp, OverlayAddOnKind.Stats, OverlayAddOnKind.XpCalc, OverlayAddOnKind.Timer],
+            OverlayAddOnCatalog.All.Select(d => d.Kind));
+        Assert.Equal((0, 1, 2, 3),
+            ((int)OverlayAddOnKind.Xp, (int)OverlayAddOnKind.Timer, (int)OverlayAddOnKind.Stats, (int)OverlayAddOnKind.XpCalc));
 
-        var xp = OverlayAddOnCatalog.All[0];
-        Assert.Equal(OverlayAddOnScope.Account, xp.Scope);
-        Assert.Equal("XP/hr", xp.DisplayName);
-        Assert.Equal((200d, 52d, 144d, 40d), (xp.DefaultWidth, xp.DefaultHeight, xp.MinimumWidth, xp.MinimumHeight));
+        var expected = new (OverlayAddOnKind Kind, OverlayAddOnScope Scope, string Name, double W, double H, double MinW, double MinH)[]
+        {
+            (OverlayAddOnKind.Xp, OverlayAddOnScope.Account, "XP/hr", 200, 52, 144, 40),
+            (OverlayAddOnKind.Stats, OverlayAddOnScope.Account, "Stats", 260, 220, 180, 150),
+            (OverlayAddOnKind.XpCalc, OverlayAddOnScope.Account, "XP calc", 220, 56, 150, 40),
+            (OverlayAddOnKind.Timer, OverlayAddOnScope.Global, "Timer", 220, 60, 150, 44)
+        };
+        foreach (var entry in expected)
+        {
+            Assert.True(OverlayAddOnCatalog.TryGet(entry.Kind, out var definition));
+            Assert.Equal((entry.Scope, entry.Name, entry.W, entry.H, entry.MinW, entry.MinH),
+                (definition.Scope, definition.DisplayName, definition.DefaultWidth, definition.DefaultHeight,
+                    definition.MinimumWidth, definition.MinimumHeight));
+        }
 
-        var timer = OverlayAddOnCatalog.All[1];
-        Assert.Equal(OverlayAddOnScope.Global, timer.Scope);
-        Assert.Equal("Timer", timer.DisplayName);
-        Assert.Equal((220d, 60d, 150d, 44d),
-            (timer.DefaultWidth, timer.DefaultHeight, timer.MinimumWidth, timer.MinimumHeight));
-
-        Assert.Equal(1, (int)OverlayAddOnKind.Timer);
         Assert.False(OverlayAddOnCatalog.TryGet((OverlayAddOnKind)99, out _));
         Assert.Equal(-1, OverlayAddOnCatalog.IndexOf((OverlayAddOnKind)99));
     }

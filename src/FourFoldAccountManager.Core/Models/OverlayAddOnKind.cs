@@ -4,5 +4,7 @@ namespace FourFoldAccountManager.Core.Models;
 public enum OverlayAddOnKind
 {
     Xp = 0,
-    Timer = 1
+    Timer = 1,
+    Stats = 2,
+    XpCalc = 3
 }

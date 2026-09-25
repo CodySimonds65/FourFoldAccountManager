@@ -24,6 +24,8 @@ public static class OverlayAddOnCatalog
     public static IReadOnlyList<OverlayAddOnDefinition> All { get; } = Array.AsReadOnly(new[]
     {
         new OverlayAddOnDefinition(OverlayAddOnKind.Xp, OverlayAddOnScope.Account, "XP/hr", 200, 52, 144, 40),
+        new OverlayAddOnDefinition(OverlayAddOnKind.Stats, OverlayAddOnScope.Account, "Stats", 260, 220, 180, 150),
+        new OverlayAddOnDefinition(OverlayAddOnKind.XpCalc, OverlayAddOnScope.Account, "XP calc", 220, 56, 150, 40),
         new OverlayAddOnDefinition(OverlayAddOnKind.Timer, OverlayAddOnScope.Global, "Timer", 220, 60, 150, 44)
     });
 
