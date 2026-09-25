@@ -47,4 +47,70 @@ public sealed class PanelLayoutPolicyTests
         Assert.Equal(cards, PanelLayoutPolicy.ResetSplitStates(settings).OverlayCards);
         Assert.Equal([cards[1]], PanelLayoutPolicy.ClearAccount(settings, accountId).OverlayCards);
     }
+
+    [Fact]
+    public void SettingsTransformsPreserveTimerShortcuts()
+    {
+        var accountId = Guid.NewGuid();
+        var settings = PanelSettings.Default with
+        {
+            SlotAccountIds = [accountId, null, null, null, null],
+            TimerSplitShortcut = new GlobalHotkeyChord(0x61, GlobalHotkeyModifiers.None),
+            TimerFinishShortcut = new GlobalHotkeyChord(0x62, GlobalHotkeyModifiers.None),
+            TimerResetShortcut = new GlobalHotkeyChord(0x63, GlobalHotkeyModifiers.None)
+        };
+
+        foreach (var transformed in new[]
+                 {
+                     PanelLayoutPolicy.WithLayout(settings, PanelLayout.OneByTwo),
+                     PanelLayoutPolicy.Assign(settings, 1, Guid.NewGuid()),
+                     PanelLayoutPolicy.ClearAccount(settings, accountId),
+                     PanelLayoutPolicy.WithSplitState(settings, new PanelSplitState("2x2.rows", [0.7, 0.3])),
+                     PanelLayoutPolicy.ResetSplitStates(settings)
+                 })
+        {
+            Assert.Equal(settings.TimerSplitShortcut, transformed.TimerSplitShortcut);
+            Assert.Equal(settings.TimerFinishShortcut, transformed.TimerFinishShortcut);
+            Assert.Equal(settings.TimerResetShortcut, transformed.TimerResetShortcut);
+        }
+    }
+
+    [Fact]
+    public void SettingsTransformsPreserveTheCollapsedPluginsSidebar()
+    {
+        var accountId = Guid.NewGuid();
+        var settings = PanelSettings.Default with
+        {
+            SlotAccountIds = [accountId, null, null, null, null],
+            PluginsSidebarExpanded = false
+        };
+
+        Assert.False(PanelLayoutPolicy.WithLayout(settings, PanelLayout.OneByTwo).PluginsSidebarExpanded);
+        Assert.False(PanelLayoutPolicy.Assign(settings, 1, Guid.NewGuid()).PluginsSidebarExpanded);
+        Assert.False(PanelLayoutPolicy.ClearAccount(settings, accountId).PluginsSidebarExpanded);
+        Assert.False(PanelLayoutPolicy.WithSplitState(settings,
+            new PanelSplitState("2x2.rows", [0.7, 0.3])).PluginsSidebarExpanded);
+        Assert.False(PanelLayoutPolicy.ResetSplitStates(settings).PluginsSidebarExpanded);
+    }
+
+    [Fact]
+    public void SettingsTransformsPreserveXpTargetsAndClearAccountRemovesTheAccountsTarget()
+    {
+        var accountId = Guid.NewGuid();
+        var otherId = Guid.NewGuid();
+        var targets = new Dictionary<Guid, long> { [accountId] = 50, [otherId] = 20 };
+        var settings = PanelSettings.Default with
+        {
+            SlotAccountIds = [accountId, otherId, null, null, null],
+            XpCalculatorTargetLevels = targets
+        };
+
+        Assert.Equal(targets, PanelLayoutPolicy.WithLayout(settings, PanelLayout.OneByTwo).XpCalculatorTargetLevels);
+        Assert.Equal(targets, PanelLayoutPolicy.Assign(settings, 2, Guid.NewGuid()).XpCalculatorTargetLevels);
+        Assert.Equal(targets, PanelLayoutPolicy.WithSplitState(settings,
+            new PanelSplitState("2x2.rows", [0.7, 0.3])).XpCalculatorTargetLevels);
+        Assert.Equal(targets, PanelLayoutPolicy.ResetSplitStates(settings).XpCalculatorTargetLevels);
+        Assert.Equal(new Dictionary<Guid, long> { [otherId] = 20 },
+            PanelLayoutPolicy.ClearAccount(settings, accountId).XpCalculatorTargetLevels);
+    }
 }

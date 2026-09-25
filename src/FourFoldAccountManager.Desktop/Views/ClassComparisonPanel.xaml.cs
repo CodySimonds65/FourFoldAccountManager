@@ -12,19 +12,6 @@ namespace FourFoldAccountManager.Desktop.Views;
 
 public partial class ClassComparisonPanel : UserControl
 {
-    private static readonly IReadOnlyDictionary<CharacterStat, string> Labels = new Dictionary<CharacterStat, string>
-    {
-        [CharacterStat.Hp] = "HP",
-        [CharacterStat.Sp] = "SP",
-        [CharacterStat.Attack] = "ATT",
-        [CharacterStat.Magic] = "MAG",
-        [CharacterStat.Skill] = "SKL",
-        [CharacterStat.Speed] = "SPD",
-        [CharacterStat.Luck] = "LCK",
-        [CharacterStat.Defense] = "DEF",
-        [CharacterStat.Resistance] = "RES"
-    };
-
     private readonly ObservableCollection<ClassComparisonRow> _rows = [];
     private bool _suppressAccountSelection;
 
@@ -70,7 +57,7 @@ public partial class ClassComparisonPanel : UserControl
         foreach (var row in state.Rows)
         {
             _rows.Add(new ClassComparisonRow(
-                Labels[row.Stat],
+                CharacterStatLabels.Short(row.Stat),
                 row.ProfileValue.ToString("N0", CultureInfo.CurrentCulture),
                 row.Average.ToString("N0", CultureInfo.CurrentCulture),
                 row.Difference.ToString("+#,##0;-#,##0;0", CultureInfo.CurrentCulture),
