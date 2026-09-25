@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using FourFoldAccountManager.Core.Leaderboard;
+using FourFoldAccountManager.Leaderboard.Service.Collection;
 using FourFoldAccountManager.Leaderboard.Service.Data;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -34,6 +35,21 @@ public sealed class LeaderboardApiTests
         var response = await client.PutAsJsonAsync("/v1/participation",
             new ParticipationHeartbeat(Guid.NewGuid(), true, [new LeaderboardProfile(1, "Alice")], [1]));
         Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ActiveHeartbeatWakesSamplerImmediately()
+    {
+        using var fixture = new ApiFactory();
+        using var client = fixture.CreateClient();
+        var schedule = fixture.Services.GetRequiredService<LeaderboardSamplingSchedule>();
+        var wait = schedule.WaitForWorkAsync(TimeSpan.FromMinutes(5), TimeProvider.System, default);
+
+        var response = await client.PutAsJsonAsync("/v1/participation",
+            new ParticipationHeartbeat(Guid.NewGuid(), true, [new LeaderboardProfile(1, "Alice")], [1]));
+
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        Assert.Same(wait, await Task.WhenAny(wait, Task.Delay(TimeSpan.FromSeconds(5))));
     }
 
     [Fact]
@@ -365,8 +381,8 @@ public sealed class LeaderboardApiTests
 
         public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([]);
-        public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesNeedingBaselineAsync(
-            DateTimeOffset activeAfterUtc, CancellationToken ct) =>
+        public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
+            DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([]);
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) => Task.FromResult<PlayerSampleState?>(null);
         public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,

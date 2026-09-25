@@ -93,11 +93,25 @@ public sealed class LeaderboardSamplingServiceTests
 
         await service.RunOnceAsync(Now.AddMinutes(1), default);
         Assert.True(store.States[1].NeedsBaseline);
-        await service.RunOnceAsync(Now.AddMinutes(2), default);
+        await service.RunOnceAsync(Now.AddMinutes(2).AddSeconds(1), default);
 
         Assert.Empty(store.Gains);
         Assert.False(store.States[1].NeedsBaseline);
-        Assert.InRange(store.States[1].LastSampledAtUtc, Now.AddMinutes(2), Now.AddMinutes(2).AddSeconds(1));
+        Assert.InRange(store.States[1].LastSampledAtUtc, Now.AddMinutes(2).AddSeconds(1), Now.AddMinutes(2).AddSeconds(2));
+    }
+
+    [Fact]
+    public async Task FailedFetchWaitsOneIntervalBeforeRetrying()
+    {
+        var store = Seed(10);
+        var source = new FakeSource(new InvalidDataException("bad page"), Snapshot("Alice", 30));
+        var service = Create(store, source);
+
+        await service.RunOnceAsync(Now.AddMinutes(1), default);
+        await service.RunOnceAsync(Now.AddMinutes(1).AddSeconds(15), default);
+
+        Assert.Equal(1, source.FetchCount);
+        Assert.True(store.States[1].NeedsBaseline);
     }
 
     [Fact]
@@ -215,14 +229,14 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
-    public async Task SpacesRequestsForDifferentPlayersByApprovedInterval()
+    public async Task SpacesRequestsForDifferentPlayersByRequestSpacing()
     {
         var store = new FakeStore();
         store.Activate(1, "Alice", Now);
         store.Activate(2, "Bob", Now);
         var source = new FakeSource(Snapshot("Alice", 5), Snapshot("Bob", 5));
         var service = new LeaderboardSamplingService(store, source,
-            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = TimeSpan.FromMilliseconds(80) });
+            Options(TimeSpan.FromMinutes(1), TimeSpan.FromMilliseconds(80)));
         var timer = Stopwatch.StartNew();
 
         await service.RunOnceAsync(Now, default);
@@ -241,7 +255,7 @@ public sealed class LeaderboardSamplingServiceTests
                 XpSnapshotJson.Serialize(Snapshot("Alice", 10)), Now.AddMilliseconds(-40), false);
         var source = new RecordingSource(_ => Snapshot("Alice", 35));
         var service = new LeaderboardSamplingService(store, source,
-            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = TimeSpan.FromMilliseconds(20) });
+            Options(TimeSpan.FromMilliseconds(20)));
 
         await service.RunOnceAsync(Now, default);
 
@@ -265,7 +279,7 @@ public sealed class LeaderboardSamplingServiceTests
             return Snapshot("Alice", 35);
         });
         var service = new LeaderboardSamplingService(store, source,
-            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = TimeSpan.FromMilliseconds(20) });
+            Options(TimeSpan.FromMilliseconds(20)));
 
         await service.RunOnceAsync(Now, default);
 
@@ -285,8 +299,7 @@ public sealed class LeaderboardSamplingServiceTests
         var source = new RecordingSource(_ => Snapshot("Alice", 35));
         var clock = new ActivationOnDelayTimeProvider(() => store.Activate(9, "Alice", Now));
         var service = new LeaderboardSamplingService(store, source,
-            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = TimeSpan.FromMilliseconds(20) },
-            clock);
+            Options(TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(20)), clock);
 
         await service.RunOnceAsync(Now, default);
 
@@ -295,7 +308,7 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
-    public async Task PriorityBaselineKeepsApprovedRequestSpacing()
+    public async Task PriorityBaselineKeepsRequestSpacing()
     {
         var store = new FakeStore();
         store.Activate(1, "Alice", Now);
@@ -304,7 +317,7 @@ public sealed class LeaderboardSamplingServiceTests
             XpSnapshotJson.Serialize(Snapshot("Alice", 10)), Now.AddMinutes(-1), false);
         var source = new RecordingSource(_ => Snapshot("Alice", 35));
         var service = new LeaderboardSamplingService(store, source,
-            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = TimeSpan.FromMilliseconds(80) });
+            Options(TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(80)));
 
         await service.RunOnceAsync(Now, default);
 
@@ -314,72 +327,55 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
-    public async Task ThreeContinuouslyActivePlayersDoNotLoseQueuedGain()
+    public async Task EveryActivePlayerIsSampledOnItsOwnInterval()
     {
         var store = new FakeStore();
-        foreach (var id in new[] { 1, 2, 3 }) store.Activate(id, "Alice", Now);
+        foreach (var id in Enumerable.Range(1, 6)) store.Activate(id, "Alice", Now);
         var before = Snapshot("Alice", 10) with { ActiveClassName = "Warrior" };
         var after = Snapshot("Alice", 35) with { ActiveClassName = "Warrior" };
         var local = new XpTrackingSession();
         local.ApplySnapshot(before, Now);
+        var service = new LeaderboardSamplingService(store, new PerPlayerSource(1, 2, 3, 4, 5, 6),
+            Options(TimeSpan.FromMinutes(5)));
 
-        var service = new LeaderboardSamplingService(store, new PerPlayerSource(1, 2, 3),
-            new LeaderboardCollectionOptions
-            {
-                Enabled = true,
-                MinimumSampleInterval = TimeSpan.FromMilliseconds(20)
-            });
-
-        var elapsed = Stopwatch.StartNew();
         await service.RunOnceAsync(Now, default);
-        elapsed.Stop();
-        var nextAt = Now + elapsed.Elapsed + TimeSpan.FromMilliseconds(20);
-        local.ApplySnapshot(after, nextAt);
+        foreach (var id in Enumerable.Range(1, 6)) store.Activate(id, "Alice", Now.AddMinutes(5));
+        local.ApplySnapshot(after, Now.AddMinutes(5).AddSeconds(15));
+        await service.RunOnceAsync(Now.AddMinutes(5).AddSeconds(15), default);
+
         Assert.Equal(25, local.SessionGain);
-        await service.RunOnceAsync(nextAt, default);
-
-        Assert.Equal(new long[] { 25, 25, 25 }, store.Gains.Order().ToArray());
+        Assert.Equal(Enumerable.Repeat(25L, 6), store.Gains);
     }
 
     [Fact]
-    public async Task ShrinkingQueueDoesNotDiscardContinuouslyActivePlayersGain()
+    public async Task PlayersSampledWithinTheirIntervalAreNotRequestedAgain()
     {
         var store = new FakeStore();
-        foreach (var id in Enumerable.Range(1, 5)) store.Activate(id, "Alice", Now);
-        var interval = TimeSpan.FromMilliseconds(20);
-        var schedule = new LeaderboardSamplingSchedule();
-        var source = new PerPlayerSource(1, 2, 3, 4, 5);
-        var options = new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = interval };
-        var service = new LeaderboardSamplingService(store,
-            source, options, null, schedule);
-        var elapsed = Stopwatch.StartNew();
+        foreach (var id in new[] { 1, 2 }) store.Activate(id, "Alice", Now);
+        var source = new RecordingSource(_ => Snapshot("Alice", 10));
+        var service = new LeaderboardSamplingService(store, source, Options(TimeSpan.FromMinutes(5)));
 
         await service.RunOnceAsync(Now, default);
-        elapsed.Stop();
-        store.Deactivate(4);
-        store.Deactivate(5);
-        await new LeaderboardSamplingService(store, source, options, null, schedule)
-            .RunOnceAsync(Now + elapsed.Elapsed + interval, default);
+        foreach (var id in new[] { 1, 2 }) store.Activate(id, "Alice", Now.AddMinutes(4));
+        await service.RunOnceAsync(Now.AddMinutes(4), default);
 
-        Assert.Equal(new long[] { 25, 25, 25 }, store.Gains.Order().ToArray());
+        Assert.Equal([1, 2], source.PlayerIds);
     }
 
     [Fact]
-    public async Task SuccessfulFetchLatencyDoesNotDiscardNextPassGain()
+    public async Task OldestSampleIsRequestedFirst()
     {
         var store = new FakeStore();
-        foreach (var id in Enumerable.Range(1, 5)) store.Activate(id, "Alice", Now);
-        var interval = TimeSpan.FromMilliseconds(20);
-        var service = new LeaderboardSamplingService(store,
-            new PerPlayerSource(TimeSpan.FromMilliseconds(8), 1, 2, 3, 4, 5),
-            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = interval });
-        var elapsed = Stopwatch.StartNew();
+        foreach (var id in new[] { 1, 2, 3 }) store.Activate(id, "Alice", Now);
+        foreach (var (id, age) in new[] { (1, 6), (2, 9), (3, 7) })
+            store.States[id] = new PlayerSampleState(id, "Alice",
+                XpSnapshotJson.Serialize(Snapshot("Alice", 10)), Now.AddMinutes(-age), false);
+        var source = new RecordingSource(_ => Snapshot("Alice", 35));
 
-        await service.RunOnceAsync(Now, default);
-        elapsed.Stop();
-        await service.RunOnceAsync(Now + elapsed.Elapsed + interval, default);
+        await new LeaderboardSamplingService(store, source, Options(TimeSpan.FromMinutes(5)))
+            .RunOnceAsync(Now, default);
 
-        Assert.Equal(new long[] { 25, 25, 25, 25, 25 }, store.Gains.Order().ToArray());
+        Assert.Equal([2, 3, 1], source.PlayerIds);
     }
 
     [Fact]
@@ -387,40 +383,17 @@ public sealed class LeaderboardSamplingServiceTests
     {
         var store = new FakeStore();
         foreach (var id in new[] { 1, 2, 3 }) store.Activate(id, "Alice", Now);
-        var interval = TimeSpan.FromMilliseconds(20);
-        var service = new LeaderboardSamplingService(store, new PerPlayerSource(1, 2, 3),
-            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = interval });
-        var elapsed = Stopwatch.StartNew();
+        var interval = TimeSpan.FromMinutes(1);
+        var service = new LeaderboardSamplingService(store, new PerPlayerSource(1, 2, 3), Options(interval));
 
         await service.RunOnceAsync(Now, default);
-        elapsed.Stop();
-        await service.RunOnceAsync(Now + elapsed.Elapsed + interval * 4, default);
+        foreach (var id in new[] { 1, 2, 3 }) store.Activate(id, "Alice", Now + interval * 4);
+        await service.RunOnceAsync(Now + interval * 4, default);
 
         Assert.Empty(store.Gains);
         Assert.All(store.States.Values, state =>
             Assert.Equal(25, XpSnapshotJson.Deserialize(state.SnapshotJson, state.Username)
                 .Classes["Warrior"].CurrentXp));
-    }
-
-    [Fact]
-    public async Task GapBeyondQueueAllowanceStillCreatesFreshBaseline()
-    {
-        var store = Seed(10);
-        store.Activate(2, "Alice", Now);
-        store.Activate(3, "Alice", Now);
-        var source = new FakeSource(Snapshot("Alice", 35), Snapshot("Alice", 10),
-            Snapshot("Alice", 10));
-        var service = new LeaderboardSamplingService(store, source,
-            new LeaderboardCollectionOptions
-            {
-                Enabled = true,
-                MinimumSampleInterval = TimeSpan.FromMilliseconds(20)
-            });
-
-        await service.RunOnceAsync(Now.AddMilliseconds(100), default);
-
-        Assert.Empty(store.Gains);
-        Assert.False(store.States[1].NeedsBaseline);
     }
 
     [Fact]
@@ -466,6 +439,9 @@ public sealed class LeaderboardSamplingServiceTests
             Enabled = true,
             MinimumSampleInterval = TimeSpan.FromMinutes(1)
         });
+
+    private static LeaderboardCollectionOptions Options(TimeSpan interval, TimeSpan? spacing = null) =>
+        new() { Enabled = true, MinimumSampleInterval = interval, RequestSpacing = spacing ?? TimeSpan.Zero };
 
     private static FakeStore Seed(long warriorXp, long? mageXp = null)
     {
@@ -583,10 +559,14 @@ public sealed class LeaderboardSamplingServiceTests
         public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>(_active.Where(x => x.At > activeAfterUtc)
                 .Select(x => x.Profile).ToArray());
-        public async Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesNeedingBaselineAsync(
-            DateTimeOffset activeAfterUtc, CancellationToken ct) =>
-            (await GetActiveProfilesAsync(activeAfterUtc, ct)).Where(profile =>
-                !States.TryGetValue(profile.PlayerId, out var state) || state.NeedsBaseline).ToArray();
+        public async Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
+            DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct) =>
+            (await GetActiveProfilesAsync(activeAfterUtc, ct)).DistinctBy(profile => profile.PlayerId)
+                .Select(profile => (Profile: profile, State: States.GetValueOrDefault(profile.PlayerId)))
+                .Where(x => x.State is null || x.State.NeedsBaseline || x.State.LastSampledAtUtc <= sampledBeforeUtc)
+                .OrderByDescending(x => x.State is null || x.State.NeedsBaseline)
+                .ThenBy(x => x.State?.LastSampledAtUtc).ThenBy(x => x.Profile.PlayerId)
+                .Select(x => x.Profile).ToArray();
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) =>
             Task.FromResult(States.GetValueOrDefault(playerId));
         public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,

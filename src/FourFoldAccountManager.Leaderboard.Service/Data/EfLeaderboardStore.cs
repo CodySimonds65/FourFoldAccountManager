@@ -129,19 +129,33 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
             .ToArray();
     }
 
-    public async Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesNeedingBaselineAsync(
-        DateTimeOffset activeAfterUtc, CancellationToken ct)
+    public async Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
+        DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct)
     {
         var cutoff = activeAfterUtc.ToUniversalTime();
-        var pending = await db.InstallationProfiles.AsNoTracking()
-            .Where(x => x.Installation.SharingEnabled && x.IsActive && x.LastActiveAtUtc > cutoff &&
-                !db.PlayerSampleStates.Any(state => state.PlayerId == x.PlayerId && !state.NeedsBaseline))
-            .Select(x => new { x.PlayerId, x.Username, x.LastActiveAtUtc })
+        var sampledBefore = sampledBeforeUtc.ToUniversalTime();
+        var due = await (
+                from profile in db.InstallationProfiles.AsNoTracking()
+                where profile.Installation.SharingEnabled && profile.IsActive && profile.LastActiveAtUtc > cutoff
+                join state in db.PlayerSampleStates.AsNoTracking()
+                    on profile.PlayerId equals state.PlayerId into states
+                from state in states.DefaultIfEmpty()
+                where state == null || state.NeedsBaseline || state.LastSampledAtUtc <= sampledBefore
+                select new
+                {
+                    profile.PlayerId,
+                    profile.Username,
+                    profile.LastActiveAtUtc,
+                    NeedsBaseline = state == null || state.NeedsBaseline,
+                    LastSampledAtUtc = state == null ? (DateTimeOffset?)null : state.LastSampledAtUtc
+                })
             .ToListAsync(ct);
-        return pending.GroupBy(x => x.PlayerId)
+        return due.GroupBy(x => x.PlayerId)
             .Select(group => group.OrderByDescending(x => x.LastActiveAtUtc)
                 .ThenBy(x => x.Username, StringComparer.OrdinalIgnoreCase).First())
-            .OrderBy(x => x.PlayerId)
+            .OrderByDescending(x => x.NeedsBaseline)
+            .ThenBy(x => x.LastSampledAtUtc)
+            .ThenBy(x => x.PlayerId)
             .Select(x => new ActiveLeaderboardProfile(x.PlayerId, x.Username))
             .ToArray();
     }
