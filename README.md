@@ -33,6 +33,8 @@ Choose an account directly from the dropdown on the **Stats** or **XP Calculator
 
 The tracker polls every minute and measures the active class for XP/hour and session XP. It also shows XP to next level and time-to-level estimates. Right-click a row to reset its XP/hour rate or all tracking data. Tracker behavior remains available inside the Plugins sidebar. In full screen, open the edge tab (or press the reveal shortcut) to show the Overlays panel, switch each account's XP/hr card on or off, and drag cards into place.
 
+The **Timer** plugin is a speedrun stopwatch. Press the split shortcut to start a run and again to record each lap, the finish shortcut to stop, and the reset shortcut (or **Reset**) to clear it. The shortcuts default to Ctrl+Alt+Shift+S, F, and R and can be changed in Settings, including to a single numpad, F13–F24, Pause, Scroll Lock, or Insert key. A key bound on its own stops reaching games and other apps while FourFold is open. In full screen, switch the Timer card on in the Overlays panel and drag it anywhere. Runs are not saved when the app closes.
+
 ## Requirements
 
 - Windows

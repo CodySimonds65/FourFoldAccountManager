@@ -44,6 +44,7 @@ public partial class MainWindow : Window
     private readonly SemaphoreSlim _settingsMutationGate = new(1, 1);
     private readonly SemaphoreSlim _viewportSaveGate = new(1, 1);
     private readonly DispatcherTimer _leaderboardRefreshTimer = new() { Interval = TimeSpan.FromMinutes(1) };
+    private readonly TimerCoordinator _timer = new();
     private HwndSource? _windowSource;
     private GlobalShortcutRegistry? _shortcuts;
     private PanelSettings _panelSettings = PanelSettings.Default;
@@ -86,6 +87,7 @@ public partial class MainWindow : Window
         FullscreenOverlayTray.CardToggleRequested += FullscreenOverlayTray_CardToggleRequested;
         GlobalOverlayLayer.BoundsCommitted += OverlayLayer_BoundsCommitted;
         PluginSidebar.SetTrackerItemsSource(_xpTrackerRows);
+        PluginSidebar.AttachTimer(_timer);
         PluginSidebar.SetAccounts(_accounts);
         PluginSidebar.LinkRequested += accountId =>
         {
@@ -180,8 +182,19 @@ public partial class MainWindow : Window
                 ToggleLayoutDividerResizing();
                 return true;
             default:
-                return false;
+                return _timer.TryHandleShortcut(action);
         }
+    }
+
+    private void UpdateTimerHotkeys()
+    {
+        GlobalShortcutAction[] timerActions =
+            [GlobalShortcutAction.TimerSplit, GlobalShortcutAction.TimerFinish, GlobalShortcutAction.TimerReset];
+        PluginSidebar.SetTimerHotkeys(
+            ShortcutText.Format(_panelSettings.TimerSplitShortcut),
+            ShortcutText.Format(_panelSettings.TimerFinishShortcut),
+            ShortcutText.Format(_panelSettings.TimerResetShortcut),
+            timerActions.Any(action => _shortcuts?.IsAvailable(action) != true));
     }
 
     private AccountProfile? SelectedAccount => AccountsListBox.SelectedItem as AccountProfile;
@@ -217,6 +230,7 @@ public partial class MainWindow : Window
             }
             LeaderboardPanelView.Configure(_leaderboard, enabled => SetLeaderboardSharingAsync(enabled));
             _shortcuts?.Initialize(_panelSettings);
+            UpdateTimerHotkeys();
             foreach (var (accountId, size) in _panelSettings.GameViewportSizes)
             {
                 await _browserSessions.SetGameViewportSizeAsync(accountId, size);
@@ -835,7 +849,19 @@ public partial class MainWindow : Window
         {
             Owner = this
         };
-        if (dialog.ShowDialog() != true)
+        // Recording a shortcut must not split, finish, or reset a live run.
+        _timer.ShortcutsSuspended = true;
+        bool? accepted;
+        try
+        {
+            accepted = dialog.ShowDialog();
+        }
+        finally
+        {
+            _timer.ShortcutsSuspended = false;
+        }
+
+        if (accepted != true)
         {
             return;
         }
@@ -917,6 +943,7 @@ public partial class MainWindow : Window
                 UpdateAllSlotPresentations();
             }
             UpdateManageSlotsButton();
+            UpdateTimerHotkeys();
             GlobalStatusText.Text = dialog.ResetLayoutSizes
                 ? "Client layout sizes restored to defaults."
                 : scalingChanged
@@ -1150,10 +1177,11 @@ public partial class MainWindow : Window
     }
 
     // Each overlay add-on supplies its card data here; a kind without data is not offered in the Overlays panel.
-    private static IOverlayCardData? CreateOverlayCardData(OverlayAddOnKind kind, string accountLabel, XpTrackerRow? trackerRow) =>
+    private IOverlayCardData? CreateOverlayCardData(OverlayAddOnKind kind, string accountLabel, XpTrackerRow? trackerRow) =>
         kind switch
         {
             OverlayAddOnKind.Xp => new XpOverlayCardData(accountLabel, trackerRow?.XpPerHourText ?? "— XP/hr"),
+            OverlayAddOnKind.Timer => _timer.Display,
             _ => null
         };
 
@@ -2736,6 +2764,8 @@ public partial class MainWindow : Window
         {
             // Native hotkey cleanup must not prevent the manager from closing.
         }
+
+        _timer.Dispose();
 
         if (_windowSource is { } windowSource)
         {

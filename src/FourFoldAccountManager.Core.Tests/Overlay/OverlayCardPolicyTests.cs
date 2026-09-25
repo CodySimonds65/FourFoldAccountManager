@@ -10,16 +10,31 @@ public sealed class OverlayCardPolicyTests
     private static readonly OverlayBounds Second = new(0.5, 0.5, 0.2, 0.1);
 
     [Fact]
-    public void CatalogRegistersOnlyTheAccountScopedXpCard()
+    public void CatalogRegistersTheXpAndTimerCards()
     {
-        var definition = Assert.Single(OverlayAddOnCatalog.All);
-        Assert.Equal(OverlayAddOnKind.Xp, definition.Kind);
-        Assert.Equal(OverlayAddOnScope.Account, definition.Scope);
-        Assert.Equal("XP/hr", definition.DisplayName);
-        Assert.Equal((200d, 52d, 144d, 40d),
-            (definition.DefaultWidth, definition.DefaultHeight, definition.MinimumWidth, definition.MinimumHeight));
+        Assert.Equal([OverlayAddOnKind.Xp, OverlayAddOnKind.Timer], OverlayAddOnCatalog.All.Select(d => d.Kind));
+
+        var xp = OverlayAddOnCatalog.All[0];
+        Assert.Equal(OverlayAddOnScope.Account, xp.Scope);
+        Assert.Equal("XP/hr", xp.DisplayName);
+        Assert.Equal((200d, 52d, 144d, 40d), (xp.DefaultWidth, xp.DefaultHeight, xp.MinimumWidth, xp.MinimumHeight));
+
+        var timer = OverlayAddOnCatalog.All[1];
+        Assert.Equal(OverlayAddOnScope.Global, timer.Scope);
+        Assert.Equal("Timer", timer.DisplayName);
+        Assert.Equal((220d, 60d, 150d, 44d),
+            (timer.DefaultWidth, timer.DefaultHeight, timer.MinimumWidth, timer.MinimumHeight));
+
+        Assert.Equal(1, (int)OverlayAddOnKind.Timer);
         Assert.False(OverlayAddOnCatalog.TryGet((OverlayAddOnKind)99, out _));
         Assert.Equal(-1, OverlayAddOnCatalog.IndexOf((OverlayAddOnKind)99));
+    }
+
+    [Fact]
+    public void GlobalCardKeysMustNotNameAnAccount()
+    {
+        Assert.True(OverlayCardPolicy.IsValidKey(new OverlayCardKey(OverlayAddOnKind.Timer, null)));
+        Assert.False(OverlayCardPolicy.IsValidKey(new OverlayCardKey(OverlayAddOnKind.Timer, Guid.NewGuid())));
     }
 
     [Fact]
