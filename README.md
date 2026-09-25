@@ -54,6 +54,8 @@ The Workspace tab ranks XP gained during the current UTC day, ISO week, or calen
 
 Session XP and leaderboard XP cover different scopes: the tracker counts the active class from its local session start or reset, while the leaderboard totals valid gains across all classes in the selected UTC period after its first baseline. A saved leaderboard page may lag; interrupted participation or uncertain samples are not backfilled.
 
+When an opted-in profile becomes active, the server gives profiles awaiting a baseline priority at its next permitted public-profile request slot. That first server-verified observation records zero gained XP; later observations count the increase. Repeated heartbeats do not reset an established baseline, and the server does not accept an XP value from the client. XP earned before the first verified observation cannot be reconstructed.
+
 ### Backup and recovery
 
 Use PostgreSQL 16+ tools with Neon's direct TLS endpoint. Supply credentials through `PG*` environment variables and keep encrypted dumps private; they contain profile IDs and XP data.
