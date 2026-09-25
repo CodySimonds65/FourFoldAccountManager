@@ -7,10 +7,12 @@ public sealed class LeaderboardSamplingService(
     ILeaderboardStore store,
     ILeaderboardPublicProfileSource source,
     LeaderboardCollectionOptions options,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    LeaderboardSamplingSchedule? schedule = null)
 {
     private readonly SemaphoreSlim _runGate = new(1, 1);
     private readonly TimeProvider _clock = timeProvider ?? TimeProvider.System;
+    private readonly LeaderboardSamplingSchedule _schedule = schedule ?? new();
 
     public async Task RunOnceAsync(DateTimeOffset nowUtc, CancellationToken ct)
     {
@@ -20,17 +22,22 @@ public sealed class LeaderboardSamplingService(
         try
         {
             var start = _clock.GetTimestamp();
-            var active = await store.GetActiveProfilesAsync(now - options.ActiveLeaseDuration, ct);
+            var attemptedPlayerIds = new HashSet<int>();
             var fetched = false;
-            foreach (var profile in active.GroupBy(x => x.PlayerId).Select(x => x.First()).OrderBy(x => x.PlayerId))
+            while (true)
             {
                 ct.ThrowIfCancellationRequested();
-                if (fetched) await Task.Delay(options.MinimumSampleInterval, _clock, ct);
-                var observedAt = fetched ? now + _clock.GetElapsedTime(start) : now;
-                var currentActive = await store.GetActiveProfilesAsync(observedAt - options.ActiveLeaseDuration, ct);
-                var currentProfile = currentActive.FirstOrDefault(x => x.PlayerId == profile.PlayerId);
-                if (currentProfile is null) continue;
-                fetched = await SampleAsync(currentProfile.PlayerId, currentProfile.Username, observedAt, ct);
+                if (fetched) await Task.Delay(options.RequestSpacing, _clock, ct);
+                // Re-read after every request so a profile that just started participating
+                // takes the next request slot ahead of routine samples.
+                var observedAt = now + _clock.GetElapsedTime(start);
+                var due = await store.GetProfilesDueForSampleAsync(observedAt - options.ActiveLeaseDuration,
+                    observedAt - options.MinimumSampleInterval, ct);
+                var candidate = due.FirstOrDefault(x => !attemptedPlayerIds.Contains(x.PlayerId) &&
+                    _schedule.CanSample(x.PlayerId, observedAt));
+                if (candidate is null) return;
+                attemptedPlayerIds.Add(candidate.PlayerId);
+                fetched = await SampleAsync(candidate.PlayerId, candidate.Username, observedAt, ct);
             }
         }
         finally
@@ -62,14 +69,14 @@ public sealed class LeaderboardSamplingService(
         }
         catch (Exception)
         {
-            await store.MarkNeedsBaselineAsync(playerId, ct);
+            await RequestRebaselineAsync();
             return true;
         }
         now += _clock.GetElapsedTime(fetchStarted);
 
         if (!string.Equals(username.Trim(), current.Username.Trim(), StringComparison.OrdinalIgnoreCase))
         {
-            await store.MarkNeedsBaselineAsync(playerId, ct);
+            await RequestRebaselineAsync();
             return true;
         }
 
@@ -133,14 +140,25 @@ public sealed class LeaderboardSamplingService(
         if (gain.ValidClassCount == 0 && !pending.Any(name => current.Classes.ContainsKey(name) &&
                 !current.InvalidClasses.Contains(name, StringComparer.OrdinalIgnoreCase)))
         {
-            await store.MarkNeedsBaselineAsync(playerId, ct);
+            await RequestRebaselineAsync();
             return true;
         }
         await SaveAsync(gain.ValidGain > 0 ? gain.ValidGain : null);
         return true;
 
-        async Task SaveAsync(long? validGain) => await store.SaveObservationAsync(
-            new PlayerObservation(playerId, current.Username.Trim(), XpSnapshotJson.Serialize(current),
-                validGain, now, false), previous, options.ActiveLeaseDuration, ct);
+        async Task SaveAsync(long? validGain)
+        {
+            await store.SaveObservationAsync(
+                new PlayerObservation(playerId, current.Username.Trim(), XpSnapshotJson.Serialize(current),
+                    validGain, now, false), previous, options.ActiveLeaseDuration, ct);
+            _schedule.Succeeded(playerId);
+        }
+
+        // A pending baseline is otherwise due immediately; wait a full interval before asking again.
+        async Task RequestRebaselineAsync()
+        {
+            await store.MarkNeedsBaselineAsync(playerId, ct);
+            _schedule.Defer(playerId, now + options.MinimumSampleInterval);
+        }
     }
 }

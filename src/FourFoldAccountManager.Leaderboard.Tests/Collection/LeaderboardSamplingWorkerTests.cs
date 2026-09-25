@@ -27,7 +27,7 @@ public sealed class LeaderboardSamplingWorkerTests
             .AddTransient<LeaderboardSamplingService>()
             .BuildServiceProvider();
         var worker = new LeaderboardSamplingWorker(provider.GetRequiredService<IServiceScopeFactory>(),
-            options, TimeProvider.System);
+            options, TimeProvider.System, new LeaderboardSamplingSchedule());
 
         await worker.StartAsync(default);
         await worker.StopAsync(default);
@@ -49,6 +49,9 @@ public sealed class LeaderboardSamplingWorkerTests
     private sealed class ActiveStore : ILeaderboardStore
     {
         public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([new(1, "Alice")]);
+        public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
+            DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([new(1, "Alice")]);
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) => Task.FromResult<PlayerSampleState?>(null);
         public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,

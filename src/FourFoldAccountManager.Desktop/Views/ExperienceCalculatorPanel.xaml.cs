@@ -14,6 +14,7 @@ public partial class ExperienceCalculatorPanel : UserControl
 {
     private readonly ObservableCollection<ExperienceTransitionRow> _transitions = [];
     private ExperienceCalculatorState? _state;
+    private Guid? _snapshotAccountId;
     private bool _updatingTarget;
     private bool _suppressAccountSelection;
 
@@ -43,17 +44,22 @@ public partial class ExperienceCalculatorPanel : UserControl
 
     public void SetSnapshot(AccountProfile account, PlayerProgressSnapshot snapshot)
     {
+        var targetText = _snapshotAccountId == account.Id ? TargetLevelBox.Text : string.Empty;
+        _snapshotAccountId = account.Id;
         SetSelectedAccount(account);
         _state = ExperienceCalculatorState.FromSnapshot(snapshot);
         _updatingTarget = true;
-        TargetLevelBox.Text = _state.TargetLevel > 0
-            ? _state.TargetLevel.ToString(CultureInfo.InvariantCulture) : string.Empty;
+        TargetLevelBox.Text = targetText;
         _updatingTarget = false;
+        if (long.TryParse(targetText.Trim(), NumberStyles.None, CultureInfo.InvariantCulture,
+                out var targetLevel) && targetLevel > 0)
+            _state = _state.WithTarget(targetLevel);
         Render();
     }
 
     public void ClearSnapshot(string status)
     {
+        _snapshotAccountId = null;
         _state = null;
         ClassText.Text = string.Empty;
         RemainingText.Text = "—";
@@ -89,14 +95,13 @@ public partial class ExperienceCalculatorPanel : UserControl
 
     private void ApplyTarget()
     {
-        if (_state?.Profile is null || !long.TryParse(TargetLevelBox.Text.Trim(), NumberStyles.None,
-                CultureInfo.InvariantCulture, out var targetLevel))
+        if (_state?.Profile is null) return;
+        if (!long.TryParse(TargetLevelBox.Text.Trim(), NumberStyles.None,
+                CultureInfo.InvariantCulture, out var targetLevel) || targetLevel <= 0)
         {
-            if (_state?.Profile is not null)
-            {
-                StatusText.Text = "Enter a positive target level.";
-            }
-
+            _state = _state.WithoutTarget();
+            Render();
+            StatusText.Text = "Enter a positive target level.";
             return;
         }
 

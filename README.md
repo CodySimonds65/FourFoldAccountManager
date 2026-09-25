@@ -26,7 +26,7 @@ A Windows desktop client for managing FourFold accounts, saved logins, multi-cli
 Choose an account directly from the dropdown on the **Stats** or **XP Calculator** tab. The selected profile refreshes automatically.
 
 - **Class Comparison** reads the profile’s active class and compares its displayed HP, SP, ATT, MAG, SKL, SPD, LCK, DEF, and RES values against projected class averages. Equipment is shown for context only.
-- **XP Calculator** calculates progress to a target level using `5 × level × (level + 1)` for next-level caps and `(5 / 3) × (level³ - level)` for cumulative XP.
+- **XP Calculator** shows the active class and calculates progress after you enter a target level, using `5 × level × (level + 1)` for next-level caps and `(5 / 3) × (level³ - level)` for cumulative XP.
 - Usernames in the top-200 ranking resolve to profile IDs automatically. Ambiguous or out-of-ranking users can be linked with a verified profile ID or URL.
 
 ## XP Tracker
@@ -51,6 +51,10 @@ Windows releases include a framework-dependent ZIP, standalone executable, and c
 ## Shared XP leaderboard
 
 The Workspace tab ranks XP gained during the current UTC day, ISO week, or calendar month. The desktop uses `https://fourfold-shared-xp-leaderboard.onrender.com` by default; developers can override it with `FOURFOLD_LEADERBOARD_URL`. Local XP tracking works without the service.
+
+Session XP and leaderboard XP cover different scopes: the tracker counts the active class from its local session start or reset, while the leaderboard totals valid gains across all classes in the selected UTC period after its first baseline. A saved leaderboard page may lag; interrupted participation or uncertain samples are not backfilled.
+
+When an opted-in profile launches, its first heartbeat wakes the server, which reads that player's public profile right away, ahead of routine samples. That first server-verified observation records zero gained XP and lines up with the start of the desktop session within seconds. After that, each active player is sampled on its own `Collection:MinimumSampleInterval` cadence (five minutes in production), with consecutive site requests spaced by `Collection:RequestSpacing` (two seconds by default). A failed read waits one full interval before it is retried. Repeated heartbeats do not reset an established baseline, and the server does not accept an XP value from the client.
 
 ### Backup and recovery
 

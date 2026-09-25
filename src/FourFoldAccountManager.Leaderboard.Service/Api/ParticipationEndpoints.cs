@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using FourFoldAccountManager.Core.Leaderboard;
+using FourFoldAccountManager.Leaderboard.Service.Collection;
 using FourFoldAccountManager.Leaderboard.Service.Data;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -20,7 +21,7 @@ public static class ParticipationEndpoints
     }
 
     private static async Task<IResult> HandleAsync(HttpRequest request, ILeaderboardStore store,
-        TimeProvider clock, CancellationToken ct)
+        LeaderboardSamplingSchedule schedule, TimeProvider clock, CancellationToken ct)
     {
         if (request.ContentLength is > LeaderboardRequestValidator.MaximumBodyBytes)
             return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
@@ -54,6 +55,9 @@ public static class ParticipationEndpoints
         {
             return Results.Problem(ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
+        // A newly launched profile needs its baseline now, not at the next idle poll.
+        if (heartbeat!.SharingEnabled && heartbeat.ActivePlayerIds.Count > 0)
+            schedule.RequestSample();
         return Results.NoContent();
     }
 }

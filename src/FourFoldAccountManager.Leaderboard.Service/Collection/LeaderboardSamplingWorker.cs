@@ -8,8 +8,12 @@ public sealed class LeaderboardSamplingWorker(
     IServiceScopeFactory scopeFactory,
     LeaderboardCollectionOptions options,
     TimeProvider clock,
+    LeaderboardSamplingSchedule schedule,
     ILogger<LeaderboardSamplingWorker>? logger = null) : BackgroundService
 {
+    // How often to look for players whose sample interval has elapsed when no profile has just started participating.
+    internal static readonly TimeSpan IdlePollInterval = TimeSpan.FromSeconds(15);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         if (!options.CanCollect) return;
@@ -29,7 +33,7 @@ public sealed class LeaderboardSamplingWorker(
             {
                 logger?.LogError(ex, "Leaderboard sampling pass failed");
             }
-            await Task.Delay(options.MinimumSampleInterval, clock, stoppingToken)
+            await schedule.WaitForWorkAsync(IdlePollInterval, clock, stoppingToken)
                 .ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
     }

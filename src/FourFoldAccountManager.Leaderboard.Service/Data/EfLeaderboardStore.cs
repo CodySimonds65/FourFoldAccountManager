@@ -129,6 +129,37 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
             .ToArray();
     }
 
+    public async Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
+        DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct)
+    {
+        var cutoff = activeAfterUtc.ToUniversalTime();
+        var sampledBefore = sampledBeforeUtc.ToUniversalTime();
+        var due = await (
+                from profile in db.InstallationProfiles.AsNoTracking()
+                where profile.Installation.SharingEnabled && profile.IsActive && profile.LastActiveAtUtc > cutoff
+                join state in db.PlayerSampleStates.AsNoTracking()
+                    on profile.PlayerId equals state.PlayerId into states
+                from state in states.DefaultIfEmpty()
+                where state == null || state.NeedsBaseline || state.LastSampledAtUtc <= sampledBefore
+                select new
+                {
+                    profile.PlayerId,
+                    profile.Username,
+                    profile.LastActiveAtUtc,
+                    NeedsBaseline = state == null || state.NeedsBaseline,
+                    LastSampledAtUtc = state == null ? (DateTimeOffset?)null : state.LastSampledAtUtc
+                })
+            .ToListAsync(ct);
+        return due.GroupBy(x => x.PlayerId)
+            .Select(group => group.OrderByDescending(x => x.LastActiveAtUtc)
+                .ThenBy(x => x.Username, StringComparer.OrdinalIgnoreCase).First())
+            .OrderByDescending(x => x.NeedsBaseline)
+            .ThenBy(x => x.LastSampledAtUtc)
+            .ThenBy(x => x.PlayerId)
+            .Select(x => new ActiveLeaderboardProfile(x.PlayerId, x.Username))
+            .ToArray();
+    }
+
     public async Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct)
     {
         if (playerId <= 0) throw new ArgumentOutOfRangeException(nameof(playerId));
@@ -164,11 +195,17 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
               state.SnapshotJson == expectedState.SnapshotJson &&
               state.LastSampledAtUtc == expectedState.LastSampledAtUtc &&
               state.NeedsBaseline == expectedState.NeedsBaseline;
-        if (!active || !unchanged)
+        if (!active)
         {
             if (state is not null)
                 await db.PlayerSampleStates.Where(x => x.PlayerId == observation.PlayerId)
                     .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.NeedsBaseline, true), ct);
+            await transaction.CommitAsync(ct);
+            return;
+        }
+        if (!unchanged)
+        {
+            // Another observation or participation transition has already changed this state.
             await transaction.CommitAsync(ct);
             return;
         }

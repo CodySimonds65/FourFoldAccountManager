@@ -36,12 +36,18 @@ public sealed record ExperienceCalculatorState(
     public static ExperienceCalculatorState FromProfile(ClassProfileSnapshot profile)
     {
         ArgumentNullException.ThrowIfNull(profile);
-        var target = profile.Level < int.MaxValue ? (long)profile.Level + 1 : profile.Level;
-        return Create(profile, target);
+        return Unselected(profile);
     }
 
     public ExperienceCalculatorState WithTarget(long targetLevel) =>
         Profile is null ? this with { TargetLevel = targetLevel } : Create(Profile, targetLevel);
+
+    public ExperienceCalculatorState WithoutTarget() =>
+        Profile is null ? this : Unselected(Profile);
+
+    private static ExperienceCalculatorState Unselected(ClassProfileSnapshot profile) =>
+        new(false, "Enter a target level.", profile.ClassName, profile.Level, 0,
+            "—", "—", "—", 0, false, null, profile);
 
     private static ExperienceCalculatorState Create(ClassProfileSnapshot profile, long targetLevel)
     {

@@ -121,6 +121,29 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DueQueryTracksPendingBaselinesAndSampleInterval()
+    {
+        var installation = Guid.NewGuid();
+        await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now, default);
+        var pending = await _store.GetProfilesDueForSampleAsync(Now.AddMilliseconds(-1), Now.AddYears(-1), default);
+        Assert.Equal([1], pending.Select(x => x.PlayerId).ToArray());
+
+        await SeedObservationAsync(Observation(1, "Alice", null, Now));
+        await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now.AddMinutes(1), default);
+        Assert.Empty(await _store.GetProfilesDueForSampleAsync(Now, Now.AddYears(-1), default));
+        Assert.Empty(await _store.GetProfilesDueForSampleAsync(Now, Now.AddMilliseconds(-1), default));
+        var due = await _store.GetProfilesDueForSampleAsync(Now, Now, default);
+        Assert.Equal([1], due.Select(x => x.PlayerId).ToArray());
+
+        await _store.ApplyHeartbeatAsync(new ParticipationHeartbeat(installation, true,
+            [new LeaderboardProfile(1, "Alice")], []), Now.AddMinutes(2), default);
+        Assert.Empty(await _store.GetProfilesDueForSampleAsync(Now, Now.AddYears(-1), default));
+        await _store.ApplyHeartbeatAsync(Heartbeat(installation, (1, "Alice")), Now.AddMinutes(3), default);
+        pending = await _store.GetProfilesDueForSampleAsync(Now.AddMinutes(2), Now.AddYears(-1), default);
+        Assert.Equal([1], pending.Select(x => x.PlayerId).ToArray());
+    }
+
+    [Fact]
     public async Task ConcurrentHeartbeatsKeepOneCompleteProfileSet()
     {
         var installationId = Guid.NewGuid();
@@ -256,6 +279,23 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
             expected, TimeSpan.FromMinutes(3), default);
 
         Assert.True((await _store.GetPlayerStateAsync(1, default))!.NeedsBaseline);
+        Assert.Empty(await _db.XpGainEvents.ToListAsync());
+    }
+
+    [Fact]
+    public async Task ConcurrentBaselineSaveDoesNotReopenEstablishedBaseline()
+    {
+        await _store.ApplyHeartbeatAsync(Heartbeat(Guid.NewGuid(), (1, "Alice")), Now, default);
+        await _store.SaveObservationAsync(Observation(1, "Alice", null, Now),
+            null, TimeSpan.FromMinutes(3), default);
+
+        await _store.SaveObservationAsync(Observation(1, "Alice", null, Now.AddSeconds(1)),
+            null, TimeSpan.FromMinutes(3), default);
+
+        var state = await _store.GetPlayerStateAsync(1, default);
+        Assert.NotNull(state);
+        Assert.False(state.NeedsBaseline);
+        Assert.Equal(Now, state.LastSampledAtUtc);
         Assert.Empty(await _db.XpGainEvents.ToListAsync());
     }
 

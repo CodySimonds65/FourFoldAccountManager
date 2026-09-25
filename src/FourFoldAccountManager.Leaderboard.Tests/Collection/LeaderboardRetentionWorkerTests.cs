@@ -64,6 +64,8 @@ public sealed class LeaderboardRetentionWorkerTests
             throw new NotImplementedException();
         public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
             throw new NotImplementedException();
+        public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
+            DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct) => throw new NotImplementedException();
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) =>
             throw new NotImplementedException();
         public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,

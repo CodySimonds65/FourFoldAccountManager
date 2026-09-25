@@ -254,17 +254,25 @@ public sealed class LeaderboardCoordinator : IAsyncDisposable
         }
     }
 
-    private async Task RunRenewalLoopAsync(CancellationToken ct)
+    private Task RunRenewalLoopAsync(CancellationToken ct) =>
+        RunRenewalLoopCoreAsync(async token =>
+        {
+            if (_sharingEnabled && _activePlayerIds.Count > 0)
+                await QueueParticipationAsync(token);
+            else if (HasPendingParticipation)
+                await FlushPendingAsync(token);
+        }, TimeSpan.FromMinutes(1), ct);
+
+    internal static async Task RunRenewalLoopCoreAsync(
+        Func<CancellationToken, Task> tick, TimeSpan interval, CancellationToken ct)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+        using var timer = new PeriodicTimer(interval);
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
-                if (_sharingEnabled && _activePlayerIds.Count > 0)
-                    await QueueParticipationAsync(ct);
-                else if (HasPendingParticipation)
-                    await FlushPendingAsync(ct);
+                try { await tick(ct); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
