@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using FourFoldAccountManager.Core.Models;
 
@@ -66,6 +67,8 @@ public partial class SettingsDialog : Window
             row.SetKeysText(ShortcutText.Format(_shortcuts[action]));
             UpdateShortcutStatus(action);
         }
+
+        ShowPage(DisplayPage);
     }
 
     public bool FillGameToPanel { get; private set; }
@@ -77,6 +80,31 @@ public partial class SettingsDialog : Window
     public bool ResetLayoutSizes { get; private set; }
 
     internal ShortcutRow RowFor(GlobalShortcutAction action) => _rows[action];
+
+    private IEnumerable<(Button Tab, ScrollViewer Page)> Tabs() =>
+    [
+        (DisplayTabButton, DisplayPage),
+        (LayoutTabButton, LayoutPage),
+        (ShortcutsTabButton, ShortcutsPage)
+    ];
+
+    private void TabButton_Click(object sender, RoutedEventArgs e)
+    {
+        // A shortcut being captured belongs to the page being left.
+        CancelCapture();
+        ShowPage(Tabs().First(tab => ReferenceEquals(tab.Tab, sender)).Page);
+    }
+
+    private void ShowPage(ScrollViewer page)
+    {
+        foreach (var (tab, candidate) in Tabs())
+        {
+            var active = ReferenceEquals(candidate, page);
+            // Hidden, not Collapsed: every page keeps its space, so the dialog height stays the same across tabs.
+            candidate.Visibility = active ? Visibility.Visible : Visibility.Hidden;
+            tab.Opacity = active ? 1d : 0.65d;
+        }
+    }
 
     internal void BeginCapturingShortcut(GlobalShortcutAction action)
     {
@@ -173,6 +201,7 @@ public partial class SettingsDialog : Window
         CancelCapture();
         if (DuplicateShortcutMessage() is { } message)
         {
+            ShowPage(ShortcutsPage);
             MessageBox.Show(this, message, "Shortcuts must be different", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
@@ -188,7 +217,7 @@ public partial class SettingsDialog : Window
             ? "Save settings to register this shortcut."
             : _unavailableShortcuts.Contains(action)
                 ? "Unavailable — another app or another FourFold shortcut may be using these keys. Choose a different combination."
-                : "Available globally, including while a game window is focused.");
+                : string.Empty);
     }
 
     private static GlobalHotkeyModifiers MapSupportedModifiers(ModifierKeys modifiers)

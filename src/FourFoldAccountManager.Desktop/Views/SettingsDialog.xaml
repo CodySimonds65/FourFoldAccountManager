@@ -11,88 +11,119 @@
     <Grid Margin="26">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
         <StackPanel>
             <TextBlock Text="WORKSPACE SETTINGS" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}" Margin="0,0,0,9" />
-            <TextBlock Text="Game scaling" FontSize="24" FontWeight="SemiBold" />
-            <TextBlock Margin="0,7,0,22" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
-                       Text="Choose how FourFold uses the space inside every account panel." />
+            <TextBlock Text="Settings" FontSize="24" FontWeight="SemiBold" />
+            <TextBlock Margin="0,7,0,18" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
+                       Text="Display, layout, and global shortcut options for FourFold." />
         </StackPanel>
 
-        <ScrollViewer x:Name="SettingsScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled">
-        <StackPanel>
-            <Border Padding="14" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}"
-                    Background="{DynamicResource Brush.Surface}">
-                <RadioButton x:Name="FillOption" GroupName="GameScaling" VerticalContentAlignment="Top"
-                             Foreground="{DynamicResource Brush.TextPrimary}">
-                    <StackPanel Margin="8,-2,0,0">
-                        <TextBlock Text="Fill panel" FontWeight="SemiBold" />
-                        <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
-                                   Text="Stretch the game to use the entire panel and remove black bars. The image may be distorted in tall panels." />
-                    </StackPanel>
-                </RadioButton>
-            </Border>
-            <Border Padding="14" Margin="0,10,0,0" CornerRadius="9" BorderThickness="1"
-                    BorderBrush="{DynamicResource Brush.Border}" Background="{DynamicResource Brush.Surface}">
-                <RadioButton x:Name="FitOption" GroupName="GameScaling" VerticalContentAlignment="Top"
-                             Foreground="{DynamicResource Brush.TextPrimary}">
-                    <StackPanel Margin="8,-2,0,0">
-                        <TextBlock Text="Fit entire game" FontWeight="SemiBold" />
-                        <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
-                                   Text="Keep the whole game visible. Black bars appear when the panel has a different shape. (Default)" />
-                    </StackPanel>
-                </RadioButton>
-            </Border>
-            <TextBlock Margin="2,13,0,0" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
-                       Text="Changing game scaling reloads any open FourFold panels so the change takes effect." />
-            <TextBlock Text="FULL SCREEN" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}"
-                       Margin="0,20,0,9" />
-            <Border Padding="14" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}"
-                    Background="{DynamicResource Brush.Surface}">
-                <CheckBox x:Name="ShowFullScreenExitOption" VerticalContentAlignment="Top"
-                          Foreground="{DynamicResource Brush.TextPrimary}">
-                    <StackPanel Margin="8,-2,0,0">
-                        <TextBlock Text="Show Exit button in full screen" FontWeight="SemiBold" />
-                        <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
-                                   Text="Keep the on-screen shortcut visible. Esc always exits full screen." />
-                    </StackPanel>
-                </CheckBox>
-            </Border>
-            <views:ShortcutRow x:Name="RevealShortcutRow" Action="RevealOverlays" Margin="0,10,0,0"
-                               Title="Reveal overlays tab"
-                               Description="Show the hidden edge arrow without opening its tray." />
-            <TextBlock Text="CLIENT LAYOUT" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}"
-                       Margin="0,20,0,9" />
-            <views:ShortcutRow x:Name="DividerShortcutRow" Action="ToggleDividerResizing"
-                               Title="Toggle divider resizing"
-                               Description="Lock or unlock layout divider dragging with a global shortcut." />
-            <Border Padding="14" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}"
-                    Background="{DynamicResource Brush.Surface}" Margin="0,10,0,0">
+        <UniformGrid Grid.Row="1" Rows="1" Columns="3" Margin="0,0,0,18">
+            <Button x:Name="DisplayTabButton" Content="Display" Click="TabButton_Click" Height="32" Margin="0,0,4,0"
+                    Style="{StaticResource AppButtonStyle}" />
+            <Button x:Name="LayoutTabButton" Content="Layout" Click="TabButton_Click" Height="32" Margin="2,0,2,0"
+                    Style="{StaticResource AppButtonStyle}" />
+            <Button x:Name="ShortcutsTabButton" Content="Shortcuts" Click="TabButton_Click" Height="32" Margin="4,0,0,0"
+                    Style="{StaticResource AppButtonStyle}" />
+        </UniformGrid>
+
+        <!-- Inactive pages are Hidden rather than Collapsed, so the dialog keeps the tallest page's height and
+             does not jump when switching tabs. Each page scrolls on its own when the screen is too short. -->
+        <Grid Grid.Row="2">
+            <ScrollViewer x:Name="DisplayPage" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
-                    <TextBlock Text="Restore divider positions" FontWeight="SemiBold" />
-                    <TextBlock Margin="0,4,0,12" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
-                               Text="Restore all client layout dividers to their defaults. Game scaling and per-client viewport sizes will not change." />
-                    <Button x:Name="ResetLayoutSizesButton" Content="Reset layout sizes"
-                            Width="146" Height="34" HorizontalAlignment="Left"
-                            Click="ResetLayoutSizes_Click" Style="{StaticResource AppButtonStyle}" />
+                    <TextBlock Text="GAME SCALING" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}" Margin="0,0,0,9" />
+                    <Border Padding="14" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}"
+                            Background="{DynamicResource Brush.Surface}">
+                        <RadioButton x:Name="FillOption" GroupName="GameScaling" VerticalContentAlignment="Top"
+                                     Foreground="{DynamicResource Brush.TextPrimary}">
+                            <StackPanel Margin="8,-2,0,0">
+                                <TextBlock Text="Fill panel" FontWeight="SemiBold" />
+                                <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
+                                           Text="Stretch the game to use the entire panel and remove black bars. The image may be distorted in tall panels." />
+                            </StackPanel>
+                        </RadioButton>
+                    </Border>
+                    <Border Padding="14" Margin="0,10,0,0" CornerRadius="9" BorderThickness="1"
+                            BorderBrush="{DynamicResource Brush.Border}" Background="{DynamicResource Brush.Surface}">
+                        <RadioButton x:Name="FitOption" GroupName="GameScaling" VerticalContentAlignment="Top"
+                                     Foreground="{DynamicResource Brush.TextPrimary}">
+                            <StackPanel Margin="8,-2,0,0">
+                                <TextBlock Text="Fit entire game" FontWeight="SemiBold" />
+                                <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
+                                           Text="Keep the whole game visible. Black bars appear when the panel has a different shape. (Default)" />
+                            </StackPanel>
+                        </RadioButton>
+                    </Border>
+                    <TextBlock Margin="2,13,0,0" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
+                               Text="Changing game scaling reloads any open FourFold panels so the change takes effect." />
+                    <TextBlock Text="FULL SCREEN" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}"
+                               Margin="0,20,0,9" />
+                    <Border Padding="14" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}"
+                            Background="{DynamicResource Brush.Surface}">
+                        <CheckBox x:Name="ShowFullScreenExitOption" VerticalContentAlignment="Top"
+                                  Foreground="{DynamicResource Brush.TextPrimary}">
+                            <StackPanel Margin="8,-2,0,0">
+                                <TextBlock Text="Show Exit button in full screen" FontWeight="SemiBold" />
+                                <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
+                                           Text="Keep the on-screen shortcut visible. Esc always exits full screen." />
+                            </StackPanel>
+                        </CheckBox>
+                    </Border>
                 </StackPanel>
-            </Border>
-            <TextBlock Text="TIMER" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}" Margin="0,20,0,9" />
-            <views:ShortcutRow x:Name="TimerSplitShortcutRow" Action="TimerSplit"
-                               Title="Timer split" Description="Start the run, then record a lap on each press." />
-            <views:ShortcutRow x:Name="TimerFinishShortcutRow" Action="TimerFinish" Margin="0,10,0,0"
-                               Title="Timer finish" Description="Record the final lap and stop the run." />
-            <views:ShortcutRow x:Name="TimerResetShortcutRow" Action="TimerReset" Margin="0,10,0,0"
-                               Title="Timer reset" Description="Clear the timer and all laps." />
-            <TextBlock Margin="2,13,0,0" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
-                       Text="Single keys (numpad, F13–F24, Pause, Scroll Lock, Insert) stop reaching games and other apps while FourFold is open." />
-        </StackPanel>
-        </ScrollViewer>
+            </ScrollViewer>
 
-        <StackPanel Grid.Row="2" Margin="0,22,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+            <ScrollViewer x:Name="LayoutPage" Visibility="Hidden" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <TextBlock Text="CLIENT LAYOUT" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}" Margin="0,0,0,9" />
+                    <Border Padding="14" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}"
+                            Background="{DynamicResource Brush.Surface}">
+                        <StackPanel>
+                            <TextBlock Text="Restore divider positions" FontWeight="SemiBold" />
+                            <TextBlock Margin="0,4,0,12" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
+                                       Text="Restore all client layout dividers to their defaults. Game scaling and per-client viewport sizes will not change." />
+                            <Button x:Name="ResetLayoutSizesButton" Content="Reset layout sizes"
+                                    Width="146" Height="34" HorizontalAlignment="Left"
+                                    Click="ResetLayoutSizes_Click" Style="{StaticResource AppButtonStyle}" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <ScrollViewer x:Name="ShortcutsPage" Visibility="Hidden" VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <TextBlock Margin="2,0,0,0" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
+                               Text="Shortcuts work everywhere, including while a game window is focused." />
+                    <TextBlock Text="FULL SCREEN" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}"
+                               Margin="0,16,0,9" />
+                    <views:ShortcutRow x:Name="RevealShortcutRow" Action="RevealOverlays"
+                                       Title="Reveal overlays tab"
+                                       Description="Show the hidden edge arrow without opening its tray." />
+                    <TextBlock Text="CLIENT LAYOUT" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}"
+                               Margin="0,20,0,9" />
+                    <views:ShortcutRow x:Name="DividerShortcutRow" Action="ToggleDividerResizing"
+                                       Title="Toggle divider resizing"
+                                       Description="Lock or unlock layout divider dragging." />
+                    <TextBlock Text="TIMER" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}" Margin="0,20,0,9" />
+                    <views:ShortcutRow x:Name="TimerSplitShortcutRow" Action="TimerSplit"
+                                       Title="Timer split" Description="Start the run, then record a lap on each press." />
+                    <views:ShortcutRow x:Name="TimerFinishShortcutRow" Action="TimerFinish" Margin="0,10,0,0"
+                                       Title="Timer finish" Description="Record the final lap and stop the run." />
+                    <views:ShortcutRow x:Name="TimerResetShortcutRow" Action="TimerReset" Margin="0,10,0,0"
+                                       Title="Timer reset" Description="Clear the timer and all laps." />
+                    <TextBlock Margin="2,13,0,0" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
+                               Text="Single keys (numpad, F13–F24, Pause, Scroll Lock, Insert) stop reaching games and other apps while FourFold is open." />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <StackPanel Grid.Row="3" Margin="0,22,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button x:Name="CancelSettingsButton" Width="78" Height="36" Margin="0,0,8,0" IsCancel="True" Content="Cancel"
                     Style="{StaticResource AppButtonStyle}" />
             <Button x:Name="SaveSettingsButton" Width="106" Height="36" IsDefault="True" Click="Save_Click" Content="Save settings"
