@@ -1,7 +1,6 @@
-<UserControl x:Class="FourFoldAccountManager.Desktop.Views.XpOverlayCard"
+<UserControl x:Class="FourFoldAccountManager.Desktop.Views.OverlayCardFrame"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Width="200" Height="52" MinWidth="144" MinHeight="40"
              Focusable="False" IsHitTestVisible="False" SnapsToDevicePixels="True">
     <Grid>
         <Border x:Name="CardChrome" Padding="9,5" CornerRadius="8"
@@ -17,19 +16,8 @@
                     </Style.Triggers>
                 </Style>
             </Border.Style>
-            <Grid VerticalAlignment="Center">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <TextBlock Text="{Binding AccountLabel, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-                           FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource Brush.TextSecondary}"
-                           TextTrimming="CharacterEllipsis" ToolTip="{Binding AccountLabel, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" />
-                <TextBlock Grid.Row="1"
-                           Text="{Binding XpPerHourText, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-                           FontSize="14" FontWeight="Bold" Foreground="{DynamicResource Brush.AccentGold}"
-                           TextTrimming="CharacterEllipsis" />
-            </Grid>
+            <ContentPresenter Content="{Binding CardData, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                              VerticalAlignment="Center" />
         </Border>
         <Thumb x:Name="MoveThumb" Background="Transparent" Cursor="SizeAll"
                IsEnabled="{Binding IsEditing, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
@@ -44,7 +32,7 @@
                HorizontalAlignment="Right" VerticalAlignment="Bottom" Cursor="SizeNWSE"
                Background="{DynamicResource Brush.AccentGold}"
                IsEnabled="{Binding IsEditing, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-               AutomationProperties.Name="Resize XP overlay">
+               AutomationProperties.Name="Resize overlay card">
             <Thumb.Style>
                 <Style TargetType="Thumb">
                     <Setter Property="Visibility" Value="Collapsed" />

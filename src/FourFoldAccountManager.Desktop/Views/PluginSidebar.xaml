@@ -14,21 +14,25 @@
                        Foreground="{DynamicResource Brush.AccentGold}" />
             <TextBlock Text="Account tools" FontSize="16" FontWeight="SemiBold" Margin="0,5,0,0" />
         </StackPanel>
-        <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,12">
+        <UniformGrid Grid.Row="1" Columns="2" Margin="0,0,0,12">
             <Button x:Name="XpTrackerButton" Content="XP" Tag="{x:Static core:PluginKind.XpTracker}"
-                    Click="PluginButton_Click" Style="{StaticResource AppButtonStyle}" Height="30" Padding="4,0" Margin="0,0,4,0"
+                    Click="PluginButton_Click" Style="{StaticResource AppButtonStyle}" Height="30" Padding="4,0" Margin="0,0,4,4"
                     ToolTip="XP Tracker" />
             <Button x:Name="ClassComparisonButton" Content="Stats" Tag="{x:Static core:PluginKind.ClassComparison}"
-                    Click="PluginButton_Click" Style="{StaticResource AppButtonStyle}" Height="30" Padding="4,0" Margin="0,0,4,0"
+                    Click="PluginButton_Click" Style="{StaticResource AppButtonStyle}" Height="30" Padding="4,0" Margin="0,0,0,4"
                     ToolTip="Class comparison" />
             <Button x:Name="XpCalculatorButton" Content="XP calc" Tag="{x:Static core:PluginKind.XpCalculator}"
-                    Click="PluginButton_Click" Style="{StaticResource AppButtonStyle}" Height="30" Padding="4,0"
+                    Click="PluginButton_Click" Style="{StaticResource AppButtonStyle}" Height="30" Padding="4,0" Margin="0,0,4,0"
                     ToolTip="XP calculator" />
+            <Button x:Name="TimerButton" Content="Timer" Tag="{x:Static core:PluginKind.Timer}"
+                    Click="PluginButton_Click" Style="{StaticResource AppButtonStyle}" Height="30" Padding="4,0"
+                    ToolTip="Speedrun timer" />
         </UniformGrid>
         <Grid Grid.Row="2">
             <views:XpTrackerPanel x:Name="TrackerPanel" Loaded="TrackerPanel_Loaded" />
             <views:ClassComparisonPanel x:Name="ClassComparisonPanelView" Visibility="Collapsed" />
             <views:ExperienceCalculatorPanel x:Name="XpCalculatorPanelView" Visibility="Collapsed" />
+            <views:TimerPanel x:Name="TimerPanelView" Visibility="Collapsed" />
         </Grid>
     </Grid>
 </UserControl>

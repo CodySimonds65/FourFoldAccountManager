@@ -185,6 +185,13 @@
                         <Button x:Name="LaunchVisibleButton" MinWidth="144" Height="36" Padding="16,0"
                                 Content="Launch accounts" Click="LaunchVisible_Click" Style="{StaticResource PrimaryButtonStyle}"
                                 ToolTip="Starts missing or failed assigned sessions; healthy open sessions stay open." />
+                        <Button x:Name="TogglePluginsButton" Width="34" Height="34" Padding="0" Margin="12,0,0,0"
+                                Click="TogglePluginsPanel_Click" Style="{StaticResource AppButtonStyle}" IsEnabled="False"
+                                ToolTip="Hide the plugins sidebar to expand the multi-box panel."
+                                AutomationProperties.Name="Toggle plugins sidebar">
+                            <Path Data="M0,0 H16 V14 H0 Z M11,0 V14" Stroke="{DynamicResource Brush.TextSecondary}"
+                                  StrokeThickness="1.3" Width="16" Height="14" Stretch="Uniform" />
+                        </Button>
                     </StackPanel>
                 </Grid>
                 <Border x:Name="PanelBorder" Grid.Row="1" Padding="0" CornerRadius="0" BorderThickness="0"
@@ -206,7 +213,8 @@
                 HorizontalAlignment="Right" VerticalAlignment="Top" Content="Exit" Click="FullScreenExit_Click"
                 Visibility="Collapsed" Opacity="0.78" Style="{StaticResource AppButtonStyle}" ToolTip="Exit full screen (Esc)"
                 MouseEnter="FullScreenExit_MouseEnter" MouseLeave="FullScreenExit_MouseLeave" />
-        <views:FullscreenXpOverlayTray x:Name="FullscreenXpOverlayTray" Grid.RowSpan="2" Panel.ZIndex="900"
-                                       HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,4,0" />
+        <views:OverlayCardLayer x:Name="GlobalOverlayLayer" Grid.RowSpan="2" Panel.ZIndex="800" />
+        <views:FullscreenOverlayTray x:Name="FullscreenOverlayTray" Grid.RowSpan="2" Panel.ZIndex="900"
+                                     HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,4,0" />
     </Grid>
 </Window>

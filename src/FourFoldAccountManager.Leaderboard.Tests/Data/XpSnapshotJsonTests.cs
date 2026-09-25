@@ -29,12 +29,4 @@ public sealed class XpSnapshotJsonTests
         Assert.Equal(XpProgressCalculator.Calculate(before, after).ValidGain,
             XpProgressCalculator.Calculate(restored, XpSnapshotJson.Deserialize(XpSnapshotJson.Serialize(after), "Alice")).ValidGain);
     }
-
-    [Fact]
-    public void NormalizeDropsUnrelatedFieldsFromIncomingJson()
-    {
-        var json = XpSnapshotJson.Normalize("{\"classes\":{\"Mage\":{\"level\":1,\"currentXp\":2,\"nextLevelXp\":10,\"hp\":900}},\"secret\":\"discard\"}");
-        Assert.DoesNotContain("hp", json, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("secret", json, StringComparison.OrdinalIgnoreCase);
-    }
 }

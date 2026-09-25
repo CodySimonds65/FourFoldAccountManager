@@ -4,25 +4,26 @@ using System.Windows.Controls.Primitives;
 
 namespace FourFoldAccountManager.Desktop.Views;
 
-public partial class XpOverlayCard : UserControl
+public partial class OverlayCardFrame : UserControl
 {
-    public static readonly DependencyProperty AccountLabelProperty = DependencyProperty.Register(
-        nameof(AccountLabel), typeof(string), typeof(XpOverlayCard), new PropertyMetadata(string.Empty));
-
-    public static readonly DependencyProperty XpPerHourTextProperty = DependencyProperty.Register(
-        nameof(XpPerHourText), typeof(string), typeof(XpOverlayCard), new PropertyMetadata("— XP/hr"));
+    public static readonly DependencyProperty CardDataProperty = DependencyProperty.Register(
+        nameof(CardData), typeof(object), typeof(OverlayCardFrame), new PropertyMetadata(null));
 
     public static readonly DependencyProperty IsEditingProperty = DependencyProperty.Register(
-        nameof(IsEditing), typeof(bool), typeof(XpOverlayCard), new PropertyMetadata(false, OnIsEditingChanged));
+        nameof(IsEditing), typeof(bool), typeof(OverlayCardFrame), new PropertyMetadata(false, OnIsEditingChanged));
 
-    public XpOverlayCard()
+    public OverlayCardFrame()
     {
         InitializeComponent();
+        MoveThumb.DragStarted += (_, _) => CardDragStarted?.Invoke(this, EventArgs.Empty);
         MoveThumb.DragDelta += (_, args) => MoveDelta?.Invoke(this, args);
         MoveThumb.DragCompleted += (_, args) => MoveCompleted?.Invoke(this, args);
+        ResizeThumb.DragStarted += (_, _) => CardDragStarted?.Invoke(this, EventArgs.Empty);
         ResizeThumb.DragDelta += (_, args) => ResizeDelta?.Invoke(this, args);
         ResizeThumb.DragCompleted += (_, args) => ResizeCompleted?.Invoke(this, args);
     }
+
+    public event EventHandler? CardDragStarted;
 
     public event DragDeltaEventHandler? MoveDelta;
 
@@ -32,16 +33,10 @@ public partial class XpOverlayCard : UserControl
 
     public event DragCompletedEventHandler? ResizeCompleted;
 
-    public string AccountLabel
+    public object? CardData
     {
-        get => (string)GetValue(AccountLabelProperty);
-        set => SetValue(AccountLabelProperty, value);
-    }
-
-    public string XpPerHourText
-    {
-        get => (string)GetValue(XpPerHourTextProperty);
-        set => SetValue(XpPerHourTextProperty, value);
+        get => GetValue(CardDataProperty);
+        set => SetValue(CardDataProperty, value);
     }
 
     public bool IsEditing
@@ -52,9 +47,9 @@ public partial class XpOverlayCard : UserControl
 
     private static void OnIsEditingChanged(DependencyObject dependencyObject, DependencyPropertyChangedEventArgs args)
     {
-        if (dependencyObject is XpOverlayCard card)
+        if (dependencyObject is OverlayCardFrame frame)
         {
-            card.IsHitTestVisible = (bool)args.NewValue;
+            frame.IsHitTestVisible = (bool)args.NewValue;
         }
     }
 }

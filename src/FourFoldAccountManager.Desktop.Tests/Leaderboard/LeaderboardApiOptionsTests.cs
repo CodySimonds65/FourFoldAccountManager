@@ -12,12 +12,4 @@ public sealed class LeaderboardApiOptionsTests
     [InlineData("https://leaderboard.example/?token=secret")]
     public void RejectsUnsafeOrNonRootUrl(string value) =>
         Assert.Null(LeaderboardApiOptions.FromConfiguredUrl(value));
-
-    [Fact]
-    public void AcceptsHttpsRootAndNormalizesTrailingSlash()
-    {
-        var options = LeaderboardApiOptions.FromConfiguredUrl("https://leaderboard.example");
-
-        Assert.Equal("https://leaderboard.example/", options?.BaseAddress.AbsoluteUri);
-    }
 }

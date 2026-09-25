@@ -4,5 +4,6 @@ public enum PluginKind
 {
     XpTracker,
     ClassComparison,
-    XpCalculator
+    XpCalculator,
+    Timer
 }

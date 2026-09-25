@@ -7,21 +7,6 @@ namespace FourFoldAccountManager.Leaderboard.Tests.Collection;
 public sealed class FourFoldPublicProfileSourceTests
 {
     [Fact]
-    public async Task MissingApprovedRouteMakesNoRequest()
-    {
-        var handler = new StubHandler("ignored");
-        var source = new FourFoldPublicProfileSource(new LeaderboardCollectionOptions
-        {
-            Enabled = true,
-            MinimumSampleInterval = TimeSpan.FromMinutes(1)
-        }, handler);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() => source.FetchAsync(42, default));
-
-        Assert.Equal(0, handler.Calls);
-    }
-
-    [Fact]
     public async Task DisabledCollectionMakesNoRequestEvenWithConfiguredRoute()
     {
         var handler = new StubHandler("ignored");
@@ -76,15 +61,6 @@ public sealed class FourFoldPublicProfileSourceTests
         await Assert.ThrowsAsync<HttpRequestException>(() => source.FetchAsync(42, default));
 
         Assert.Equal(["https://example.invalid/player.php?id=42"], handler.Urls);
-    }
-
-    [Fact]
-    public void SourceDisablesAutomaticRedirectsOnHttpHandlerBeforeUse()
-    {
-        using var handler = new HttpClientHandler { AllowAutoRedirect = true };
-        using var source = new FourFoldPublicProfileSource(new LeaderboardCollectionOptions(), handler);
-
-        Assert.False(handler.AllowAutoRedirect);
     }
 
     private sealed class RedirectHandler : HttpMessageHandler

@@ -1,0 +1,93 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:views="clr-namespace:FourFoldAccountManager.Desktop.Views">
+    <!-- Each overlay add-on's card content, selected by the type of its card data. -->
+    <DataTemplate DataType="{x:Type views:XpOverlayCardData}">
+        <Grid VerticalAlignment="Center">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock Text="{Binding AccountLabel}" FontSize="10" FontWeight="SemiBold"
+                       Foreground="{DynamicResource Brush.TextSecondary}" TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding AccountLabel}" />
+            <TextBlock Grid.Row="1" Text="{Binding XpPerHourText}" FontSize="14" FontWeight="Bold"
+                       Foreground="{DynamicResource Brush.AccentGold}" TextTrimming="CharacterEllipsis" />
+        </Grid>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type views:TimerDisplay}">
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly">
+            <Grid VerticalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Text="{Binding TotalText}" FontSize="20" FontWeight="Bold"
+                           Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.AccentGold}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Row="1" Text="{Binding LapText}" FontSize="11"
+                           Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.TextSecondary}"
+                           TextTrimming="CharacterEllipsis" />
+            </Grid>
+        </Viewbox>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type views:StatsCardData}">
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Top">
+            <StackPanel Width="232">
+                <TextBlock Text="{Binding HeaderText}" FontSize="11" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding LineText}" FontSize="13" FontWeight="Bold" Margin="0,2,0,6"
+                           Foreground="{DynamicResource Brush.AccentGold}" TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding Rows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,1,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="40" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="64" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding StatLabel}" FontSize="11"
+                                           Foreground="{DynamicResource Brush.TextMuted}" />
+                                <TextBlock Grid.Column="1" Text="{Binding ProfileText}" FontSize="11"
+                                           HorizontalAlignment="Right" Typography.NumeralAlignment="Tabular"
+                                           Foreground="{DynamicResource Brush.TextPrimary}" />
+                                <TextBlock Grid.Column="2" Text="{Binding AverageText}" FontSize="11"
+                                           HorizontalAlignment="Right" Typography.NumeralAlignment="Tabular"
+                                           Foreground="{DynamicResource Brush.TextMuted}" />
+                                <TextBlock Grid.Column="3" Text="{Binding DeltaText}" FontSize="11"
+                                           HorizontalAlignment="Right" Typography.NumeralAlignment="Tabular">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Direction}" Value="Above">
+                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.AccentGold}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Viewbox>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type views:XpCalcCardData}">
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+            <Grid VerticalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Text="{Binding HeaderText}" FontSize="10" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextSecondary}" />
+                <TextBlock Grid.Row="1" Text="{Binding LineText}" FontSize="14" FontWeight="Bold"
+                           Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.AccentGold}" />
+            </Grid>
+        </Viewbox>
+    </DataTemplate>
+</ResourceDictionary>

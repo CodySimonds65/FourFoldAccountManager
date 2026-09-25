@@ -78,6 +78,10 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
             .ToArray();
     }
 
+    // The newest profile fetched this session for an open account; null until its first successful fetch.
+    public PlayerProgressSnapshot? GetLatestSnapshot(Guid accountId) =>
+        _active.TryGetValue(accountId, out var account) ? account.LatestSnapshot : null;
+
     internal XpTrackingSession? GetSessionForTesting(Guid accountId) =>
         _active.TryGetValue(accountId, out var account) ? account.Session : null;
 
@@ -173,7 +177,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         }
     }
 
-    private async Task PollOnceAsync(CancellationToken cancellationToken)
+    internal async Task PollOnceAsync(CancellationToken cancellationToken)
     {
         if (!_loaded)
         {
@@ -257,6 +261,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
             account.PlayerId = result.PlayerId;
             var sampledAt = DateTimeOffset.UtcNow;
             account.Session.ApplySnapshot(profile, sampledAt);
+            account.LatestSnapshot = profile;
             account.Status = account.Session.MissedPreviousSample
                 ? "Partial interval; previous tracker sample failed"
                 : account.Session.ActiveClassUnavailable
@@ -303,5 +308,6 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         public XpTrackingSession Session { get; } = new();
         public string Status { get; set; } = "Collecting baseline";
         public bool CanRetryProfileRead { get; set; } = true;
+        public PlayerProgressSnapshot? LatestSnapshot { get; set; }
     }
 }

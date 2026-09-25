@@ -1,4 +1,6 @@
+using FourFoldAccountManager.Core.Calculation;
 using FourFoldAccountManager.Core.Models;
+using FourFoldAccountManager.Core.Overlay;
 
 namespace FourFoldAccountManager.Core.Panel;
 
@@ -155,12 +157,17 @@ public static class PanelLayoutPolicy
             FillGameToPanel = settings.FillGameToPanel,
             ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
+            XpCalculatorTargetLevels = settings.XpCalculatorTargetLevels,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
+            TimerSplitShortcut = settings.TimerSplitShortcut,
+            TimerFinishShortcut = settings.TimerFinishShortcut,
+            TimerResetShortcut = settings.TimerResetShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = settings.SplitStates,
             GameViewportSizes = settings.GameViewportSizes,
-            XpOverlayBoundsByAccount = settings.XpOverlayBoundsByAccount
+            OverlayCards = settings.OverlayCards
         };
     }
 
@@ -200,12 +207,17 @@ public static class PanelLayoutPolicy
             FillGameToPanel = settings.FillGameToPanel,
             ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
+            XpCalculatorTargetLevels = settings.XpCalculatorTargetLevels,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
+            TimerSplitShortcut = settings.TimerSplitShortcut,
+            TimerFinishShortcut = settings.TimerFinishShortcut,
+            TimerResetShortcut = settings.TimerResetShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = settings.SplitStates,
             GameViewportSizes = settings.GameViewportSizes,
-            XpOverlayBoundsByAccount = settings.XpOverlayBoundsByAccount
+            OverlayCards = settings.OverlayCards
         };
     }
 
@@ -227,19 +239,22 @@ public static class PanelLayoutPolicy
             .ToArray();
         var viewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes);
         viewportSizes.Remove(accountId);
-        var overlayBounds = new Dictionary<Guid, XpOverlayBounds>(settings.XpOverlayBoundsByAccount);
-        overlayBounds.Remove(accountId);
         return new PanelSettings(settings.Layout, assignments)
         {
             FillGameToPanel = settings.FillGameToPanel,
             ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
+            XpCalculatorTargetLevels = XpCalculatorTargets.RemoveAccount(settings.XpCalculatorTargetLevels, accountId),
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
+            TimerSplitShortcut = settings.TimerSplitShortcut,
+            TimerFinishShortcut = settings.TimerFinishShortcut,
+            TimerResetShortcut = settings.TimerResetShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = settings.SplitStates,
             GameViewportSizes = viewportSizes,
-            XpOverlayBoundsByAccount = overlayBounds
+            OverlayCards = OverlayCardPolicy.RemoveAccount(settings.OverlayCards, accountId)
         };
     }
 
@@ -278,43 +293,6 @@ public static class PanelLayoutPolicy
             [accountId] = size
         };
         return settings with { GameViewportSizes = viewportSizes };
-    }
-
-    public static XpOverlayBounds? GetXpOverlayBounds(PanelSettings settings, Guid accountId)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-        if (accountId == Guid.Empty)
-        {
-            throw new ArgumentException("An account ID is required.", nameof(accountId));
-        }
-
-        return settings.XpOverlayBoundsByAccount.TryGetValue(accountId, out var bounds)
-            ? bounds
-            : null;
-    }
-
-    public static PanelSettings WithXpOverlayBounds(
-        PanelSettings settings,
-        Guid accountId,
-        XpOverlayBounds bounds)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-        ArgumentNullException.ThrowIfNull(bounds);
-        if (accountId == Guid.Empty)
-        {
-            throw new ArgumentException("An account ID is required.", nameof(accountId));
-        }
-
-        if (!bounds.IsValid)
-        {
-            throw new ArgumentException("Overlay bounds must be valid and within the normalized viewport.", nameof(bounds));
-        }
-
-        var overlayBounds = new Dictionary<Guid, XpOverlayBounds>(settings.XpOverlayBoundsByAccount)
-        {
-            [accountId] = bounds
-        };
-        return settings with { XpOverlayBoundsByAccount = overlayBounds };
     }
 
     private static PanelSlotNode Slot(int index) => new(index);
@@ -360,12 +338,17 @@ public static class PanelLayoutPolicy
             FillGameToPanel = settings.FillGameToPanel,
             ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
+            XpCalculatorTargetLevels = settings.XpCalculatorTargetLevels,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
+            TimerSplitShortcut = settings.TimerSplitShortcut,
+            TimerFinishShortcut = settings.TimerFinishShortcut,
+            TimerResetShortcut = settings.TimerResetShortcut,
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = Array.AsReadOnly(splitStates.Select(CloneSplitState).ToArray()),
             GameViewportSizes = settings.GameViewportSizes,
-            XpOverlayBoundsByAccount = settings.XpOverlayBoundsByAccount
+            OverlayCards = settings.OverlayCards
         };
 
     private static PanelSplitState CloneSplitState(PanelSplitState state) =>

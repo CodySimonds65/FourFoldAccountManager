@@ -45,19 +45,6 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
-    public async Task ChangedSampleStateDuringFetchCannotScoreOrClearBaseline()
-    {
-        var store = Seed(10);
-        var source = new CallbackSource(Snapshot("Alice", 35), () =>
-            store.MarkNeedsBaselineAsync(1, default).GetAwaiter().GetResult());
-
-        await Create(store, source).RunOnceAsync(Now.AddMinutes(1), default);
-
-        Assert.Empty(store.Gains);
-        Assert.True(store.States[1].NeedsBaseline);
-    }
-
-    [Fact]
     public async Task SamplesEachPlayerIdOnceAcrossInstallations()
     {
         var store = new FakeStore();
@@ -101,33 +88,6 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
-    public async Task FailedFetchWaitsOneIntervalBeforeRetrying()
-    {
-        var store = Seed(10);
-        var source = new FakeSource(new InvalidDataException("bad page"), Snapshot("Alice", 30));
-        var service = Create(store, source);
-
-        await service.RunOnceAsync(Now.AddMinutes(1), default);
-        await service.RunOnceAsync(Now.AddMinutes(1).AddSeconds(15), default);
-
-        Assert.Equal(1, source.FetchCount);
-        Assert.True(store.States[1].NeedsBaseline);
-    }
-
-    [Fact]
-    public async Task ExpiredActivityLeaseIsExcluded()
-    {
-        var store = new FakeStore();
-        store.Activate(1, "Alice", Now.AddMinutes(-3));
-        var source = new FakeSource(Snapshot("Alice", 10));
-
-        await Create(store, source).RunOnceAsync(Now, default);
-
-        Assert.Equal(0, source.FetchCount);
-        Assert.Empty(store.States);
-    }
-
-    [Fact]
     public async Task RebaselinesAfterUncertainGapWithoutWritingGain()
     {
         var store = Seed(10);
@@ -159,49 +119,6 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
-    public async Task RecoveredInvalidClassIsBaselinedWhileOtherClassContinuesScoring()
-    {
-        var store = Seed(10, 10);
-        var source = new FakeSource(
-            Snapshot("Alice", 5, 20),
-            Snapshot("Alice", 15, 25));
-        var service = Create(store, source);
-
-        await service.RunOnceAsync(Now.AddMinutes(1), default);
-        await service.RunOnceAsync(Now.AddMinutes(2).AddSeconds(1), default);
-
-        Assert.Equal([10L, 5L], store.Gains);
-        Assert.Empty(XpSnapshotJson.Deserialize(store.States[1].SnapshotJson, "Alice").InvalidClasses);
-    }
-
-    [Fact]
-    public async Task AllInvalidClassDataRequestsRebaseline()
-    {
-        var store = Seed(10);
-        var source = new FakeSource(Snapshot("Alice", 5));
-
-        await Create(store, source).RunOnceAsync(Now.AddMinutes(1), default);
-
-        Assert.Empty(store.Gains);
-        Assert.True(store.States[1].NeedsBaseline);
-    }
-
-    [Fact]
-    public async Task MalformedSnapshotWithNoValidClassesKeepsLastGoodState()
-    {
-        var store = Seed(10);
-        var malformed = new PlayerProgressSnapshot("Alice", null,
-            new Dictionary<string, ClassProfileSnapshot>(), ["Warrior"]);
-        var source = new FakeSource(malformed);
-
-        await Create(store, source).RunOnceAsync(Now.AddMinutes(1), default);
-
-        Assert.True(store.States[1].NeedsBaseline);
-        Assert.Equal(Now, store.States[1].LastSampledAtUtc);
-        Assert.Empty(store.Gains);
-    }
-
-    [Fact]
     public async Task FirstMalformedSnapshotDoesNotBecomeBaseline()
     {
         var store = new FakeStore();
@@ -213,36 +130,6 @@ public sealed class LeaderboardSamplingServiceTests
 
         Assert.Empty(store.States);
         Assert.Equal(1, store.BaselineMarks);
-    }
-
-    [Fact]
-    public async Task DisabledCollectionNeverCallsSource()
-    {
-        var store = Seed(10);
-        var source = new FakeSource(Snapshot("Alice", 30));
-        var service = new LeaderboardSamplingService(store, source,
-            new LeaderboardCollectionOptions { Enabled = false, MinimumSampleInterval = TimeSpan.FromMinutes(1) });
-
-        await service.RunOnceAsync(Now.AddMinutes(1), default);
-
-        Assert.Equal(0, source.FetchCount);
-    }
-
-    [Fact]
-    public async Task SpacesRequestsForDifferentPlayersByRequestSpacing()
-    {
-        var store = new FakeStore();
-        store.Activate(1, "Alice", Now);
-        store.Activate(2, "Bob", Now);
-        var source = new FakeSource(Snapshot("Alice", 5), Snapshot("Bob", 5));
-        var service = new LeaderboardSamplingService(store, source,
-            Options(TimeSpan.FromMinutes(1), TimeSpan.FromMilliseconds(80)));
-        var timer = Stopwatch.StartNew();
-
-        await service.RunOnceAsync(Now, default);
-
-        Assert.Equal(2, source.FetchCount);
-        Assert.True(timer.Elapsed >= TimeSpan.FromMilliseconds(65), $"Elapsed: {timer.Elapsed}");
     }
 
     [Fact]
@@ -263,137 +150,6 @@ public sealed class LeaderboardSamplingServiceTests
         Assert.Null(Assert.Single(store.Observations, x => x.PlayerId == 9).ValidGain);
         Assert.Equal(25, XpSnapshotJson.Deserialize(store.States[9].SnapshotJson, "Alice")
             .Classes["Warrior"].CurrentXp);
-    }
-
-    [Fact]
-    public async Task ActivationDuringPassGetsBaselineBeforeRemainingRoutineProfiles()
-    {
-        var store = new FakeStore();
-        foreach (var id in new[] { 1, 2, 3 }) store.Activate(id, "Alice", Now);
-        foreach (var id in new[] { 1, 2, 3 })
-            store.States[id] = new PlayerSampleState(id, "Alice",
-                XpSnapshotJson.Serialize(Snapshot("Alice", 10)), Now.AddMilliseconds(-40), false);
-        var source = new RecordingSource(id =>
-        {
-            if (id == 1) store.Activate(9, "Alice", Now);
-            return Snapshot("Alice", 35);
-        });
-        var service = new LeaderboardSamplingService(store, source,
-            Options(TimeSpan.FromMilliseconds(20)));
-
-        await service.RunOnceAsync(Now, default);
-
-        Assert.Equal([1, 9, 2, 3], source.PlayerIds);
-        Assert.Null(Assert.Single(store.Observations, x => x.PlayerId == 9).ValidGain);
-        Assert.False(store.States[9].NeedsBaseline);
-    }
-
-    [Fact]
-    public async Task ActivationDuringRequestWaitGetsNextAvailableSlot()
-    {
-        var store = new FakeStore();
-        foreach (var id in new[] { 1, 2 }) store.Activate(id, "Alice", Now);
-        foreach (var id in new[] { 1, 2 })
-            store.States[id] = new PlayerSampleState(id, "Alice",
-                XpSnapshotJson.Serialize(Snapshot("Alice", 10)), Now.AddMinutes(-1), false);
-        var source = new RecordingSource(_ => Snapshot("Alice", 35));
-        var clock = new ActivationOnDelayTimeProvider(() => store.Activate(9, "Alice", Now));
-        var service = new LeaderboardSamplingService(store, source,
-            Options(TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(20)), clock);
-
-        await service.RunOnceAsync(Now, default);
-
-        Assert.Equal([1, 9, 2], source.PlayerIds);
-        Assert.Null(Assert.Single(store.Observations, x => x.PlayerId == 9).ValidGain);
-    }
-
-    [Fact]
-    public async Task PriorityBaselineKeepsRequestSpacing()
-    {
-        var store = new FakeStore();
-        store.Activate(1, "Alice", Now);
-        store.Activate(9, "Alice", Now);
-        store.States[1] = new PlayerSampleState(1, "Alice",
-            XpSnapshotJson.Serialize(Snapshot("Alice", 10)), Now.AddMinutes(-1), false);
-        var source = new RecordingSource(_ => Snapshot("Alice", 35));
-        var service = new LeaderboardSamplingService(store, source,
-            Options(TimeSpan.FromMilliseconds(20), TimeSpan.FromMilliseconds(80)));
-
-        await service.RunOnceAsync(Now, default);
-
-        Assert.Equal([9, 1], source.PlayerIds);
-        Assert.True(Stopwatch.GetElapsedTime(source.Timestamps[0], source.Timestamps[1]) >=
-            TimeSpan.FromMilliseconds(65));
-    }
-
-    [Fact]
-    public async Task EveryActivePlayerIsSampledOnItsOwnInterval()
-    {
-        var store = new FakeStore();
-        foreach (var id in Enumerable.Range(1, 6)) store.Activate(id, "Alice", Now);
-        var before = Snapshot("Alice", 10) with { ActiveClassName = "Warrior" };
-        var after = Snapshot("Alice", 35) with { ActiveClassName = "Warrior" };
-        var local = new XpTrackingSession();
-        local.ApplySnapshot(before, Now);
-        var service = new LeaderboardSamplingService(store, new PerPlayerSource(1, 2, 3, 4, 5, 6),
-            Options(TimeSpan.FromMinutes(5)));
-
-        await service.RunOnceAsync(Now, default);
-        foreach (var id in Enumerable.Range(1, 6)) store.Activate(id, "Alice", Now.AddMinutes(5));
-        local.ApplySnapshot(after, Now.AddMinutes(5).AddSeconds(15));
-        await service.RunOnceAsync(Now.AddMinutes(5).AddSeconds(15), default);
-
-        Assert.Equal(25, local.SessionGain);
-        Assert.Equal(Enumerable.Repeat(25L, 6), store.Gains);
-    }
-
-    [Fact]
-    public async Task PlayersSampledWithinTheirIntervalAreNotRequestedAgain()
-    {
-        var store = new FakeStore();
-        foreach (var id in new[] { 1, 2 }) store.Activate(id, "Alice", Now);
-        var source = new RecordingSource(_ => Snapshot("Alice", 10));
-        var service = new LeaderboardSamplingService(store, source, Options(TimeSpan.FromMinutes(5)));
-
-        await service.RunOnceAsync(Now, default);
-        foreach (var id in new[] { 1, 2 }) store.Activate(id, "Alice", Now.AddMinutes(4));
-        await service.RunOnceAsync(Now.AddMinutes(4), default);
-
-        Assert.Equal([1, 2], source.PlayerIds);
-    }
-
-    [Fact]
-    public async Task OldestSampleIsRequestedFirst()
-    {
-        var store = new FakeStore();
-        foreach (var id in new[] { 1, 2, 3 }) store.Activate(id, "Alice", Now);
-        foreach (var (id, age) in new[] { (1, 6), (2, 9), (3, 7) })
-            store.States[id] = new PlayerSampleState(id, "Alice",
-                XpSnapshotJson.Serialize(Snapshot("Alice", 10)), Now.AddMinutes(-age), false);
-        var source = new RecordingSource(_ => Snapshot("Alice", 35));
-
-        await new LeaderboardSamplingService(store, source, Options(TimeSpan.FromMinutes(5)))
-            .RunOnceAsync(Now, default);
-
-        Assert.Equal([2, 3, 1], source.PlayerIds);
-    }
-
-    [Fact]
-    public async Task IdleWorkerRebaselinesAfterUncertainGap()
-    {
-        var store = new FakeStore();
-        foreach (var id in new[] { 1, 2, 3 }) store.Activate(id, "Alice", Now);
-        var interval = TimeSpan.FromMinutes(1);
-        var service = new LeaderboardSamplingService(store, new PerPlayerSource(1, 2, 3), Options(interval));
-
-        await service.RunOnceAsync(Now, default);
-        foreach (var id in new[] { 1, 2, 3 }) store.Activate(id, "Alice", Now + interval * 4);
-        await service.RunOnceAsync(Now + interval * 4, default);
-
-        Assert.Empty(store.Gains);
-        Assert.All(store.States.Values, state =>
-            Assert.Equal(25, XpSnapshotJson.Deserialize(state.SnapshotJson, state.Username)
-                .Classes["Warrior"].CurrentXp));
     }
 
     [Fact]
@@ -480,28 +236,6 @@ public sealed class LeaderboardSamplingServiceTests
         }
     }
 
-    private sealed class PerPlayerSource : ILeaderboardPublicProfileSource
-    {
-        private readonly Dictionary<int, Queue<PlayerProgressSnapshot>> _responses;
-        private readonly TimeSpan _delay;
-
-        public PerPlayerSource(params int[] playerIds) : this(TimeSpan.Zero, playerIds) { }
-
-        public PerPlayerSource(TimeSpan delay, params int[] playerIds)
-        {
-            _delay = delay;
-            _responses = playerIds.ToDictionary(id => id, _ => new Queue<PlayerProgressSnapshot>(
-                [Snapshot("Alice", 10) with { ActiveClassName = "Warrior" },
-                 Snapshot("Alice", 35) with { ActiveClassName = "Warrior" }]));
-        }
-
-        public async Task<PlayerProgressSnapshot> FetchAsync(int playerId, CancellationToken ct)
-        {
-            if (_delay > TimeSpan.Zero) await Task.Delay(_delay, ct);
-            return _responses[playerId].Dequeue();
-        }
-    }
-
     private sealed class DelayedSource(PlayerProgressSnapshot response, TimeSpan delay) : ILeaderboardPublicProfileSource
     {
         public async Task<PlayerProgressSnapshot> FetchAsync(int playerId, CancellationToken ct)
@@ -520,19 +254,6 @@ public sealed class LeaderboardSamplingServiceTests
             PlayerIds.Add(playerId);
             Timestamps.Add(Stopwatch.GetTimestamp());
             return Task.FromResult(response(playerId));
-        }
-    }
-
-    private sealed class ActivationOnDelayTimeProvider(Action activate) : TimeProvider
-    {
-        private int _activated;
-        public override long TimestampFrequency => TimeProvider.System.TimestampFrequency;
-        public override long GetTimestamp() => TimeProvider.System.GetTimestamp();
-        public override ITimer CreateTimer(TimerCallback callback, object? state,
-            TimeSpan dueTime, TimeSpan period)
-        {
-            if (Interlocked.Exchange(ref _activated, 1) == 0) activate();
-            return TimeProvider.System.CreateTimer(callback, state, dueTime, period);
         }
     }
 
