@@ -22,6 +22,8 @@ public sealed record PanelSettings
 
     public bool ShowFullScreenExitButton { get; init; } = true;
 
+    public bool PluginsSidebarExpanded { get; init; } = true;
+
     public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =
         GlobalHotkeyChord.DefaultRevealXpOverlayTab;
 

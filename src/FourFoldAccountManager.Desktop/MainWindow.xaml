@@ -185,6 +185,13 @@
                         <Button x:Name="LaunchVisibleButton" MinWidth="144" Height="36" Padding="16,0"
                                 Content="Launch accounts" Click="LaunchVisible_Click" Style="{StaticResource PrimaryButtonStyle}"
                                 ToolTip="Starts missing or failed assigned sessions; healthy open sessions stay open." />
+                        <Button x:Name="TogglePluginsButton" Width="34" Height="34" Padding="0" Margin="12,0,0,0"
+                                Click="TogglePluginsPanel_Click" Style="{StaticResource AppButtonStyle}"
+                                ToolTip="Hide the plugins sidebar to expand the multi-box panel."
+                                AutomationProperties.Name="Toggle plugins sidebar">
+                            <Path Data="M0,0 H16 V14 H0 Z M11,0 V14" Stroke="{DynamicResource Brush.TextSecondary}"
+                                  StrokeThickness="1.3" Width="16" Height="14" Stretch="Uniform" />
+                        </Button>
                     </StackPanel>
                 </Grid>
                 <Border x:Name="PanelBorder" Grid.Row="1" Padding="0" CornerRadius="0" BorderThickness="0"

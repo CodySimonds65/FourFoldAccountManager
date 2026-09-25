@@ -148,6 +148,7 @@ public sealed class SettingsStore
             FillGameToPanel = settings.FillGameToPanel,
             ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
+            PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
             TimerSplitShortcut = ValidOrDefault(settings.TimerSplitShortcut, GlobalHotkeyChord.DefaultTimerSplit),

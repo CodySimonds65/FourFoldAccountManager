@@ -762,6 +762,23 @@ public partial class MainWindow : Window
             : "Show account profiles and slot assignments.";
     }
 
+    // The collapsed or expanded choice is saved so the sidebar reopens the way the user left it.
+    private async void TogglePluginsPanel_Click(object sender, RoutedEventArgs e)
+    {
+        if (_showingLeaderboard) return;
+        var expanded = !_panelSettings.PluginsSidebarExpanded;
+        try
+        {
+            await UpdateSettingsAsync(settings => settings with { PluginsSidebarExpanded = expanded });
+        }
+        catch
+        {
+            GlobalStatusText.Text = "The plugins sidebar setting could not be saved.";
+        }
+
+        UpdatePluginSidebarVisibility();
+    }
+
     private void WorkspaceView_Click(object sender, RoutedEventArgs e) => ShowWorkspaceView();
 
     private void LeaderboardView_Click(object sender, RoutedEventArgs e)
@@ -1202,8 +1219,12 @@ public partial class MainWindow : Window
 
     private void UpdatePluginSidebarVisibility()
     {
+        var expanded = _panelSettings.PluginsSidebarExpanded;
+        TogglePluginsButton.ToolTip = expanded
+            ? "Hide the plugins sidebar to expand the multi-box panel."
+            : "Show the plugins sidebar.";
         var visible = PluginSidebar.UpdateHostVisibility(!_showingLeaderboard,
-            _isFullScreen, _openAccountIds);
+            _isFullScreen, expanded, _openAccountIds);
         TrackerGapColumn.Width = visible ? new GridLength(6) : new GridLength(0);
         TrackerColumn.Width = visible ? new GridLength(250) : new GridLength(0);
     }
