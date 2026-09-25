@@ -84,6 +84,18 @@ public sealed class TimerPanelTests
         Assert.Equal(Visibility.Visible, panel.UnavailableNote.Visibility);
     });
 
+    [Fact]
+    public void TimerTabSitsInTheSidebarCardWithItsHeading() => WpfTestHost.Run(() =>
+    {
+        var panel = new TimerPanel();
+
+        Assert.Same(panel.TimerCard, panel.Content);
+        Assert.Same(Application.Current.FindResource("SidebarCardStyle"), panel.TimerCard.Style);
+        Assert.Equal(new Thickness(14), panel.TimerCard.Padding);
+        Assert.Equal("TIMER", panel.HeadingLabel.Text);
+        Assert.Equal("Speedrun stopwatch", panel.HeadingTitle.Text);
+    });
+
     // TimerPanel is never connected to a PresentationSource in these tests, so bindings only
     // update once the element has gone through an explicit Measure/Arrange pass.
     private static void Arrange(FrameworkElement element, double width, double height)

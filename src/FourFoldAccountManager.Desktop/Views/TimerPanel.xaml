@@ -1,7 +1,15 @@
 <UserControl x:Class="FourFoldAccountManager.Desktop.Views.TimerPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <Grid>
+    <Border x:Name="TimerCard" Style="{StaticResource SidebarCardStyle}" Padding="14">
+        <DockPanel>
+            <StackPanel DockPanel.Dock="Top" Margin="2,2,2,16">
+                <TextBlock x:Name="HeadingLabel" Text="TIMER" FontSize="10" FontWeight="Bold"
+                           Foreground="{DynamicResource Brush.AccentGold}" />
+                <TextBlock x:Name="HeadingTitle" Text="Speedrun stopwatch" FontSize="16" FontWeight="SemiBold"
+                           Margin="0,5,0,0" />
+            </StackPanel>
+            <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -52,5 +60,7 @@
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
-    </Grid>
+            </Grid>
+        </DockPanel>
+    </Border>
 </UserControl>
