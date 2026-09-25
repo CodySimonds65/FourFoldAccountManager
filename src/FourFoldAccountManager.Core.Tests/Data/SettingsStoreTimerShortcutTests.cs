@@ -55,6 +55,43 @@ public sealed class SettingsStoreTimerShortcutTests : IDisposable
     }
 
     [Fact]
+    public async Task MalformedTimerShortcutShapesFallBackToDefaultsWithoutFailingTheLoad()
+    {
+        await WriteSettingsAsync(json =>
+        {
+            // Whole value has the wrong JSON kind (string instead of an object).
+            json["timerSplitShortcut"] = "Numpad1";
+            // virtualKey is outside ushort range.
+            json["timerFinishShortcut"] = new JsonObject { ["virtualKey"] = 70000 };
+            // modifiers has the wrong JSON kind (string instead of a number).
+            json["timerResetShortcut"] = new JsonObject { ["virtualKey"] = 0x52, ["modifiers"] = "Ctrl" };
+        });
+
+        var loaded = await _store.LoadAsync();
+
+        Assert.Equal(GlobalHotkeyChord.DefaultTimerSplit, loaded.TimerSplitShortcut);
+        Assert.Equal(GlobalHotkeyChord.DefaultTimerFinish, loaded.TimerFinishShortcut);
+        Assert.Equal(GlobalHotkeyChord.DefaultTimerReset, loaded.TimerResetShortcut);
+    }
+
+    [Fact]
+    public async Task SavedTimerShortcutJsonShapeMatchesAnUnconvertedShortcut()
+    {
+        var split = new GlobalHotkeyChord(0x61, GlobalHotkeyModifiers.None);
+        await _store.SaveAsync(PanelSettings.Default with { TimerSplitShortcut = split });
+
+        var json = JsonNode.Parse(await File.ReadAllTextAsync(SettingsPath))!.AsObject();
+        var timerNode = json["timerSplitShortcut"]!.AsObject();
+        var revealNode = json["revealXpOverlayTabShortcut"]!.AsObject();
+
+        Assert.Equal(
+            revealNode.Select(property => property.Key).OrderBy(key => key, StringComparer.Ordinal),
+            timerNode.Select(property => property.Key).OrderBy(key => key, StringComparer.Ordinal));
+        Assert.Equal((int)split.VirtualKey, (int)timerNode["virtualKey"]!);
+        Assert.Equal((int)split.Modifiers, (int)timerNode["modifiers"]!);
+    }
+
+    [Fact]
     public async Task CustomTimerShortcutsRoundTrip()
     {
         var split = new GlobalHotkeyChord(0x61, GlobalHotkeyModifiers.None);

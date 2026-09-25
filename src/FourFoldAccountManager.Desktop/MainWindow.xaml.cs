@@ -910,18 +910,22 @@ public partial class MainWindow : Window
                     : Task.CompletedTask);
             }
 
+            IReadOnlyList<GlobalShortcutAction> stillUnavailable = Array.Empty<GlobalShortcutAction>();
             if (changedShortcuts.Length > 0)
             {
-                var registered = _shortcuts is not null &&
-                    await _shortcuts.ApplyAsync(
+                var applyResult = _shortcuts is null
+                    ? ShortcutApplyResult.NotSaved
+                    : await _shortcuts.ApplyAsync(
                         _panelSettings, WithDialogShortcuts(_panelSettings), PersistDialogSettingsAsync);
-                if (!registered)
+                if (!applyResult.Saved)
                 {
                     MessageBox.Show(this,
                         "Windows couldn't register one or more new shortcuts. Your previous saved shortcuts and registrations remain unchanged. Choose different combinations and try again.",
                         "Shortcut unavailable", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
+
+                stillUnavailable = applyResult.StillUnavailable;
             }
             else
             {
@@ -944,19 +948,30 @@ public partial class MainWindow : Window
             }
             UpdateManageSlotsButton();
             UpdateTimerHotkeys();
-            GlobalStatusText.Text = dialog.ResetLayoutSizes
-                ? "Client layout sizes restored to defaults."
-                : scalingChanged
-                ? nextSettings.FillGameToPanel
-                    ? "Game scaling set to Fill panel."
-                    : "Game scaling set to Fit entire game."
-                : changedShortcuts.Length > 1
-                ? "Global shortcuts updated."
-                : changedShortcuts.Length == 1
-                ? $"{GlobalShortcutActions.DisplayName(changedShortcuts[0])} shortcut updated."
-                : nextSettings.ShowFullScreenExitButton
-                    ? "Full-screen Exit button enabled."
-                    : "Full-screen Exit button hidden. Press Esc to leave full screen.";
+            if (stillUnavailable.Count > 0)
+            {
+                var unavailableNames = string.Join(", ", stillUnavailable.Select(GlobalShortcutActions.DisplayName));
+                MessageBox.Show(this,
+                    $"Settings saved, but Windows couldn't register: {unavailableNames}. Choose different keys in Settings.",
+                    "Shortcut unavailable", MessageBoxButton.OK, MessageBoxImage.Warning);
+                GlobalStatusText.Text = $"Settings saved. {unavailableNames} still unavailable.";
+            }
+            else
+            {
+                GlobalStatusText.Text = dialog.ResetLayoutSizes
+                    ? "Client layout sizes restored to defaults."
+                    : scalingChanged
+                    ? nextSettings.FillGameToPanel
+                        ? "Game scaling set to Fill panel."
+                        : "Game scaling set to Fit entire game."
+                    : changedShortcuts.Length > 1
+                    ? "Global shortcuts updated."
+                    : changedShortcuts.Length == 1
+                    ? $"{GlobalShortcutActions.DisplayName(changedShortcuts[0])} shortcut updated."
+                    : nextSettings.ShowFullScreenExitButton
+                        ? "Full-screen Exit button enabled."
+                        : "Full-screen Exit button hidden. Press Esc to leave full screen.";
+            }
         }
         catch
         {

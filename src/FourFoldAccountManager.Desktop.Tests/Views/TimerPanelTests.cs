@@ -45,6 +45,33 @@ public sealed class TimerPanelTests
     });
 
     [Fact]
+    public void RecordingALapScrollsTheLapsListWithoutThrowing() => WpfTestHost.Run(() =>
+    {
+        var clock = new ManualTimeProvider();
+        using var coordinator = new TimerCoordinator(clock);
+        var panel = new TimerPanel();
+        panel.Attach(coordinator);
+        Arrange(panel, 300, 500);
+
+        coordinator.Split();
+        clock.Advance(TimeSpan.FromSeconds(1));
+        coordinator.Split();
+        panel.UpdateLayout();
+
+        Assert.Single(coordinator.Display.Laps);
+    });
+
+    [Fact]
+    public void SplitFinishAndResetButtonsAreNotFocusable() => WpfTestHost.Run(() =>
+    {
+        var panel = new TimerPanel();
+
+        Assert.False(panel.SplitButton.Focusable);
+        Assert.False(panel.FinishButton.Focusable);
+        Assert.False(panel.ResetButton.Focusable);
+    });
+
+    [Fact]
     public void HotkeysLineAndUnavailableNote() => WpfTestHost.Run(() =>
     {
         var panel = new TimerPanel();

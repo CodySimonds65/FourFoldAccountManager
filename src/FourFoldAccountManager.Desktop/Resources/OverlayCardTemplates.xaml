@@ -16,17 +16,19 @@
         </Grid>
     </DataTemplate>
     <DataTemplate DataType="{x:Type views:TimerDisplay}">
-        <Grid VerticalAlignment="Center">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
-            <TextBlock Text="{Binding TotalText}" FontSize="20" FontWeight="Bold"
-                       Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.AccentGold}"
-                       TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Row="1" Text="{Binding LapText}" FontSize="11"
-                       Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.TextSecondary}"
-                       TextTrimming="CharacterEllipsis" />
-        </Grid>
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly">
+            <Grid VerticalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Text="{Binding TotalText}" FontSize="20" FontWeight="Bold"
+                           Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.AccentGold}"
+                           TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Row="1" Text="{Binding LapText}" FontSize="11"
+                           Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.TextSecondary}"
+                           TextTrimming="CharacterEllipsis" />
+            </Grid>
+        </Viewbox>
     </DataTemplate>
 </ResourceDictionary>

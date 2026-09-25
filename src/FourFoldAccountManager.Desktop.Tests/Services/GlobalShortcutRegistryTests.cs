@@ -82,7 +82,8 @@ public sealed class GlobalShortcutRegistryTests
 
         var applied = await registry.ApplyAsync(current, next, () => { persisted++; return Task.CompletedTask; });
 
-        Assert.True(applied);
+        Assert.True(applied.Saved);
+        Assert.Empty(applied.StillUnavailable);
         Assert.Equal(1, persisted);
         Assert.DoesNotContain(GlobalHotkeyChord.DefaultTimerSplit, registrar.Registered.Values);
         Assert.True(registry.TryResolve(registrar.IdOf(NumPad1), next, out var resolved));
@@ -102,11 +103,55 @@ public sealed class GlobalShortcutRegistryTests
 
         var applied = await registry.ApplyAsync(current, next, () => { persisted++; return Task.CompletedTask; });
 
-        Assert.False(applied);
+        Assert.False(applied.Saved);
         Assert.Equal(0, persisted);
         Assert.True(registry.IsAvailable(GlobalShortcutAction.TimerSplit));
         Assert.True(registry.TryResolve(registrar.IdOf(GlobalHotkeyChord.DefaultTimerSplit), current, out var resolved));
         Assert.Equal(GlobalShortcutAction.TimerSplit, resolved);
+    }
+
+    [Fact]
+    public async Task ChangingARefusedActionToAnotherRefusedChordSavesNothing()
+    {
+        var refusedChord = new GlobalHotkeyChord(0x59, GlobalHotkeyModifiers.Control);
+        var registrar = new FakeRegistrar();
+        registrar.Refused.Add(GlobalHotkeyChord.DefaultRevealXpOverlayTab);
+        registrar.Refused.Add(refusedChord);
+        using var registry = new GlobalShortcutRegistry(registrar);
+        var current = PanelSettings.Default;
+        registry.Initialize(current);
+        Assert.False(registry.IsAvailable(GlobalShortcutAction.RevealOverlays));
+        var next = GlobalShortcutActions.WithChord(current, GlobalShortcutAction.RevealOverlays, refusedChord);
+        var persisted = 0;
+
+        var applied = await registry.ApplyAsync(current, next, () => { persisted++; return Task.CompletedTask; });
+
+        Assert.False(applied.Saved);
+        Assert.Equal(0, persisted);
+        Assert.False(registry.IsAvailable(GlobalShortcutAction.RevealOverlays));
+    }
+
+    [Fact]
+    public async Task ChangingARefusedActionToAFreeChordRegistersItAtomically()
+    {
+        var freeChord = new GlobalHotkeyChord(0x59, GlobalHotkeyModifiers.Control);
+        var registrar = new FakeRegistrar();
+        registrar.Refused.Add(GlobalHotkeyChord.DefaultRevealXpOverlayTab);
+        using var registry = new GlobalShortcutRegistry(registrar);
+        var current = PanelSettings.Default;
+        registry.Initialize(current);
+        Assert.False(registry.IsAvailable(GlobalShortcutAction.RevealOverlays));
+        var next = GlobalShortcutActions.WithChord(current, GlobalShortcutAction.RevealOverlays, freeChord);
+        var persisted = 0;
+
+        var applied = await registry.ApplyAsync(current, next, () => { persisted++; return Task.CompletedTask; });
+
+        Assert.True(applied.Saved);
+        Assert.Empty(applied.StillUnavailable);
+        Assert.Equal(1, persisted);
+        Assert.True(registry.IsAvailable(GlobalShortcutAction.RevealOverlays));
+        Assert.True(registry.TryResolve(registrar.IdOf(freeChord), next, out var resolved));
+        Assert.Equal(GlobalShortcutAction.RevealOverlays, resolved);
     }
 
     [Fact]
@@ -121,8 +166,10 @@ public sealed class GlobalShortcutRegistryTests
         registry.Initialize(current);
         var next = GlobalShortcutActions.WithChord(current, GlobalShortcutAction.TimerSplit, NumPad1);
 
-        Assert.True(await registry.ApplyAsync(current, next, () => Task.CompletedTask));
+        var sharedKeysResult = await registry.ApplyAsync(current, next, () => Task.CompletedTask);
 
+        Assert.True(sharedKeysResult.Saved);
+        Assert.Empty(sharedKeysResult.StillUnavailable);
         Assert.True(registry.IsAvailable(GlobalShortcutAction.RevealOverlays));
         Assert.True(registry.IsAvailable(GlobalShortcutAction.TimerSplit));
         Assert.True(registry.TryResolve(registrar.IdOf(next.RevealXpOverlayTabShortcut), next, out var reveal));
@@ -140,8 +187,8 @@ public sealed class GlobalShortcutRegistryTests
         registry.Initialize(current);
         var persisted = 0;
 
-        Assert.True(await registry.ApplyAsync(current, current with { FillGameToPanel = true },
-            () => { persisted++; return Task.CompletedTask; }));
+        Assert.True((await registry.ApplyAsync(current, current with { FillGameToPanel = true },
+            () => { persisted++; return Task.CompletedTask; })).Saved);
 
         Assert.Equal(1, persisted);
         Assert.Equal(5, registrar.Registered.Count);

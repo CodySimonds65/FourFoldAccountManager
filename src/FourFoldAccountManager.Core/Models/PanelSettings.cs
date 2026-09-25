@@ -28,10 +28,13 @@ public sealed record PanelSettings
     public GlobalHotkeyChord ToggleDividerResizingShortcut { get; init; } =
         GlobalHotkeyChord.DefaultToggleDividerResizing;
 
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
     public GlobalHotkeyChord TimerSplitShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerSplit;
 
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
     public GlobalHotkeyChord TimerFinishShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerFinish;
 
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
     public GlobalHotkeyChord TimerResetShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerReset;
 
     public double TwoByThreeTopRowFraction { get; init; } = 0.6;

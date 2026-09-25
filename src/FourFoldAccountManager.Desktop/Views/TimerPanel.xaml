@@ -15,11 +15,11 @@
                    Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.TextSecondary}" />
         <UniformGrid Grid.Row="2" Columns="3" Margin="0,0,0,10">
             <Button x:Name="SplitButton" Content="{Binding SplitButtonText}" Click="SplitButton_Click"
-                    Style="{StaticResource PrimaryButtonStyle}" Height="30" Margin="0,0,4,0" />
+                    Style="{StaticResource PrimaryButtonStyle}" Height="30" Margin="0,0,4,0" Focusable="False" />
             <Button x:Name="FinishButton" Content="Finish" Click="FinishButton_Click"
-                    Style="{StaticResource AppButtonStyle}" Height="30" Margin="0,0,4,0" />
+                    Style="{StaticResource AppButtonStyle}" Height="30" Margin="0,0,4,0" Focusable="False" />
             <Button x:Name="ResetButton" Content="Reset" Click="ResetButton_Click"
-                    Style="{StaticResource AppButtonStyle}" Height="30" />
+                    Style="{StaticResource AppButtonStyle}" Height="30" Focusable="False" />
         </UniformGrid>
         <StackPanel Grid.Row="3" Margin="0,0,0,10">
             <TextBlock x:Name="HotkeyText" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}"
