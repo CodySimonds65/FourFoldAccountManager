@@ -6,22 +6,21 @@ namespace FourFoldAccountManager.Desktop.Views;
 
 public partial class SettingsDialog : Window
 {
-    private readonly Func<MessageBoxResult>? _confirmResetLayoutSizes;
-    private readonly GlobalHotkeyChord _initialRevealXpOverlayTabShortcut;
-    private readonly GlobalHotkeyChord _initialToggleDividerResizingShortcut;
-    private readonly bool _revealShortcutAvailable;
-    private readonly bool _toggleDividerShortcutAvailable;
-    private ShortcutTarget? _capturingShortcut;
+    private const string CapturePrompt =
+        "Press Ctrl, Alt, or Shift with one key, or a single numpad, F13–F24, Pause, Scroll Lock, or Insert key. Esc cancels.";
 
-    public SettingsDialog(bool fillGameToPanel, bool showFullScreenExitButton) :
-        this(
-            fillGameToPanel,
-            showFullScreenExitButton,
-            GlobalHotkeyChord.DefaultRevealXpOverlayTab,
-            revealShortcutAvailable: true,
-            GlobalHotkeyChord.DefaultToggleDividerResizing,
-            toggleDividerShortcutAvailable: true,
-            confirmResetLayoutSizes: null)
+    private const string InvalidKeysMessage =
+        "Use Ctrl, Alt, or Shift plus one key, or a single numpad (with Num Lock on), F13–F24, Pause, Scroll Lock, or Insert key. Windows-key shortcuts are not supported.";
+
+    private readonly Func<MessageBoxResult>? _confirmResetLayoutSizes;
+    private readonly IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> _initialShortcuts;
+    private readonly IReadOnlySet<GlobalShortcutAction> _unavailableShortcuts;
+    private readonly Dictionary<GlobalShortcutAction, GlobalHotkeyChord> _shortcuts;
+    private readonly IReadOnlyDictionary<GlobalShortcutAction, ShortcutRow> _rows;
+    private GlobalShortcutAction? _capturingShortcut;
+
+    public SettingsDialog(bool fillGameToPanel, bool showFullScreenExitButton)
+        : this(fillGameToPanel, showFullScreenExitButton, DefaultShortcuts(), new HashSet<GlobalShortcutAction>())
     {
     }
 
@@ -29,13 +28,7 @@ public partial class SettingsDialog : Window
         bool fillGameToPanel,
         bool showFullScreenExitButton,
         Func<MessageBoxResult>? confirmResetLayoutSizes)
-        : this(
-            fillGameToPanel,
-            showFullScreenExitButton,
-            GlobalHotkeyChord.DefaultRevealXpOverlayTab,
-            revealShortcutAvailable: true,
-            GlobalHotkeyChord.DefaultToggleDividerResizing,
-            toggleDividerShortcutAvailable: true,
+        : this(fillGameToPanel, showFullScreenExitButton, DefaultShortcuts(), new HashSet<GlobalShortcutAction>(),
             confirmResetLayoutSizes)
     {
     }
@@ -43,60 +36,93 @@ public partial class SettingsDialog : Window
     internal SettingsDialog(
         bool fillGameToPanel,
         bool showFullScreenExitButton,
-        GlobalHotkeyChord revealXpOverlayTabShortcut,
-        bool revealShortcutAvailable,
+        IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> shortcuts,
+        IReadOnlySet<GlobalShortcutAction> unavailableShortcuts,
         Func<MessageBoxResult>? confirmResetLayoutSizes = null)
-        : this(
-            fillGameToPanel,
-            showFullScreenExitButton,
-            revealXpOverlayTabShortcut,
-            revealShortcutAvailable,
-            GlobalHotkeyChord.DefaultToggleDividerResizing,
-            toggleDividerShortcutAvailable: true,
-            confirmResetLayoutSizes)
     {
-    }
+        ArgumentNullException.ThrowIfNull(shortcuts);
+        ArgumentNullException.ThrowIfNull(unavailableShortcuts);
+        if (GlobalShortcutActions.All.Any(action => !shortcuts.ContainsKey(action)))
+        {
+            throw new ArgumentException("Every shortcut action needs a chord.", nameof(shortcuts));
+        }
 
-    internal SettingsDialog(
-        bool fillGameToPanel,
-        bool showFullScreenExitButton,
-        GlobalHotkeyChord revealXpOverlayTabShortcut,
-        bool revealShortcutAvailable,
-        GlobalHotkeyChord toggleDividerResizingShortcut,
-        bool toggleDividerShortcutAvailable,
-        Func<MessageBoxResult>? confirmResetLayoutSizes = null)
-    {
-        ArgumentNullException.ThrowIfNull(revealXpOverlayTabShortcut);
-        ArgumentNullException.ThrowIfNull(toggleDividerResizingShortcut);
         _confirmResetLayoutSizes = confirmResetLayoutSizes;
-        _initialRevealXpOverlayTabShortcut = revealXpOverlayTabShortcut;
-        _initialToggleDividerResizingShortcut = toggleDividerResizingShortcut;
-        _revealShortcutAvailable = revealShortcutAvailable;
-        _toggleDividerShortcutAvailable = toggleDividerShortcutAvailable;
+        _initialShortcuts = new Dictionary<GlobalShortcutAction, GlobalHotkeyChord>(shortcuts);
+        _shortcuts = new Dictionary<GlobalShortcutAction, GlobalHotkeyChord>(shortcuts);
+        _unavailableShortcuts = unavailableShortcuts;
         InitializeComponent();
         SourceInitialized += (_, _) => WindowAppearance.Apply(this);
         FillOption.IsChecked = fillGameToPanel;
         FitOption.IsChecked = !fillGameToPanel;
         ShowFullScreenExitOption.IsChecked = showFullScreenExitButton;
-        RevealXpOverlayTabShortcut = revealXpOverlayTabShortcut;
-        ToggleDividerResizingShortcut = toggleDividerResizingShortcut;
-        RevealShortcutButton.Content = FormatShortcut(revealXpOverlayTabShortcut);
-        ToggleDividerResizeShortcutButton.Content = FormatShortcut(toggleDividerResizingShortcut);
-        UpdateShortcutStatus(ShortcutTarget.RevealXpOverlayTab);
-        UpdateShortcutStatus(ShortcutTarget.ToggleDividerResizing);
+        _rows = new[]
+        {
+            RevealShortcutRow, DividerShortcutRow, TimerSplitShortcutRow, TimerFinishShortcutRow, TimerResetShortcutRow
+        }.ToDictionary(row => row.Action);
+        foreach (var (action, row) in _rows)
+        {
+            row.CaptureRequested += (_, _) => BeginCapturingShortcut(action);
+            row.SetKeysText(ShortcutText.Format(_shortcuts[action]));
+            UpdateShortcutStatus(action);
+        }
     }
 
     public bool FillGameToPanel { get; private set; }
 
     public bool ShowFullScreenExitButton { get; private set; }
 
-    public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; private set; } =
-        GlobalHotkeyChord.DefaultRevealXpOverlayTab;
-
-    public GlobalHotkeyChord ToggleDividerResizingShortcut { get; private set; } =
-        GlobalHotkeyChord.DefaultToggleDividerResizing;
+    public IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> Shortcuts => _shortcuts;
 
     public bool ResetLayoutSizes { get; private set; }
+
+    internal ShortcutRow RowFor(GlobalShortcutAction action) => _rows[action];
+
+    internal void BeginCapturingShortcut(GlobalShortcutAction action)
+    {
+        _capturingShortcut = action;
+        _rows[action].SetKeysText("Press shortcut…");
+        _rows[action].SetStatus(CapturePrompt);
+        Activate();
+        Keyboard.Focus(this);
+    }
+
+    // Returns false, and explains why in the row, when the keys cannot be a global shortcut.
+    internal bool TryApplyCapturedKey(ushort virtualKey, GlobalHotkeyModifiers modifiers)
+    {
+        if (_capturingShortcut is not { } action)
+        {
+            return false;
+        }
+
+        if (!GlobalHotkeyChord.TryCreate(virtualKey, modifiers, out var chord))
+        {
+            _rows[action].SetStatus(InvalidKeysMessage);
+            return false;
+        }
+
+        _shortcuts[action] = chord;
+        _capturingShortcut = null;
+        _rows[action].SetKeysText(ShortcutText.Format(chord));
+        UpdateShortcutStatus(action);
+        return true;
+    }
+
+    internal string? DuplicateShortcutMessage()
+    {
+        if (GlobalShortcutActions.FindDuplicate(_shortcuts) is not { } duplicate)
+        {
+            return null;
+        }
+
+        return $"{GlobalShortcutActions.DisplayName(duplicate.First)} and " +
+            $"{GlobalShortcutActions.DisplayName(duplicate.Second)} use the same keys. " +
+            "Choose a different shortcut for one of them.";
+    }
+
+    private static IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> DefaultShortcuts() =>
+        GlobalShortcutActions.All.ToDictionary(
+            action => action, action => GlobalShortcutActions.GetChord(PanelSettings.Default, action));
 
     private void ResetLayoutSizes_Click(object sender, RoutedEventArgs e)
     {
@@ -112,24 +138,9 @@ public partial class SettingsDialog : Window
         }
     }
 
-    private void CaptureRevealShortcut_Click(object sender, RoutedEventArgs e) =>
-        BeginCapturingShortcut(ShortcutTarget.RevealXpOverlayTab);
-
-    private void CaptureToggleDividerResizeShortcut_Click(object sender, RoutedEventArgs e) =>
-        BeginCapturingShortcut(ShortcutTarget.ToggleDividerResizing);
-
-    private void BeginCapturingShortcut(ShortcutTarget target)
-    {
-        _capturingShortcut = target;
-        SetShortcutButtonContent(target, "Press shortcut…");
-        SetShortcutStatus(target, "Press Ctrl, Alt, or Shift with one key. Esc cancels.");
-        Activate();
-        Keyboard.Focus(this);
-    }
-
     private void SettingsDialog_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (_capturingShortcut is not { } target)
+        if (_capturingShortcut is null)
         {
             return;
         }
@@ -138,35 +149,31 @@ public partial class SettingsDialog : Window
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (key == Key.Escape)
         {
-            _capturingShortcut = null;
-            SetShortcutButtonContent(target, FormatShortcut(GetShortcut(target)));
-            UpdateShortcutStatus(target);
+            CancelCapture();
             return;
         }
 
-        var virtualKey = (ushort)KeyInterop.VirtualKeyFromKey(key);
-        var modifiers = MapSupportedModifiers(Keyboard.Modifiers);
-        if (!GlobalHotkeyChord.TryCreate(virtualKey, modifiers, out var chord))
+        TryApplyCapturedKey((ushort)KeyInterop.VirtualKeyFromKey(key), MapSupportedModifiers(Keyboard.Modifiers));
+    }
+
+    private void CancelCapture()
+    {
+        if (_capturingShortcut is not { } action)
         {
-            SetShortcutStatus(target,
-                "Use Ctrl, Alt, or Shift plus one non-modifier key. Windows-key shortcuts are not supported.");
             return;
         }
 
-        SetShortcut(target, chord);
         _capturingShortcut = null;
-        SetShortcutButtonContent(target, FormatShortcut(chord));
-        UpdateShortcutStatus(target);
+        _rows[action].SetKeysText(ShortcutText.Format(_shortcuts[action]));
+        UpdateShortcutStatus(action);
     }
 
     private void Save_Click(object sender, RoutedEventArgs e)
     {
-        _capturingShortcut = null;
-        if (RevealXpOverlayTabShortcut == ToggleDividerResizingShortcut)
+        CancelCapture();
+        if (DuplicateShortcutMessage() is { } message)
         {
-            MessageBox.Show(this,
-                "Choose different shortcuts for revealing the XP overlay tab and toggling divider resizing.",
-                "Shortcuts must be different", MessageBoxButton.OK, MessageBoxImage.Warning);
+            MessageBox.Show(this, message, "Shortcuts must be different", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
@@ -175,62 +182,13 @@ public partial class SettingsDialog : Window
         DialogResult = true;
     }
 
-    private void UpdateShortcutStatus(ShortcutTarget target)
+    private void UpdateShortcutStatus(GlobalShortcutAction action)
     {
-        var chord = GetShortcut(target);
-        var initialChord = target == ShortcutTarget.RevealXpOverlayTab
-            ? _initialRevealXpOverlayTabShortcut
-            : _initialToggleDividerResizingShortcut;
-        var available = target == ShortcutTarget.RevealXpOverlayTab
-            ? _revealShortcutAvailable
-            : _toggleDividerShortcutAvailable;
-
-        SetShortcutStatus(target, chord != initialChord
+        _rows[action].SetStatus(_shortcuts[action] != _initialShortcuts[action]
             ? "Save settings to register this shortcut."
-            : available
-                ? "Available globally, including while a game window is focused."
-                : "Unavailable — another app may be using this shortcut. Choose a different combination.");
-    }
-
-    private GlobalHotkeyChord GetShortcut(ShortcutTarget target) =>
-        target == ShortcutTarget.RevealXpOverlayTab
-            ? RevealXpOverlayTabShortcut
-            : ToggleDividerResizingShortcut;
-
-    private void SetShortcut(ShortcutTarget target, GlobalHotkeyChord chord)
-    {
-        if (target == ShortcutTarget.RevealXpOverlayTab)
-        {
-            RevealXpOverlayTabShortcut = chord;
-        }
-        else
-        {
-            ToggleDividerResizingShortcut = chord;
-        }
-    }
-
-    private void SetShortcutButtonContent(ShortcutTarget target, string content)
-    {
-        if (target == ShortcutTarget.RevealXpOverlayTab)
-        {
-            RevealShortcutButton.Content = content;
-        }
-        else
-        {
-            ToggleDividerResizeShortcutButton.Content = content;
-        }
-    }
-
-    private void SetShortcutStatus(ShortcutTarget target, string status)
-    {
-        if (target == ShortcutTarget.RevealXpOverlayTab)
-        {
-            RevealShortcutStatusText.Text = status;
-        }
-        else
-        {
-            ToggleDividerResizeShortcutStatusText.Text = status;
-        }
+            : _unavailableShortcuts.Contains(action)
+                ? "Unavailable — another app or another FourFold shortcut may be using these keys. Choose a different combination."
+                : "Available globally, including while a game window is focused.");
     }
 
     private static GlobalHotkeyModifiers MapSupportedModifiers(ModifierKeys modifiers)
@@ -257,39 +215,5 @@ public partial class SettingsDialog : Window
         }
 
         return result;
-    }
-
-    private static string FormatShortcut(GlobalHotkeyChord chord)
-    {
-        var parts = new List<string>();
-        if (chord.Modifiers.HasFlag(GlobalHotkeyModifiers.Control))
-        {
-            parts.Add("Ctrl");
-        }
-
-        if (chord.Modifiers.HasFlag(GlobalHotkeyModifiers.Alt))
-        {
-            parts.Add("Alt");
-        }
-
-        if (chord.Modifiers.HasFlag(GlobalHotkeyModifiers.Shift))
-        {
-            parts.Add("Shift");
-        }
-
-        var keyName = KeyInterop.KeyFromVirtualKey(chord.VirtualKey).ToString();
-        if (keyName.Length == 2 && keyName[0] == 'D' && char.IsDigit(keyName[1]))
-        {
-            keyName = keyName[1].ToString();
-        }
-
-        parts.Add(keyName);
-        return string.Join("+", parts);
-    }
-
-    private enum ShortcutTarget
-    {
-        RevealXpOverlayTab,
-        ToggleDividerResizing
     }
 }

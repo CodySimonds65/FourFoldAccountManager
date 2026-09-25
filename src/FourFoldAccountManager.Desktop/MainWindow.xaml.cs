@@ -45,10 +45,8 @@ public partial class MainWindow : Window
     private readonly SemaphoreSlim _viewportSaveGate = new(1, 1);
     private readonly DispatcherTimer _leaderboardRefreshTimer = new() { Interval = TimeSpan.FromMinutes(1) };
     private HwndSource? _windowSource;
-    private GlobalHotkeyRegistrationCoordinator? _hotkeyCoordinator;
+    private GlobalShortcutRegistry? _shortcuts;
     private PanelSettings _panelSettings = PanelSettings.Default;
-    private bool _revealShortcutAvailable;
-    private bool _toggleDividerResizeShortcutAvailable;
     private bool _isReady;
     private bool _batchLaunchInProgress;
     private bool _accountsPanelVisible = true;
@@ -150,8 +148,7 @@ public partial class MainWindow : Window
         }
 
         _windowSource.AddHook(MainWindow_HwndSourceHook);
-        _hotkeyCoordinator = new GlobalHotkeyRegistrationCoordinator(
-            new WindowsGlobalHotkeyRegistrar(windowHandle));
+        _shortcuts = new GlobalShortcutRegistry(new WindowsGlobalHotkeyRegistrar(windowHandle));
     }
 
     private IntPtr MainWindow_HwndSourceHook(
@@ -162,22 +159,29 @@ public partial class MainWindow : Window
         ref bool handled)
     {
         if (message == WmHotkey &&
-            _hotkeyCoordinator is { } coordinator &&
-            coordinator.TryGetChord(unchecked((int)wParam.ToInt64()), out var chord))
+            _shortcuts is { } shortcuts &&
+            shortcuts.TryResolve(unchecked((int)wParam.ToInt64()), _panelSettings, out var action) &&
+            HandleGlobalShortcut(action))
         {
-            if (chord == _panelSettings.RevealXpOverlayTabShortcut)
-            {
-                FullscreenOverlayTray.RevealEdgeTab();
-                handled = true;
-            }
-            else if (chord == _panelSettings.ToggleDividerResizingShortcut)
-            {
-                ToggleLayoutDividerResizing();
-                handled = true;
-            }
+            handled = true;
         }
 
         return IntPtr.Zero;
+    }
+
+    private bool HandleGlobalShortcut(GlobalShortcutAction action)
+    {
+        switch (action)
+        {
+            case GlobalShortcutAction.RevealOverlays:
+                FullscreenOverlayTray.RevealEdgeTab();
+                return true;
+            case GlobalShortcutAction.ToggleDividerResizing:
+                ToggleLayoutDividerResizing();
+                return true;
+            default:
+                return false;
+        }
     }
 
     private AccountProfile? SelectedAccount => AccountsListBox.SelectedItem as AccountProfile;
@@ -212,11 +216,7 @@ public partial class MainWindow : Window
                 _leaderboard = null;
             }
             LeaderboardPanelView.Configure(_leaderboard, enabled => SetLeaderboardSharingAsync(enabled));
-            _revealShortcutAvailable =
-                _hotkeyCoordinator?.TryInitialize(_panelSettings.RevealXpOverlayTabShortcut) == true;
-            _toggleDividerResizeShortcutAvailable =
-                _panelSettings.ToggleDividerResizingShortcut != _panelSettings.RevealXpOverlayTabShortcut &&
-                _hotkeyCoordinator?.TryInitialize(_panelSettings.ToggleDividerResizingShortcut) == true;
+            _shortcuts?.Initialize(_panelSettings);
             foreach (var (accountId, size) in _panelSettings.GameViewportSizes)
             {
                 await _browserSessions.SetGameViewportSizeAsync(accountId, size);
@@ -828,10 +828,10 @@ public partial class MainWindow : Window
         var dialog = new SettingsDialog(
             _panelSettings.FillGameToPanel,
             _panelSettings.ShowFullScreenExitButton,
-            _panelSettings.RevealXpOverlayTabShortcut,
-            _revealShortcutAvailable,
-            _panelSettings.ToggleDividerResizingShortcut,
-            _toggleDividerResizeShortcutAvailable)
+            GlobalShortcutActions.All.ToDictionary(
+                action => action,
+                action => GlobalShortcutActions.GetChord(_panelSettings, action)),
+            GlobalShortcutActions.All.Where(action => _shortcuts?.IsAvailable(action) != true).ToHashSet())
         {
             Owner = this
         };
@@ -840,28 +840,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        var revealShortcutChanged =
-            dialog.RevealXpOverlayTabShortcut != _panelSettings.RevealXpOverlayTabShortcut;
-        var dividerShortcutChanged =
-            dialog.ToggleDividerResizingShortcut != _panelSettings.ToggleDividerResizingShortcut;
-        var shortcutChanges = new List<GlobalHotkeyShortcutChange>();
-        if (revealShortcutChanged)
-        {
-            shortcutChanges.Add(new GlobalHotkeyShortcutChange(
-                _panelSettings.RevealXpOverlayTabShortcut,
-                dialog.RevealXpOverlayTabShortcut));
-        }
-
-        if (dividerShortcutChanged)
-        {
-            shortcutChanges.Add(new GlobalHotkeyShortcutChange(
-                _panelSettings.ToggleDividerResizingShortcut,
-                dialog.ToggleDividerResizingShortcut));
-        }
-
+        var changedShortcuts = GlobalShortcutActions.All
+            .Where(action => dialog.Shortcuts[action] != GlobalShortcutActions.GetChord(_panelSettings, action))
+            .ToArray();
         if (dialog.FillGameToPanel == _panelSettings.FillGameToPanel &&
             dialog.ShowFullScreenExitButton == _panelSettings.ShowFullScreenExitButton &&
-            shortcutChanges.Count == 0 &&
+            changedShortcuts.Length == 0 &&
             !dialog.ResetLayoutSizes)
         {
             return;
@@ -872,6 +856,10 @@ public partial class MainWindow : Window
         SettingsButton.IsEnabled = false;
         try
         {
+            PanelSettings WithDialogShortcuts(PanelSettings settings) =>
+                GlobalShortcutActions.All.Aggregate(settings,
+                    (candidate, action) => GlobalShortcutActions.WithChord(candidate, action, dialog.Shortcuts[action]));
+
             async Task PersistDialogSettingsAsync()
             {
                 nextSettings = await UpdateSettingsAsync(async currentSettings =>
@@ -879,13 +867,11 @@ public partial class MainWindow : Window
                     var candidate = dialog.ResetLayoutSizes
                         ? PanelLayoutPolicy.ResetSplitStates(currentSettings)
                         : currentSettings;
-                    candidate = candidate with
+                    candidate = WithDialogShortcuts(candidate with
                     {
                         FillGameToPanel = dialog.FillGameToPanel,
-                        ShowFullScreenExitButton = dialog.ShowFullScreenExitButton,
-                        RevealXpOverlayTabShortcut = dialog.RevealXpOverlayTabShortcut,
-                        ToggleDividerResizingShortcut = dialog.ToggleDividerResizingShortcut
-                    };
+                        ShowFullScreenExitButton = dialog.ShowFullScreenExitButton
+                    });
                     scalingChanged = candidate.FillGameToPanel != currentSettings.FillGameToPanel;
                     if (scalingChanged)
                     {
@@ -898,28 +884,17 @@ public partial class MainWindow : Window
                     : Task.CompletedTask);
             }
 
-            if (shortcutChanges.Count > 0)
+            if (changedShortcuts.Length > 0)
             {
-                var registered = _hotkeyCoordinator is not null &&
-                    await _hotkeyCoordinator.TryReplaceAsync(
-                        shortcutChanges,
-                        PersistDialogSettingsAsync);
+                var registered = _shortcuts is not null &&
+                    await _shortcuts.ApplyAsync(
+                        _panelSettings, WithDialogShortcuts(_panelSettings), PersistDialogSettingsAsync);
                 if (!registered)
                 {
                     MessageBox.Show(this,
                         "Windows couldn't register one or more new shortcuts. Your previous saved shortcuts and registrations remain unchanged. Choose different combinations and try again.",
                         "Shortcut unavailable", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
-                }
-
-                if (revealShortcutChanged)
-                {
-                    _revealShortcutAvailable = true;
-                }
-
-                if (dividerShortcutChanged)
-                {
-                    _toggleDividerResizeShortcutAvailable = true;
                 }
             }
             else
@@ -948,12 +923,10 @@ public partial class MainWindow : Window
                 ? nextSettings.FillGameToPanel
                     ? "Game scaling set to Fill panel."
                     : "Game scaling set to Fit entire game."
-                : revealShortcutChanged && dividerShortcutChanged
+                : changedShortcuts.Length > 1
                 ? "Global shortcuts updated."
-                : dividerShortcutChanged
-                ? "Layout divider resizing shortcut updated."
-                : revealShortcutChanged
-                ? "Full-screen XP overlay reveal shortcut updated."
+                : changedShortcuts.Length == 1
+                ? $"{GlobalShortcutActions.DisplayName(changedShortcuts[0])} shortcut updated."
                 : nextSettings.ShowFullScreenExitButton
                     ? "Full-screen Exit button enabled."
                     : "Full-screen Exit button hidden. Press Esc to leave full screen.";
@@ -2753,11 +2726,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        var hotkeyCoordinator = _hotkeyCoordinator;
-        _hotkeyCoordinator = null;
+        var shortcuts = _shortcuts;
+        _shortcuts = null;
         try
         {
-            hotkeyCoordinator?.Dispose();
+            shortcuts?.Dispose();
         }
         catch
         {
