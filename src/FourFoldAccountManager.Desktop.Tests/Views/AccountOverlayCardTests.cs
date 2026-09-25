@@ -44,6 +44,20 @@ public sealed class AccountOverlayCardTests
     });
 
     [Fact]
+    public void StatsCardHeaderWrapsLongLabelsInsteadOfTrimming() => WpfTestHost.Run(() =>
+    {
+        var data = new StatsCardData("A very long account label here", true, StatsContent);
+        var (layer, key) = RenderCard(OverlayAddOnKind.Stats, data, 1000, 500);
+
+        var header = VisualTree.Descendants<TextBlock>(layer.Frames[key])
+            .First(text => text.Text == data.HeaderText);
+
+        Assert.EndsWith("· stale", header.Text);
+        Assert.Equal(TextWrapping.Wrap, header.TextWrapping);
+        Assert.Equal(TextTrimming.None, header.TextTrimming);
+    });
+
+    [Fact]
     public void StaleCardsMarkTheirHeader()
     {
         Assert.Equal("Alice · Mage 42 · stale", new StatsCardData("Alice", true, StatsContent).HeaderText);
