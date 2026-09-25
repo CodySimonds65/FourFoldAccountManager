@@ -54,6 +54,28 @@ public sealed class XpCalcCardContentTests
     }
 
     [Fact]
+    public void SavedTargetAboveTheCapFallsBackToTheNextLevel()
+    {
+        var content = XpCalcCardContent.FromSnapshot(Snapshot(), XpCalculatorTargets.MaxTargetLevel + 1);
+
+        Assert.True(content.IsAvailable);
+        Assert.Equal("Warrior 2 → 3", content.TargetLine);
+        Assert.Equal(3, content.TargetLevel);
+    }
+
+    [Theory]
+    [InlineData(0L)]
+    [InlineData(-5L)]
+    public void NonPositiveSavedTargetFallsBackToTheNextLevel(long savedTarget)
+    {
+        var content = XpCalcCardContent.FromSnapshot(Snapshot(), savedTarget);
+
+        Assert.True(content.IsAvailable);
+        Assert.Equal("Warrior 2 → 3", content.TargetLine);
+        Assert.Equal(3, content.TargetLevel);
+    }
+
+    [Fact]
     public void MissingActiveClassShowsTheCalculatorStatus()
     {
         var content = XpCalcCardContent.FromSnapshot(

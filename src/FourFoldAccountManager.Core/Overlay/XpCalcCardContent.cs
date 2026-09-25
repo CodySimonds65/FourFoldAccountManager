@@ -31,13 +31,17 @@ public sealed record XpCalcCardContent(
 
         var level = state.CurrentLevel;
         var classLine = string.Create(CultureInfo.InvariantCulture, $"{state.ClassName} {level}");
-        if (savedTargetLevel is { } saved && saved > 0 && saved <= level)
+        // A saved target above the cap can't be used; treat it as if nothing were saved.
+        var usableSavedTarget = savedTargetLevel is { } value && value <= XpCalculatorTargets.MaxTargetLevel
+            ? value
+            : (long?)null;
+        if (usableSavedTarget is { } saved && saved > 0 && saved <= level)
         {
             return new XpCalcCardContent(true,
                 string.Create(CultureInfo.InvariantCulture, $"{classLine} → {saved}"), TargetReached, string.Empty, saved);
         }
 
-        var target = savedTargetLevel is { } wanted && wanted > level ? wanted : level + 1;
+        var target = usableSavedTarget is { } wanted && wanted > level ? wanted : level + 1;
         var targetLine = string.Create(CultureInfo.InvariantCulture, $"{classLine} → {target}");
         var projected = state.WithTarget(target);
         if (!projected.IsValid)
