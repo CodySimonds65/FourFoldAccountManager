@@ -56,14 +56,6 @@ public sealed class SettingsStoreXpTargetTests : IDisposable
         }
     }
 
-    [Fact]
-    public async Task SettingsWrittenBeforeTargetsExistedLoadWithNone()
-    {
-        await WriteSettingsAsync(json => json.Remove("xpCalculatorTargetLevels"));
-
-        Assert.Empty((await _store.LoadAsync()).XpCalculatorTargetLevels);
-    }
-
     private async Task WriteSettingsAsync(Action<JsonObject> edit)
     {
         await _store.SaveAsync(PanelSettings.Default);

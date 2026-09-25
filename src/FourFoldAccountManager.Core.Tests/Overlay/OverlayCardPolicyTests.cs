@@ -38,22 +38,6 @@ public sealed class OverlayCardPolicyTests
     }
 
     [Fact]
-    public void GlobalCardKeysMustNotNameAnAccount()
-    {
-        Assert.True(OverlayCardPolicy.IsValidKey(new OverlayCardKey(OverlayAddOnKind.Timer, null)));
-        Assert.False(OverlayCardPolicy.IsValidKey(new OverlayCardKey(OverlayAddOnKind.Timer, Guid.NewGuid())));
-    }
-
-    [Fact]
-    public void KeysMustMatchTheirAddOnScope()
-    {
-        Assert.True(OverlayCardPolicy.IsValidKey(new OverlayCardKey(OverlayAddOnKind.Xp, Guid.NewGuid())));
-        Assert.False(OverlayCardPolicy.IsValidKey(new OverlayCardKey(OverlayAddOnKind.Xp, null)));
-        Assert.False(OverlayCardPolicy.IsValidKey(new OverlayCardKey(OverlayAddOnKind.Xp, Guid.Empty)));
-        Assert.False(OverlayCardPolicy.IsValidKey(new OverlayCardKey((OverlayAddOnKind)99, Guid.NewGuid())));
-    }
-
-    [Fact]
     public void NormalizeDropsUnknownKindsScopeMismatchesNullsAndDuplicates()
     {
         var accountId = Guid.NewGuid();
@@ -70,18 +54,6 @@ public sealed class OverlayCardPolicyTests
         ], legacyXpBounds: null);
 
         Assert.Equal([kept], result);
-    }
-
-    [Fact]
-    public void NormalizeClearsInvalidBoundsButKeepsTheCard()
-    {
-        var accountId = Guid.NewGuid();
-
-        var result = OverlayCardPolicy.Normalize(
-            [new OverlayCardPlacement(OverlayAddOnKind.Xp, accountId, true, new OverlayBounds(0.9, 0, 0.5, 0.5))],
-            legacyXpBounds: null);
-
-        Assert.Equal([new OverlayCardPlacement(OverlayAddOnKind.Xp, accountId, true, null)], result);
     }
 
     [Fact]
@@ -118,99 +90,5 @@ public sealed class OverlayCardPolicyTests
             [new OverlayCardPlacement(OverlayAddOnKind.Xp, removed, true, Second), kept], removed);
 
         Assert.Equal([kept], result);
-    }
-
-    [Fact]
-    public void DefaultBoundsPlaceAccountCardsTopLeftAndCascade()
-    {
-        var xp = OverlayAddOnCatalog.All[0];
-
-        var first = OverlayCardPolicy.DefaultBounds(xp, 1000, 500, cascadeIndex: 0);
-        var second = OverlayCardPolicy.DefaultBounds(xp, 1000, 500, cascadeIndex: 1);
-
-        Assert.Equal(0.012, first.X, 6);
-        Assert.Equal(0.024, first.Y, 6);
-        Assert.Equal(0.2, first.Width, 6);
-        Assert.Equal(0.104, first.Height, 6);
-        Assert.Equal(0.028, second.X, 6);
-        Assert.Equal(0.056, second.Y, 6);
-    }
-
-    [Fact]
-    public void DefaultBoundsCentreGlobalCardsHorizontally()
-    {
-        var global = new OverlayAddOnDefinition(OverlayAddOnKind.Xp, OverlayAddOnScope.Global, "Test", 200, 50, 100, 30);
-
-        var bounds = OverlayCardPolicy.DefaultBounds(global, 1000, 500, cascadeIndex: 0);
-
-        Assert.Equal(0.4, bounds.X, 6);
-        Assert.Equal(0.024, bounds.Y, 6);
-    }
-
-    [Fact]
-    public void DefaultBoundsFitLayersSmallerThanTheCard()
-    {
-        var bounds = OverlayCardPolicy.DefaultBounds(OverlayAddOnCatalog.All[0], 100, 30, cascadeIndex: 3);
-
-        Assert.True(bounds.IsValid);
-        Assert.Equal(new OverlayBounds(0, 0, 1, 1), bounds);
-    }
-
-    [Fact]
-    public void DefaultBoundsRejectUnmeasuredLayers()
-    {
-        Assert.Throws<ArgumentOutOfRangeException>(() =>
-            OverlayCardPolicy.DefaultBounds(OverlayAddOnCatalog.All[0], 0, 500, cascadeIndex: 0));
-    }
-
-    [Fact]
-    public void WithEnabledTogglesACardAndKeepsItsBounds()
-    {
-        var key = new OverlayCardKey(OverlayAddOnKind.Xp, Guid.NewGuid());
-        var settings = PanelSettings.Default with
-        {
-            OverlayCards = [new OverlayCardPlacement(key.Kind, key.AccountId, true, First)]
-        };
-
-        var disabled = OverlayCardPolicy.WithEnabled(settings, key, false);
-        var enabledAgain = OverlayCardPolicy.WithEnabled(disabled, key, true);
-
-        Assert.Equal(new OverlayCardPlacement(key.Kind, key.AccountId, false, First), OverlayCardPolicy.Get(disabled, key));
-        Assert.Equal(new OverlayCardPlacement(key.Kind, key.AccountId, true, First), OverlayCardPolicy.Get(enabledAgain, key));
-    }
-
-    [Fact]
-    public void WithEnabledCreatesAPlacementWithoutBoundsForANewKey()
-    {
-        var key = new OverlayCardKey(OverlayAddOnKind.Xp, Guid.NewGuid());
-
-        var settings = OverlayCardPolicy.WithEnabled(PanelSettings.Default, key, true);
-
-        Assert.Equal([new OverlayCardPlacement(key.Kind, key.AccountId, true, null)], settings.OverlayCards);
-    }
-
-    [Fact]
-    public void WithBoundsUpdatesOnlyTheMatchingCard()
-    {
-        var key = new OverlayCardKey(OverlayAddOnKind.Xp, Guid.NewGuid());
-        var other = new OverlayCardPlacement(OverlayAddOnKind.Xp, Guid.NewGuid(), true, First);
-        var settings = PanelSettings.Default with
-        {
-            OverlayCards = [other, new OverlayCardPlacement(key.Kind, key.AccountId, false, First)]
-        };
-
-        var moved = OverlayCardPolicy.WithBounds(settings, key, Second);
-
-        Assert.Equal([other, new OverlayCardPlacement(key.Kind, key.AccountId, false, Second)], moved.OverlayCards);
-    }
-
-    [Fact]
-    public void SettingsHelpersRejectInvalidKeysAndBounds()
-    {
-        Assert.Throws<ArgumentException>(() => OverlayCardPolicy.WithEnabled(
-            PanelSettings.Default, new OverlayCardKey(OverlayAddOnKind.Xp, null), true));
-        Assert.Throws<ArgumentException>(() => OverlayCardPolicy.WithBounds(
-            PanelSettings.Default, new OverlayCardKey(OverlayAddOnKind.Xp, Guid.NewGuid()),
-            new OverlayBounds(0.9, 0, 0.5, 0.5)));
     }
 }

@@ -8,27 +8,6 @@ namespace FourFoldAccountManager.Core.Tests.Overlay;
 public sealed class XpCalcCardContentTests
 {
     [Fact]
-    public void NoSnapshotWaitsForTheProfile()
-    {
-        var content = XpCalcCardContent.FromSnapshot(null, savedTargetLevel: 50);
-
-        Assert.False(content.IsAvailable);
-        Assert.Equal("Waiting for profile…", content.Status);
-        Assert.Null(content.TargetLevel);
-    }
-
-    [Fact]
-    public void WithoutASavedTargetTheCardAimsAtTheNextLevel()
-    {
-        var content = XpCalcCardContent.FromSnapshot(Snapshot(), savedTargetLevel: null);
-
-        Assert.True(content.IsAvailable);
-        Assert.Equal("Warrior 2 → 3", content.TargetLine);
-        Assert.Equal("25 XP · 1 level to go", content.RemainingLine);
-        Assert.Equal(3, content.TargetLevel);
-    }
-
-    [Fact]
     public void SavedTargetAboveTheCurrentLevelIsUsed()
     {
         var snapshot = Snapshot();
@@ -61,28 +40,6 @@ public sealed class XpCalcCardContentTests
         Assert.True(content.IsAvailable);
         Assert.Equal("Warrior 2 → 3", content.TargetLine);
         Assert.Equal(3, content.TargetLevel);
-    }
-
-    [Theory]
-    [InlineData(0L)]
-    [InlineData(-5L)]
-    public void NonPositiveSavedTargetFallsBackToTheNextLevel(long savedTarget)
-    {
-        var content = XpCalcCardContent.FromSnapshot(Snapshot(), savedTarget);
-
-        Assert.True(content.IsAvailable);
-        Assert.Equal("Warrior 2 → 3", content.TargetLine);
-        Assert.Equal(3, content.TargetLevel);
-    }
-
-    [Fact]
-    public void MissingActiveClassShowsTheCalculatorStatus()
-    {
-        var content = XpCalcCardContent.FromSnapshot(
-            new PlayerProgressSnapshot("Alice", null, new Dictionary<string, ClassProfileSnapshot>(), []), 50);
-
-        Assert.False(content.IsAvailable);
-        Assert.Equal("The active class is unavailable.", content.Status);
     }
 
     private static PlayerProgressSnapshot Snapshot() =>

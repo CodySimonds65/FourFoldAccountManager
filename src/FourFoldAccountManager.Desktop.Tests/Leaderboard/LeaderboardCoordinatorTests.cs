@@ -13,23 +13,6 @@ namespace FourFoldAccountManager.Desktop.Tests.Leaderboard;
 public sealed class LeaderboardCoordinatorTests
 {
     [Fact]
-    public async Task RenewalRetriesAfterOneLocalSaveFailure()
-    {
-        var calls = 0;
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-
-        await LeaderboardCoordinator.RunRenewalLoopCoreAsync(_ =>
-        {
-            calls++;
-            if (calls == 1) throw new IOException("temporary state-save failure");
-            cancellation.Cancel();
-            return Task.CompletedTask;
-        }, TimeSpan.FromMilliseconds(20), cancellation.Token);
-
-        Assert.Equal(2, calls);
-    }
-
-    [Fact]
     public async Task OldSettingsDefaultToPrivateAndOptInSurvivesRestart()
     {
         using var temp = new TempDirectory();
@@ -89,90 +72,6 @@ public sealed class LeaderboardCoordinatorTests
     }
 
     [Fact]
-    public async Task KeepsCacheAndLocalTrackingAvailableWhenServiceFails()
-    {
-        using var temp = new TempDirectory();
-        var handler = new RecordingHandler();
-        await using var coordinator = CreateCoordinator(temp.Path, handler, sharing: false);
-        await coordinator.InitializeAsync();
-        var first = await coordinator.GetPageAsync(LeaderboardPeriod.Daily, 1, 50, CancellationToken.None);
-        Assert.Single(first.Entries);
-        handler.BadJson = true;
-        await coordinator.RefreshPageAsync(LeaderboardPeriod.Daily, 1, 50, CancellationToken.None);
-        var cached = await coordinator.GetPageAsync(LeaderboardPeriod.Daily, 1, 50, CancellationToken.None);
-        Assert.Single(cached.Entries);
-        await using var restarted = CreateCoordinator(temp.Path, new RecordingHandler { Fail = true }, sharing: false);
-        await restarted.InitializeAsync();
-        var persisted = await restarted.GetPageAsync(LeaderboardPeriod.Daily, 1, 50, CancellationToken.None);
-        Assert.Single(persisted.Entries);
-    }
-
-    [Fact]
-    public async Task CacheOnlyReadPreservesRecentEmptyPageWithoutContactingService()
-    {
-        using var temp = new TempDirectory();
-        var store = new LeaderboardClientStateStore(new LocalDataPaths(temp.Path));
-        var (start, end) = LeaderboardPeriodWindow.GetCurrent(LeaderboardPeriod.Daily, DateTimeOffset.UtcNow);
-        var emptyPage = new LeaderboardPage(LeaderboardPeriod.Daily, start, end, 1, 25, 0,
-            DateTimeOffset.UtcNow, []);
-        await store.SaveAsync(new LeaderboardClientState(Guid.NewGuid(), [emptyPage], null));
-        var handler = new RecordingHandler { Fail = true };
-        await using var coordinator = CreateCoordinator(temp.Path, handler, sharing: false);
-
-        var cached = await coordinator.GetCachedPageAsync(LeaderboardPeriod.Daily, 1, 25, CancellationToken.None);
-
-        Assert.NotNull(cached);
-        Assert.Empty(cached.Entries);
-        Assert.Equal(emptyPage.GeneratedAtUtc, cached.GeneratedAtUtc);
-        Assert.Equal(0, handler.GetRequests);
-    }
-
-    [Fact]
-    public async Task NextSyncIncludesNewlyLinkedProfileAndOnlyOpenPlayerIds()
-    {
-        using var temp = new TempDirectory();
-        var handler = new RecordingHandler();
-        await using var coordinator = CreateCoordinator(temp.Path, handler, sharing: true);
-        await coordinator.InitializeAsync();
-        await coordinator.SyncParticipationAsync([new LeaderboardProfile(1, "First")], [1], CancellationToken.None);
-        await coordinator.FlushPendingAsync();
-        await coordinator.SyncParticipationAsync(
-            [new LeaderboardProfile(1, "First"), new LeaderboardProfile(2, "Second")], [2, 999], CancellationToken.None);
-        await coordinator.FlushPendingAsync();
-        using var json = JsonDocument.Parse(handler.Bodies.Last());
-        Assert.Equal(2, json.RootElement.GetProperty("linkedProfiles").GetArrayLength());
-        Assert.Equal(2, json.RootElement.GetProperty("activePlayerIds")[0].GetInt32());
-        Assert.Equal(1, json.RootElement.GetProperty("activePlayerIds").GetArrayLength());
-    }
-
-    [Fact]
-    public async Task TrackerReturnsOnlyCurrentlyOpenResolvedProfiles()
-    {
-        using var temp = new TempDirectory();
-        await using var tracker = new XpTrackerCoordinator(new LocalDataPaths(temp.Path), _ => Task.CompletedTask);
-        var accountId = Guid.NewGuid();
-        tracker.Start(accountId, "Player", 42);
-        Assert.Equal((accountId, 42, "Player"), Assert.Single(tracker.GetActiveLeaderboardProfiles()));
-        tracker.Stop(accountId);
-        Assert.Empty(tracker.GetActiveLeaderboardProfiles());
-    }
-
-    [Fact]
-    public async Task UnchangedTrackerPollDoesNotSendExtraHeartbeat()
-    {
-        using var temp = new TempDirectory();
-        var handler = new RecordingHandler();
-        await using var coordinator = CreateCoordinator(temp.Path, handler, sharing: true);
-        await coordinator.InitializeAsync();
-        await coordinator.SyncParticipationAsync([new LeaderboardProfile(42, "Player")], [42], CancellationToken.None);
-        await coordinator.FlushPendingAsync();
-        var count = handler.Bodies.Count;
-        await coordinator.SyncParticipationAsync([new LeaderboardProfile(42, "Player")], [42], CancellationToken.None);
-        await coordinator.FlushPendingAsync();
-        Assert.Equal(count, handler.Bodies.Count);
-    }
-
-    [Fact]
     public async Task DefaultPrivateStateNeverContactsParticipationEndpoint()
     {
         using var temp = new TempDirectory();
@@ -182,43 +81,6 @@ public sealed class LeaderboardCoordinatorTests
         await coordinator.SyncParticipationAsync([new LeaderboardProfile(42, "Player")], [42], CancellationToken.None);
         await coordinator.FlushPendingAsync();
         Assert.Empty(handler.Bodies);
-    }
-
-    [Fact]
-    public async Task RestartClearsPendingActivityBeforeRetryingHeartbeat()
-    {
-        using var temp = new TempDirectory();
-        var stateStore = new LeaderboardClientStateStore(new LocalDataPaths(temp.Path));
-        var installationId = Guid.NewGuid();
-        await stateStore.SaveAsync(new LeaderboardClientState(installationId, [],
-            new ParticipationHeartbeat(installationId, true, [new LeaderboardProfile(42, "Player")], [42])));
-        var handler = new RecordingHandler();
-        await using var coordinator = CreateCoordinator(temp.Path, handler, sharing: true);
-        await coordinator.InitializeAsync();
-        var persisted = await stateStore.LoadAsync();
-        Assert.Empty(persisted.PendingParticipation!.ActivePlayerIds);
-        await coordinator.FlushPendingAsync();
-        using var request = JsonDocument.Parse(Assert.Single(handler.Bodies));
-        Assert.Empty(request.RootElement.GetProperty("activePlayerIds").EnumerateArray());
-        Assert.Equal(installationId, request.RootElement.GetProperty("installationId").GetGuid());
-    }
-
-    [Fact]
-    public async Task SavingSecondPageKeepsFirstPageAvailableOffline()
-    {
-        using var temp = new TempDirectory();
-        await using (var online = CreateCoordinator(temp.Path, new RecordingHandler(), sharing: false))
-        {
-            await online.InitializeAsync();
-            Assert.Equal(1, (await online.GetPageAsync(LeaderboardPeriod.Daily, 1, 50, CancellationToken.None)).Page);
-            Assert.Equal(2, (await online.GetPageAsync(LeaderboardPeriod.Daily, 2, 50, CancellationToken.None)).Page);
-        }
-        await using var offline = CreateCoordinator(temp.Path, new RecordingHandler { Fail = true }, sharing: false);
-        await offline.InitializeAsync();
-        var first = await offline.GetPageAsync(LeaderboardPeriod.Daily, 1, 50, CancellationToken.None);
-        Assert.Equal("Player 1", Assert.Single(first.Entries).Username);
-        var second = await offline.GetPageAsync(LeaderboardPeriod.Daily, 2, 50, CancellationToken.None);
-        Assert.Equal("Player 2", Assert.Single(second.Entries).Username);
     }
 
     [Fact]

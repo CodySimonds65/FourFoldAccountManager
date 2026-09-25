@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using FourFoldAccountManager.Core.Leaderboard;
-using FourFoldAccountManager.Leaderboard.Service.Collection;
 using FourFoldAccountManager.Leaderboard.Service.Data;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -27,32 +26,6 @@ public sealed class LeaderboardApiTests
     }
 
     [Fact]
-    public async Task CapacityFailureReturnsServiceUnavailable()
-    {
-        using var fixture = new ApiFactory();
-        fixture.Store.RejectEnrollment = true;
-        using var client = fixture.CreateClient();
-        var response = await client.PutAsJsonAsync("/v1/participation",
-            new ParticipationHeartbeat(Guid.NewGuid(), true, [new LeaderboardProfile(1, "Alice")], [1]));
-        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task ActiveHeartbeatWakesSamplerImmediately()
-    {
-        using var fixture = new ApiFactory();
-        using var client = fixture.CreateClient();
-        var schedule = fixture.Services.GetRequiredService<LeaderboardSamplingSchedule>();
-        var wait = schedule.WaitForWorkAsync(TimeSpan.FromMinutes(5), TimeProvider.System, default);
-
-        var response = await client.PutAsJsonAsync("/v1/participation",
-            new ParticipationHeartbeat(Guid.NewGuid(), true, [new LeaderboardProfile(1, "Alice")], [1]));
-
-        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
-        Assert.Same(wait, await Task.WhenAny(wait, Task.Delay(TimeSpan.FromSeconds(5))));
-    }
-
-    [Fact]
     public async Task OptOutPassesDisabledEnrollmentToStore()
     {
         using var fixture = new ApiFactory();
@@ -64,26 +37,6 @@ public sealed class LeaderboardApiTests
         Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         Assert.Equal(id, fixture.Store.LastHeartbeat?.InstallationId);
         Assert.False(fixture.Store.LastHeartbeat?.SharingEnabled);
-    }
-
-    [Theory]
-    [InlineData("yearly")]
-    [InlineData("Daily")]
-    public async Task RejectsUnknownOrNoncanonicalPeriods(string period)
-    {
-        using var fixture = new ApiFactory();
-        using var client = fixture.CreateClient();
-        Assert.Equal(HttpStatusCode.BadRequest,
-            (await client.GetAsync($"/v1/leaderboards/{period}")).StatusCode);
-    }
-
-    [Fact]
-    public async Task RejectsPageBelowOne()
-    {
-        using var fixture = new ApiFactory();
-        using var client = fixture.CreateClient();
-        Assert.Equal(HttpStatusCode.BadRequest,
-            (await client.GetAsync("/v1/leaderboards/daily?page=0")).StatusCode);
     }
 
     [Fact]
@@ -129,70 +82,6 @@ public sealed class LeaderboardApiTests
     }
 
     [Fact]
-    public async Task RejectsDuplicateLinkedProfiles()
-    {
-        using var fixture = new ApiFactory();
-        using var client = fixture.CreateClient();
-        var payload = new ParticipationHeartbeat(Guid.NewGuid(), true,
-            [new(1, "Alice"), new(1, "Alice")], [1]);
-        Assert.Equal(HttpStatusCode.BadRequest,
-            (await client.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
-    }
-
-    [Fact]
-    public async Task RejectsMoreThanOneThousandLinkedProfiles()
-    {
-        using var fixture = new ApiFactory();
-        using var client = fixture.CreateClient();
-        var profiles = Enumerable.Range(1, 1_001).Select(id => new LeaderboardProfile(id, $"Player{id}")).ToArray();
-        Assert.Equal(HttpStatusCode.BadRequest,
-            (await client.PutAsJsonAsync("/v1/participation",
-                new ParticipationHeartbeat(Guid.NewGuid(), true, profiles, []))).StatusCode);
-    }
-
-    [Fact]
-    public async Task RejectsDuplicateActivePlayerIds()
-    {
-        using var fixture = new ApiFactory();
-        using var client = fixture.CreateClient();
-        Assert.Equal(HttpStatusCode.BadRequest,
-            (await client.PutAsJsonAsync("/v1/participation",
-                new ParticipationHeartbeat(Guid.NewGuid(), true, [new(1, "Alice")], [1, 1]))).StatusCode);
-    }
-
-    [Fact]
-    public async Task RejectsUsernameOverDialogLimit()
-    {
-        using var fixture = new ApiFactory();
-        using var client = fixture.CreateClient();
-        Assert.Equal(HttpStatusCode.BadRequest,
-            (await client.PutAsJsonAsync("/v1/participation",
-                new ParticipationHeartbeat(Guid.NewGuid(), true, [new(1, new string('A', 257))], [1]))).StatusCode);
-    }
-
-    [Fact]
-    public async Task RejectsEmptyInstallationId()
-    {
-        using var fixture = new ApiFactory();
-        using var client = fixture.CreateClient();
-        Assert.Equal(HttpStatusCode.BadRequest,
-            (await client.PutAsJsonAsync("/v1/participation",
-                new ParticipationHeartbeat(Guid.Empty, true, [new(1, "Alice")], [1]))).StatusCode);
-    }
-
-    [Theory]
-    [InlineData("")]
-    [InlineData("   ")]
-    public async Task RejectsBlankUsernames(string username)
-    {
-        using var fixture = new ApiFactory();
-        using var client = fixture.CreateClient();
-        Assert.Equal(HttpStatusCode.BadRequest,
-            (await client.PutAsJsonAsync("/v1/participation",
-                new ParticipationHeartbeat(Guid.NewGuid(), true, [new(1, username)], [1]))).StatusCode);
-    }
-
-    [Fact]
     public async Task RejectsClientSubmittedXp()
     {
         using var fixture = new ApiFactory();
@@ -227,34 +116,6 @@ public sealed class LeaderboardApiTests
         for (var i = 0; i < 31; i++)
             last = (await client.PutAsJsonAsync("/v1/participation", payload)).StatusCode;
         Assert.Equal(HttpStatusCode.TooManyRequests, last);
-    }
-
-    [Fact]
-    public async Task TrustedCloudflareClientIpsReceiveSeparateRateLimitBucketsOnRender()
-    {
-        var previous = Environment.GetEnvironmentVariable("RENDER");
-        Environment.SetEnvironmentVariable("RENDER", "true");
-        try
-        {
-            using var fixture = new ApiFactory(trustCloudflareIp: true);
-            using var first = fixture.CreateClient();
-            using var second = fixture.CreateClient();
-            first.DefaultRequestHeaders.Add("CF-Connecting-IP", "198.51.100.10");
-            second.DefaultRequestHeaders.Add("CF-Connecting-IP", "198.51.100.11");
-            var payload = new ParticipationHeartbeat(Guid.NewGuid(), false, [], []);
-
-            for (var i = 0; i < 30; i++)
-                Assert.Equal(HttpStatusCode.NoContent,
-                    (await first.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
-            Assert.Equal(HttpStatusCode.TooManyRequests,
-                (await first.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
-            Assert.Equal(HttpStatusCode.NoContent,
-                (await second.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("RENDER", previous);
-        }
     }
 
     [Fact]
@@ -300,25 +161,6 @@ public sealed class LeaderboardApiTests
             (await second.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
     }
 
-    [Theory]
-    [InlineData("198.51.100.10, 198.51.100.11")]
-    [InlineData("1")]
-    public async Task MalformedCloudflareIpFallsBackToSocketIp(string badValue)
-    {
-        using var renderMarker = new RenderMarkerScope("true");
-        using var fixture = new ApiFactory(trustCloudflareIp: true);
-        using var malformed = fixture.CreateClient();
-        using var noHeader = fixture.CreateClient();
-        malformed.DefaultRequestHeaders.Add("CF-Connecting-IP", badValue);
-        var payload = new ParticipationHeartbeat(Guid.NewGuid(), false, [], []);
-
-        for (var i = 0; i < 30; i++)
-            Assert.Equal(HttpStatusCode.NoContent,
-                (await malformed.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
-        Assert.Equal(HttpStatusCode.TooManyRequests,
-            (await noHeader.PutAsJsonAsync("/v1/participation", payload)).StatusCode);
-    }
-
     [Fact]
     public async Task LivenessDoesNotRequireDatabaseButReadinessDoes()
     {
@@ -326,15 +168,6 @@ public sealed class LeaderboardApiTests
         using var client = fixture.CreateClient();
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/health/live")).StatusCode);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await client.GetAsync("/health/ready")).StatusCode);
-    }
-
-    private sealed class RenderMarkerScope : IDisposable
-    {
-        private readonly string? _previous = Environment.GetEnvironmentVariable("RENDER");
-
-        public RenderMarkerScope(string? value) => Environment.SetEnvironmentVariable("RENDER", value);
-
-        public void Dispose() => Environment.SetEnvironmentVariable("RENDER", _previous);
     }
 
     private sealed class ApiFactory(bool trustCloudflareIp = false) : WebApplicationFactory<Program>

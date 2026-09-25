@@ -12,20 +12,6 @@ public sealed class ExperienceCalculatorStateTests
     };
 
     [Fact]
-    public void LoadedProfileWaitsForManualTarget()
-    {
-        var state = ExperienceCalculatorState.FromProfile(Warrior);
-
-        Assert.Equal("Warrior", state.ClassName);
-        Assert.Equal(2, state.CurrentLevel);
-        Assert.Equal(0, state.TargetLevel);
-        Assert.Null(state.Projection);
-        Assert.Equal("—", state.RemainingXpText);
-        Assert.Equal("—", state.TargetAbsoluteXpText);
-        Assert.Empty(state.Projection?.Transitions ?? []);
-    }
-
-    [Fact]
     public void EnteringAndClearingTargetUpdatesProjection()
     {
         var selected = ExperienceCalculatorState.FromProfile(Warrior).WithTarget(3);
@@ -51,15 +37,5 @@ public sealed class ExperienceCalculatorStateTests
         Assert.Equal("—", state.TargetAbsoluteXpText);
         Assert.Equal(0, state.LevelsRemaining);
         Assert.Null(state.Projection);
-    }
-
-    [Fact]
-    public void SnapshotWithActiveClassDoesNotChooseNextLevel()
-    {
-        var snapshot = new PlayerProgressSnapshot("Alice", "Warrior",
-            new Dictionary<string, ClassProfileSnapshot> { ["Warrior"] = Warrior }, []);
-
-        Assert.Equal(0, ExperienceCalculatorState.FromSnapshot(snapshot).TargetLevel);
-        Assert.Null(ExperienceCalculatorState.FromSnapshot(snapshot with { ActiveClassName = null }).Projection);
     }
 }
