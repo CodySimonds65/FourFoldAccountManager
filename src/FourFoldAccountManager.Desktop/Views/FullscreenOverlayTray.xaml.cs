@@ -1,19 +1,37 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using FourFoldAccountManager.Core.Models;
 
 namespace FourFoldAccountManager.Desktop.Views;
 
-public partial class FullscreenXpOverlayTray : UserControl
+public sealed record OverlayTraySwitch(
+    OverlayCardKey Key,
+    string Label,
+    string Detail,
+    bool IsEnabled,
+    string AccessibleName);
+
+public sealed record OverlayTrayAccountRow(
+    Guid AccountId,
+    string AccountLabel,
+    IReadOnlyList<OverlayTraySwitch> Switches);
+
+public sealed class OverlayCardToggleRequestedEventArgs(OverlayCardKey key, bool enabled) : EventArgs
+{
+    public OverlayCardKey Key { get; } = key;
+
+    public bool Enabled { get; } = enabled;
+}
+
+public partial class FullscreenOverlayTray : UserControl
 {
     private readonly FullscreenXpOverlayTabVisibilityState _tabVisibilityState = new();
-    private Point? _dragStartPoint;
-    private XpOverlayAccountChoice? _dragChoice;
     private bool _isFullScreen;
     private bool _isEditing;
     private bool _ignoreEdgeTabMouseEnterUntilLeave;
 
-    public FullscreenXpOverlayTray()
+    public FullscreenOverlayTray()
     {
         InitializeComponent();
     }
@@ -22,10 +40,16 @@ public partial class FullscreenXpOverlayTray : UserControl
 
     public event EventHandler? DoneRequested;
 
-    public void SetChoices(IReadOnlyList<XpOverlayAccountChoice> choices)
+    public event EventHandler<OverlayCardToggleRequestedEventArgs>? CardToggleRequested;
+
+    // Rows are rebuilt from saved settings after every toggle, so a failed save shows the persisted state.
+    public void SetRows(IReadOnlyList<OverlayTraySwitch> globalSwitches, IReadOnlyList<OverlayTrayAccountRow> accountRows)
     {
-        ArgumentNullException.ThrowIfNull(choices);
-        ChoicesControl.ItemsSource = choices.ToArray();
+        ArgumentNullException.ThrowIfNull(globalSwitches);
+        ArgumentNullException.ThrowIfNull(accountRows);
+        GlobalSwitchesControl.ItemsSource = globalSwitches.ToArray();
+        GlobalSection.Visibility = globalSwitches.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        AccountRowsControl.ItemsSource = accountRows.ToArray();
     }
 
     public void SetFullscreen(bool isFullScreen)
@@ -61,6 +85,24 @@ public partial class FullscreenXpOverlayTray : UserControl
         _tabVisibilityState.Reveal();
         _ignoreEdgeTabMouseEnterUntilLeave = pointerWasAlreadyOverTab;
         UpdateEdgeTabVisibility();
+    }
+
+    internal void RequestToggle(OverlayCardKey key, bool enabled)
+    {
+        if (!_isEditing)
+        {
+            return;
+        }
+
+        CardToggleRequested?.Invoke(this, new OverlayCardToggleRequestedEventArgs(key, enabled));
+    }
+
+    private void Switch_Click(object sender, RoutedEventArgs args)
+    {
+        if (sender is CheckBox { DataContext: OverlayTraySwitch item } checkBox)
+        {
+            RequestToggle(item.Key, checkBox.IsChecked == true);
+        }
     }
 
     private void EdgeTab_Click(object sender, RoutedEventArgs args) => RequestEdit();
@@ -110,42 +152,5 @@ public partial class FullscreenXpOverlayTray : UserControl
 
         SetEditing(true);
         EditRequested?.Invoke(this, EventArgs.Empty);
-    }
-
-    private void Choice_MouseLeftButtonDown(object sender, MouseButtonEventArgs args)
-    {
-        if (sender is FrameworkElement { DataContext: XpOverlayAccountChoice choice })
-        {
-            _dragChoice = choice;
-            _dragStartPoint = args.GetPosition(this);
-        }
-    }
-
-    private void Choice_MouseLeftButtonUp(object sender, MouseButtonEventArgs args)
-    {
-        _dragChoice = null;
-        _dragStartPoint = null;
-    }
-
-    private void Choice_MouseMove(object sender, MouseEventArgs args)
-    {
-        if (!_isEditing || _dragChoice is not { } choice || _dragStartPoint is not { } start ||
-            args.LeftButton != MouseButtonState.Pressed || sender is not FrameworkElement source)
-        {
-            return;
-        }
-
-        var current = args.GetPosition(this);
-        if (Math.Abs(current.X - start.X) < SystemParameters.MinimumHorizontalDragDistance &&
-            Math.Abs(current.Y - start.Y) < SystemParameters.MinimumVerticalDragDistance)
-        {
-            return;
-        }
-
-        var data = new DataObject();
-        data.SetData(XpOverlayLayer.AccountDragDataFormat, choice.AccountId);
-        _dragChoice = null;
-        _dragStartPoint = null;
-        DragDrop.DoDragDrop(source, data, DragDropEffects.Move);
     }
 }
