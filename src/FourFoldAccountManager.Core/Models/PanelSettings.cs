@@ -46,6 +46,9 @@ public sealed record PanelSettings
     public IReadOnlyDictionary<Guid, GameViewportSize> GameViewportSizes { get; init; } =
         new Dictionary<Guid, GameViewportSize>();
 
+    [JsonConverter(typeof(LenientTargetLevelsJsonConverter))]
+    public IReadOnlyDictionary<Guid, long> XpCalculatorTargetLevels { get; init; } = new Dictionary<Guid, long>();
+
     [JsonConverter(typeof(OverlayCardListJsonConverter))]
     public IReadOnlyList<OverlayCardPlacement> OverlayCards { get; init; } = Array.Empty<OverlayCardPlacement>();
 

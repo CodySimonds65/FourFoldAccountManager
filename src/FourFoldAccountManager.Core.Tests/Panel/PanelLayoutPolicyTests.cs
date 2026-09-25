@@ -92,4 +92,25 @@ public sealed class PanelLayoutPolicyTests
             new PanelSplitState("2x2.rows", [0.7, 0.3])).PluginsSidebarExpanded);
         Assert.False(PanelLayoutPolicy.ResetSplitStates(settings).PluginsSidebarExpanded);
     }
+
+    [Fact]
+    public void SettingsTransformsPreserveXpTargetsAndClearAccountRemovesTheAccountsTarget()
+    {
+        var accountId = Guid.NewGuid();
+        var otherId = Guid.NewGuid();
+        var targets = new Dictionary<Guid, long> { [accountId] = 50, [otherId] = 20 };
+        var settings = PanelSettings.Default with
+        {
+            SlotAccountIds = [accountId, otherId, null, null, null],
+            XpCalculatorTargetLevels = targets
+        };
+
+        Assert.Equal(targets, PanelLayoutPolicy.WithLayout(settings, PanelLayout.OneByTwo).XpCalculatorTargetLevels);
+        Assert.Equal(targets, PanelLayoutPolicy.Assign(settings, 2, Guid.NewGuid()).XpCalculatorTargetLevels);
+        Assert.Equal(targets, PanelLayoutPolicy.WithSplitState(settings,
+            new PanelSplitState("2x2.rows", [0.7, 0.3])).XpCalculatorTargetLevels);
+        Assert.Equal(targets, PanelLayoutPolicy.ResetSplitStates(settings).XpCalculatorTargetLevels);
+        Assert.Equal(new Dictionary<Guid, long> { [otherId] = 20 },
+            PanelLayoutPolicy.ClearAccount(settings, accountId).XpCalculatorTargetLevels);
+    }
 }

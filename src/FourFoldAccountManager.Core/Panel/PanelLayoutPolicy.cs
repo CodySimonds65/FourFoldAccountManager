@@ -1,3 +1,4 @@
+using FourFoldAccountManager.Core.Calculation;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Overlay;
 
@@ -157,6 +158,7 @@ public static class PanelLayoutPolicy
             ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
+            XpCalculatorTargetLevels = settings.XpCalculatorTargetLevels,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
             TimerSplitShortcut = settings.TimerSplitShortcut,
@@ -206,6 +208,7 @@ public static class PanelLayoutPolicy
             ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
+            XpCalculatorTargetLevels = settings.XpCalculatorTargetLevels,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
             TimerSplitShortcut = settings.TimerSplitShortcut,
@@ -242,6 +245,7 @@ public static class PanelLayoutPolicy
             ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
+            XpCalculatorTargetLevels = XpCalculatorTargets.RemoveAccount(settings.XpCalculatorTargetLevels, accountId),
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
             TimerSplitShortcut = settings.TimerSplitShortcut,
@@ -335,6 +339,7 @@ public static class PanelLayoutPolicy
             ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
+            XpCalculatorTargetLevels = settings.XpCalculatorTargetLevels,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
             TimerSplitShortcut = settings.TimerSplitShortcut,

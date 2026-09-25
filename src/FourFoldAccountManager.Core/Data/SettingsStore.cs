@@ -1,4 +1,5 @@
 using System.Text.Json;
+using FourFoldAccountManager.Core.Calculation;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Overlay;
 using FourFoldAccountManager.Core.Panel;
@@ -149,6 +150,7 @@ public sealed class SettingsStore
             ShareLinkedAccounts = settings.ShareLinkedAccounts,
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
+            XpCalculatorTargetLevels = XpCalculatorTargets.Normalize(settings.XpCalculatorTargetLevels),
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
             TimerSplitShortcut = ValidOrDefault(settings.TimerSplitShortcut, GlobalHotkeyChord.DefaultTimerSplit),
