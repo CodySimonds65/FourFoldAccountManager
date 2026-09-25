@@ -33,6 +33,17 @@ public sealed class XpCalculatorTargetsTests
     }
 
     [Fact]
+    public void WithTargetThrowsAboveTheCapAndAcceptsTheCap()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            XpCalculatorTargets.WithTarget(PanelSettings.Default, Alice, XpCalculatorTargets.MaxTargetLevel + 1));
+
+        var settings = XpCalculatorTargets.WithTarget(PanelSettings.Default, Alice, XpCalculatorTargets.MaxTargetLevel);
+
+        Assert.Equal(XpCalculatorTargets.MaxTargetLevel, XpCalculatorTargets.Get(settings, Alice));
+    }
+
+    [Fact]
     public void NormalizeDropsEmptyAccountsAndNonPositiveLevels()
     {
         var normalized = XpCalculatorTargets.Normalize(new Dictionary<Guid, long>
@@ -44,6 +55,18 @@ public sealed class XpCalculatorTargetsTests
 
         Assert.Equal(new Dictionary<Guid, long> { [Alice] = 50 }, normalized);
         Assert.Empty(XpCalculatorTargets.Normalize(null));
+    }
+
+    [Fact]
+    public void NormalizeDropsEntriesAboveTheCap()
+    {
+        var normalized = XpCalculatorTargets.Normalize(new Dictionary<Guid, long>
+        {
+            [Alice] = 50,
+            [Bob] = XpCalculatorTargets.MaxTargetLevel + 1
+        });
+
+        Assert.Equal(new Dictionary<Guid, long> { [Alice] = 50 }, normalized);
     }
 
     [Fact]

@@ -39,8 +39,12 @@ public sealed record ExperienceCalculatorState(
         return Unselected(profile);
     }
 
-    public ExperienceCalculatorState WithTarget(long targetLevel) =>
-        Profile is null ? this with { TargetLevel = targetLevel } : Create(Profile, targetLevel);
+    public ExperienceCalculatorState WithTarget(long targetLevel) => Profile switch
+    {
+        null => this with { TargetLevel = targetLevel },
+        { } profile when targetLevel > XpCalculatorTargets.MaxTargetLevel => TooHigh(profile, targetLevel),
+        { } profile => Create(profile, targetLevel)
+    };
 
     public ExperienceCalculatorState WithoutTarget() =>
         Profile is null ? this : Unselected(Profile);
@@ -67,6 +71,11 @@ public sealed record ExperienceCalculatorState(
             projection,
             profile);
     }
+
+    // Above the cap, skip ExperienceCurve.Project entirely: it builds one transition per level.
+    private static ExperienceCalculatorState TooHigh(ClassProfileSnapshot profile, long targetLevel) =>
+        new(false, "Target level must be 9,999 or lower.", profile.ClassName, profile.Level, targetLevel,
+            "—", "—", "—", 0, false, null, profile);
 
     private static ExperienceCalculatorState Unavailable(string status, string? className = null) =>
         new(false, status, className, 0, 0, "—", "—", "—", 0, false, null, null);

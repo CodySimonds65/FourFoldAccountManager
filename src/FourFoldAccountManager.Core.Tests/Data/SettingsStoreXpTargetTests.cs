@@ -36,13 +36,15 @@ public sealed class SettingsStoreXpTargetTests : IDisposable
     public async Task BadTargetDataStillLoads()
     {
         var bob = Guid.NewGuid();
+        var carol = Guid.NewGuid();
         await WriteSettingsAsync(json => json["xpCalculatorTargetLevels"] = new JsonObject
         {
             [Alice.ToString()] = 50,
             ["not-a-guid"] = 5,
             [bob.ToString()] = -3,
             [Guid.NewGuid().ToString()] = "x",
-            [Guid.Empty.ToString()] = 7
+            [Guid.Empty.ToString()] = 7,
+            [carol.ToString()] = 999999999
         });
 
         Assert.Equal(new Dictionary<Guid, long> { [Alice] = 50 }, (await _store.LoadAsync()).XpCalculatorTargetLevels);
