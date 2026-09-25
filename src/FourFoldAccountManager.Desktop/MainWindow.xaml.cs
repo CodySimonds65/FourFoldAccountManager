@@ -1170,12 +1170,13 @@ public partial class MainWindow : Window
 
                 if (account is not null)
                 {
+                    var isStale = states.TryGetValue(trackedAccountId, out var trackerState) && trackerState.IsStale;
                     var switches = new List<OverlayTraySwitch>();
                     foreach (var definition in OverlayAddOnCatalog.All.Where(
                                  definition => definition.Scope == OverlayAddOnScope.Account))
                     {
                         AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, trackedAccountId),
-                            label, trackerRow, cards, switches);
+                            label, trackerRow, isStale, cards, switches);
                     }
 
                     accountRows.Add(new OverlayTrayAccountRow(trackedAccountId, label, switches));
@@ -1191,7 +1192,7 @@ public partial class MainWindow : Window
                      definition => definition.Scope == OverlayAddOnScope.Global))
         {
             AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, null),
-                string.Empty, null, globalCards, globalSwitches);
+                string.Empty, null, false, globalCards, globalSwitches);
         }
 
         GlobalOverlayLayer.SetCards(globalCards, editing);
@@ -1204,10 +1205,11 @@ public partial class MainWindow : Window
         OverlayCardKey key,
         string accountLabel,
         XpTrackerRow? trackerRow,
+        bool isStale,
         List<OverlayCardModel> cards,
         List<OverlayTraySwitch> switches)
     {
-        if (CreateOverlayCardData(definition.Kind, accountLabel, trackerRow) is not { } data)
+        if (CreateOverlayCardData(definition.Kind, key.AccountId, accountLabel, trackerRow, isStale) is not { } data)
         {
             return;
         }
@@ -1225,10 +1227,16 @@ public partial class MainWindow : Window
     }
 
     // Each overlay add-on supplies its card data here; a kind without data is not offered in the Overlays panel.
-    private IOverlayCardData? CreateOverlayCardData(OverlayAddOnKind kind, string accountLabel, XpTrackerRow? trackerRow) =>
+    private IOverlayCardData? CreateOverlayCardData(
+        OverlayAddOnKind kind, Guid? accountId, string accountLabel, XpTrackerRow? trackerRow, bool isStale) =>
         kind switch
         {
             OverlayAddOnKind.Xp => new XpOverlayCardData(accountLabel, trackerRow?.XpPerHourText ?? "— XP/hr"),
+            OverlayAddOnKind.Stats when accountId is { } statsAccountId => new StatsCardData(accountLabel, isStale,
+                StatsCardContent.FromSnapshot(_xpTracker.GetLatestSnapshot(statsAccountId))),
+            OverlayAddOnKind.XpCalc when accountId is { } calcAccountId => new XpCalcCardData(accountLabel, isStale,
+                XpCalcCardContent.FromSnapshot(_xpTracker.GetLatestSnapshot(calcAccountId),
+                    XpCalculatorTargets.Get(_panelSettings, calcAccountId))),
             OverlayAddOnKind.Timer => _timer.Display,
             _ => null
         };

@@ -31,4 +31,63 @@
             </Grid>
         </Viewbox>
     </DataTemplate>
+    <DataTemplate DataType="{x:Type views:StatsCardData}">
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Top">
+            <StackPanel Width="232">
+                <TextBlock Text="{Binding HeaderText}" FontSize="11" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextSecondary}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding LineText}" FontSize="13" FontWeight="Bold" Margin="0,2,0,6"
+                           Foreground="{DynamicResource Brush.AccentGold}" TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding Rows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,1,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="40" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="64" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding StatLabel}" FontSize="11"
+                                           Foreground="{DynamicResource Brush.TextMuted}" />
+                                <TextBlock Grid.Column="1" Text="{Binding ProfileText}" FontSize="11"
+                                           HorizontalAlignment="Right" Typography.NumeralAlignment="Tabular"
+                                           Foreground="{DynamicResource Brush.TextPrimary}" />
+                                <TextBlock Grid.Column="2" Text="{Binding AverageText}" FontSize="11"
+                                           HorizontalAlignment="Right" Typography.NumeralAlignment="Tabular"
+                                           Foreground="{DynamicResource Brush.TextMuted}" />
+                                <TextBlock Grid.Column="3" Text="{Binding DeltaText}" FontSize="11"
+                                           HorizontalAlignment="Right" Typography.NumeralAlignment="Tabular">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Direction}" Value="Above">
+                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.AccentGold}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Viewbox>
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type views:XpCalcCardData}">
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left">
+            <Grid VerticalAlignment="Center">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <TextBlock Text="{Binding HeaderText}" FontSize="10" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextSecondary}" />
+                <TextBlock Grid.Row="1" Text="{Binding LineText}" FontSize="14" FontWeight="Bold"
+                           Typography.NumeralAlignment="Tabular" Foreground="{DynamicResource Brush.AccentGold}" />
+            </Grid>
+        </Viewbox>
+    </DataTemplate>
 </ResourceDictionary>
