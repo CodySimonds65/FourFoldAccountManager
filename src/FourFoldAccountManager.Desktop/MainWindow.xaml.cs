@@ -244,6 +244,7 @@ public partial class MainWindow : Window
             SettingsButton.IsEnabled = true;
             LayoutPicker.IsEnabled = true;
             LaunchVisibleButton.IsEnabled = true;
+            TogglePluginsButton.IsEnabled = true;
             LayoutPicker.SelectedValue = _panelSettings.Layout;
             AccountsListBox.SelectedIndex = _accounts.Count > 0 ? 0 : -1;
             UpdateAccountActions();
@@ -257,6 +258,7 @@ public partial class MainWindow : Window
             SettingsButton.IsEnabled = false;
             LayoutPicker.IsEnabled = false;
             LaunchVisibleButton.IsEnabled = false;
+            TogglePluginsButton.IsEnabled = false;
             GlobalStatusText.Text = "Account data could not be loaded. The original local files were left unchanged.";
             MessageBox.Show(this, exception.Message, "FourFold profile data",
                 MessageBoxButton.OK, MessageBoxImage.Error);
@@ -267,6 +269,7 @@ public partial class MainWindow : Window
             SettingsButton.IsEnabled = false;
             LayoutPicker.IsEnabled = false;
             LaunchVisibleButton.IsEnabled = false;
+            TogglePluginsButton.IsEnabled = false;
             GlobalStatusText.Text = "The manager could not load local profile data.";
             MessageBox.Show(this, "The local account or panel settings could not be loaded.",
                 "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
@@ -726,12 +729,14 @@ public partial class MainWindow : Window
         try
         {
             await UpdateSettingsAsync(settings => XpCalculatorTargets.WithTarget(settings, accountId, targetLevel));
-            RefreshTrackerRows();
         }
         catch
         {
             GlobalStatusText.Text = "The XP calculator target could not be saved.";
+            return;
         }
+
+        RefreshTrackerRows();
     }
 
     private void CancelProfileRead()
@@ -782,10 +787,9 @@ public partial class MainWindow : Window
     private async void TogglePluginsPanel_Click(object sender, RoutedEventArgs e)
     {
         if (_showingLeaderboard) return;
-        var expanded = !_panelSettings.PluginsSidebarExpanded;
         try
         {
-            await UpdateSettingsAsync(settings => settings with { PluginsSidebarExpanded = expanded });
+            await UpdateSettingsAsync(settings => settings with { PluginsSidebarExpanded = !settings.PluginsSidebarExpanded });
         }
         catch
         {
@@ -1170,7 +1174,7 @@ public partial class MainWindow : Window
 
                 if (account is not null)
                 {
-                    var isStale = states.TryGetValue(trackedAccountId, out var trackerState) && trackerState.IsStale;
+                    var isStale = state?.IsStale == true;
                     var switches = new List<OverlayTraySwitch>();
                     foreach (var definition in OverlayAddOnCatalog.All.Where(
                                  definition => definition.Scope == OverlayAddOnScope.Account))
@@ -2774,6 +2778,9 @@ public partial class MainWindow : Window
         try
         {
             CancelProfileRead();
+            // Flush a pending sidebar XP target save before the final settings save, so a target
+            // typed just before closing reaches disk instead of being lost.
+            PluginSidebar.FlushPendingXpTarget();
             try
             {
                 await SaveSettingsAsync();

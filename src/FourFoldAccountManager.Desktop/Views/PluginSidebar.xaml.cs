@@ -47,6 +47,10 @@ public partial class PluginSidebar : UserControl
 
     public void SetTrackerItemsSource(IEnumerable? itemsSource) => TrackerPanel.ItemsSource = itemsSource;
 
+    // Flushes a pending 500 ms XP target save immediately, so a target typed just before the app
+    // closes is not lost. FlushPendingTargetSave is internal on the panel; both are in this assembly.
+    public void FlushPendingXpTarget() => XpCalculatorPanelView.FlushPendingTargetSave();
+
     public void AttachTimer(TimerCoordinator coordinator) => TimerPanelView.Attach(coordinator);
 
     public void SetTimerHotkeys(string splitKeys, string finishKeys, string resetKeys, bool anyUnavailable) =>
