@@ -145,7 +145,8 @@ public partial class ExperienceCalculatorPanel : UserControl
         {
             _pendingTargetSave = (accountId, null);
         }
-        else if (long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var level) && level > 0)
+        else if (long.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var level) &&
+                 level > 0 && level <= XpCalculatorTargets.MaxTargetLevel)
         {
             _pendingTargetSave = (accountId, level);
         }
