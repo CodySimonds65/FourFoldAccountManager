@@ -35,7 +35,7 @@
         <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Top">
             <StackPanel Width="232">
                 <TextBlock Text="{Binding HeaderText}" FontSize="11" FontWeight="SemiBold"
-                           Foreground="{DynamicResource Brush.TextSecondary}" TextTrimming="CharacterEllipsis" />
+                           Foreground="{DynamicResource Brush.TextSecondary}" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding LineText}" FontSize="13" FontWeight="Bold" Margin="0,2,0,6"
                            Foreground="{DynamicResource Brush.AccentGold}" TextWrapping="Wrap" />
                 <ItemsControl ItemsSource="{Binding Rows}">
