@@ -34,7 +34,12 @@ public partial class ShortcutRow : UserControl
 
     internal void SetKeysText(string text) => CaptureButton.Content = text;
 
-    internal void SetStatus(string status) => StatusText.Text = status;
+    // An empty status hides the line so rows stay compact until there is something to report.
+    internal void SetStatus(string status)
+    {
+        StatusText.Text = status;
+        StatusText.Visibility = string.IsNullOrEmpty(status) ? Visibility.Collapsed : Visibility.Visible;
+    }
 
     private void CaptureButton_Click(object sender, RoutedEventArgs e) =>
         CaptureRequested?.Invoke(this, EventArgs.Empty);
