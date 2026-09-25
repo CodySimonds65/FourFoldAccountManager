@@ -23,4 +23,28 @@ public sealed class PanelLayoutPolicyTests
             new PanelSplitState("2x2.rows", [0.7, 0.3])).ShareLinkedAccounts);
         Assert.True(PanelLayoutPolicy.ResetSplitStates(settings).ShareLinkedAccounts);
     }
+
+    [Fact]
+    public void SettingsTransformsPreserveOverlayCardsAndClearAccountRemovesTheAccountsCards()
+    {
+        var accountId = Guid.NewGuid();
+        var otherId = Guid.NewGuid();
+        var cards = new[]
+        {
+            new OverlayCardPlacement(OverlayAddOnKind.Xp, accountId, true, new OverlayBounds(0.1, 0.1, 0.2, 0.1)),
+            new OverlayCardPlacement(OverlayAddOnKind.Xp, otherId, false, null)
+        };
+        var settings = PanelSettings.Default with
+        {
+            SlotAccountIds = [accountId, otherId, null, null, null],
+            OverlayCards = cards
+        };
+
+        Assert.Equal(cards, PanelLayoutPolicy.WithLayout(settings, PanelLayout.OneByTwo).OverlayCards);
+        Assert.Equal(cards, PanelLayoutPolicy.Assign(settings, 2, Guid.NewGuid()).OverlayCards);
+        Assert.Equal(cards, PanelLayoutPolicy.WithSplitState(settings,
+            new PanelSplitState("2x2.rows", [0.7, 0.3])).OverlayCards);
+        Assert.Equal(cards, PanelLayoutPolicy.ResetSplitStates(settings).OverlayCards);
+        Assert.Equal([cards[1]], PanelLayoutPolicy.ClearAccount(settings, accountId).OverlayCards);
+    }
 }

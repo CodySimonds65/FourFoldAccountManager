@@ -35,8 +35,12 @@ public sealed record PanelSettings
     public IReadOnlyDictionary<Guid, GameViewportSize> GameViewportSizes { get; init; } =
         new Dictionary<Guid, GameViewportSize>();
 
-    public IReadOnlyDictionary<Guid, OverlayBounds> XpOverlayBoundsByAccount { get; init; } =
-        new Dictionary<Guid, OverlayBounds>();
+    public IReadOnlyList<OverlayCardPlacement> OverlayCards { get; init; } = Array.Empty<OverlayCardPlacement>();
+
+    // Migration input from settings written before overlay add-ons; validation converts it and never writes it back.
+    [JsonPropertyName("xpOverlayBoundsByAccount")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyDictionary<Guid, OverlayBounds>? LegacyXpOverlayBoundsByAccount { get; init; }
 
     public static PanelSettings Default => new(PanelLayout.TwoByTwo, new Guid?[5])
     {

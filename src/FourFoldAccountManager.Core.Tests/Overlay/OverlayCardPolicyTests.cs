@@ -140,4 +140,55 @@ public sealed class OverlayCardPolicyTests
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             OverlayCardPolicy.DefaultBounds(OverlayAddOnCatalog.All[0], 0, 500, cascadeIndex: 0));
     }
+
+    [Fact]
+    public void WithEnabledTogglesACardAndKeepsItsBounds()
+    {
+        var key = new OverlayCardKey(OverlayAddOnKind.Xp, Guid.NewGuid());
+        var settings = PanelSettings.Default with
+        {
+            OverlayCards = [new OverlayCardPlacement(key.Kind, key.AccountId, true, First)]
+        };
+
+        var disabled = OverlayCardPolicy.WithEnabled(settings, key, false);
+        var enabledAgain = OverlayCardPolicy.WithEnabled(disabled, key, true);
+
+        Assert.Equal(new OverlayCardPlacement(key.Kind, key.AccountId, false, First), OverlayCardPolicy.Get(disabled, key));
+        Assert.Equal(new OverlayCardPlacement(key.Kind, key.AccountId, true, First), OverlayCardPolicy.Get(enabledAgain, key));
+    }
+
+    [Fact]
+    public void WithEnabledCreatesAPlacementWithoutBoundsForANewKey()
+    {
+        var key = new OverlayCardKey(OverlayAddOnKind.Xp, Guid.NewGuid());
+
+        var settings = OverlayCardPolicy.WithEnabled(PanelSettings.Default, key, true);
+
+        Assert.Equal([new OverlayCardPlacement(key.Kind, key.AccountId, true, null)], settings.OverlayCards);
+    }
+
+    [Fact]
+    public void WithBoundsUpdatesOnlyTheMatchingCard()
+    {
+        var key = new OverlayCardKey(OverlayAddOnKind.Xp, Guid.NewGuid());
+        var other = new OverlayCardPlacement(OverlayAddOnKind.Xp, Guid.NewGuid(), true, First);
+        var settings = PanelSettings.Default with
+        {
+            OverlayCards = [other, new OverlayCardPlacement(key.Kind, key.AccountId, false, First)]
+        };
+
+        var moved = OverlayCardPolicy.WithBounds(settings, key, Second);
+
+        Assert.Equal([other, new OverlayCardPlacement(key.Kind, key.AccountId, false, Second)], moved.OverlayCards);
+    }
+
+    [Fact]
+    public void SettingsHelpersRejectInvalidKeysAndBounds()
+    {
+        Assert.Throws<ArgumentException>(() => OverlayCardPolicy.WithEnabled(
+            PanelSettings.Default, new OverlayCardKey(OverlayAddOnKind.Xp, null), true));
+        Assert.Throws<ArgumentException>(() => OverlayCardPolicy.WithBounds(
+            PanelSettings.Default, new OverlayCardKey(OverlayAddOnKind.Xp, Guid.NewGuid()),
+            new OverlayBounds(0.9, 0, 0.5, 0.5)));
+    }
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FourFoldAccountManager.Core.Models;
+using FourFoldAccountManager.Core.Overlay;
 using FourFoldAccountManager.Core.Panel;
 
 namespace FourFoldAccountManager.Core.Data;
@@ -139,16 +140,9 @@ public sealed class SettingsStore
             throw new InvalidDataException("Panel settings contain an invalid game viewport size.");
         }
 
-        if (settings.XpOverlayBoundsByAccount is null ||
-            settings.XpOverlayBoundsByAccount.Any(entry =>
-                entry.Key == Guid.Empty || entry.Value is null || !entry.Value.IsValid))
-        {
-            throw new InvalidDataException("Panel settings contain invalid XP overlay bounds.");
-        }
-
         var splitStates = ValidateSplitStates(settings);
         var assignments = settings.SlotAccountIds.Concat(new Guid?[5]).Take(5).ToArray();
-        var overlayBounds = new Dictionary<Guid, OverlayBounds>(settings.XpOverlayBoundsByAccount);
+        var overlayCards = OverlayCardPolicy.Normalize(settings.OverlayCards, settings.LegacyXpOverlayBoundsByAccount);
         return new PanelSettings(settings.Layout, assignments)
         {
             FillGameToPanel = settings.FillGameToPanel,
@@ -159,7 +153,7 @@ public sealed class SettingsStore
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = splitStates,
             GameViewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes),
-            XpOverlayBoundsByAccount = overlayBounds
+            OverlayCards = overlayCards
         };
     }
 

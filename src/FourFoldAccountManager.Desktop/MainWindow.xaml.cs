@@ -13,6 +13,7 @@ using FourFoldAccountManager.Core.Data;
 using FourFoldAccountManager.Core.Launch;
 using FourFoldAccountManager.Core.Leaderboard;
 using FourFoldAccountManager.Core.Models;
+using FourFoldAccountManager.Core.Overlay;
 using FourFoldAccountManager.Core.Panel;
 using FourFoldAccountManager.Desktop.Services;
 using FourFoldAccountManager.Desktop.Updates;
@@ -1125,8 +1126,10 @@ public partial class MainWindow : Window
             }
 
             var overlayAccountId = _isFullScreen && isOpen ? assignedAccountId : null;
-            var overlayBounds = overlayAccountId is { } overlayId
-                ? PanelLayoutPolicy.GetXpOverlayBounds(_panelSettings, overlayId)
+            var overlayBounds = overlayAccountId is { } overlayId &&
+                OverlayCardPolicy.Get(_panelSettings, new OverlayCardKey(OverlayAddOnKind.Xp, overlayId)) is
+                    { Enabled: true, Bounds: { } savedBounds }
+                ? savedBounds
                 : null;
             slot.XpOverlayLayer.SetSlot(
                 overlayAccountId,
@@ -1188,7 +1191,10 @@ public partial class MainWindow : Window
         try
         {
             await UpdateSettingsAsync(settings =>
-                PanelLayoutPolicy.WithXpOverlayBounds(settings, accountId, bounds));
+                OverlayCardPolicy.WithEnabled(
+                    OverlayCardPolicy.WithBounds(settings, new OverlayCardKey(OverlayAddOnKind.Xp, accountId), bounds),
+                    new OverlayCardKey(OverlayAddOnKind.Xp, accountId),
+                    true));
             RefreshTrackerRows();
         }
         catch

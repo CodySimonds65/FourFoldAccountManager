@@ -53,6 +53,54 @@ public static class OverlayCardPolicy
         return Array.AsReadOnly(cards.Where(card => card.AccountId != accountId).ToArray());
     }
 
+    public static OverlayCardPlacement? Get(PanelSettings settings, OverlayCardKey key)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return settings.OverlayCards.FirstOrDefault(card => card.Key == key);
+    }
+
+    public static PanelSettings WithEnabled(PanelSettings settings, OverlayCardKey key, bool enabled) =>
+        Upsert(settings, key, existing =>
+            (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, false, null)) with { Enabled = enabled });
+
+    public static PanelSettings WithBounds(PanelSettings settings, OverlayCardKey key, OverlayBounds bounds)
+    {
+        ArgumentNullException.ThrowIfNull(bounds);
+        if (!bounds.IsValid)
+        {
+            throw new ArgumentException("Overlay bounds must be valid and within the normalized viewport.", nameof(bounds));
+        }
+
+        return Upsert(settings, key, existing =>
+            (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, true, null)) with { Bounds = bounds });
+    }
+
+    private static PanelSettings Upsert(
+        PanelSettings settings,
+        OverlayCardKey key,
+        Func<OverlayCardPlacement?, OverlayCardPlacement> update)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (!IsValidKey(key))
+        {
+            throw new ArgumentException("The overlay card key does not match a registered add-on.", nameof(key));
+        }
+
+        var cards = settings.OverlayCards.ToList();
+        var index = cards.FindIndex(card => card.Key == key);
+        var next = update(index >= 0 ? cards[index] : null);
+        if (index >= 0)
+        {
+            cards[index] = next;
+        }
+        else
+        {
+            cards.Add(next);
+        }
+
+        return settings with { OverlayCards = Array.AsReadOnly(cards.ToArray()) };
+    }
+
     public static OverlayBounds DefaultBounds(
         OverlayAddOnDefinition definition,
         double layerWidth,
