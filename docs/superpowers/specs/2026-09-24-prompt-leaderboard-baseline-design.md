@@ -15,3 +15,12 @@ The baseline priority applies across worker scopes and service instances because
 ## Verification
 
 Tests demonstrate that a new profile is fetched before routine queued profiles, that a profile activated mid-pass is collected before remaining routine work, that requests remain spaced, and that repeated heartbeats do not reset an established baseline. Existing failure, opt-out, and stale-gap tests remain green. The PostgreSQL query is covered by a store integration test when Docker is available.
+
+## Revision: immediate launch baseline and per-player cadence
+
+Confirmed by the user on 2026-09-24 after session XP continued to exceed leaderboard XP. Two gaps remained. First, the desktop session starts from its own website read at launch, while the server baseline waited for the next global request slot, which could be up to five minutes away. Second, `MinimumSampleInterval` spaced every request across all players, so with N active profiles each player was sampled only every 5N minutes, and a single failed fetch lost that whole span.
+
+- A participation heartbeat with active profiles wakes the sampling worker immediately (`LeaderboardSamplingSchedule.RequestSample`). Profiles awaiting a baseline are read first, so the server baseline is taken within seconds of launch. The server still reads the public site itself and never accepts client-reported XP.
+- `MinimumSampleInterval` is now the per-player cadence. The worker polls every 15 seconds for players whose last sample is at least one interval old, oldest first. `RequestSpacing` (default two seconds) separates consecutive site requests.
+- A failed or rejected read requests a rebaseline and defers that player for one interval, so a site outage cannot turn into rapid retries.
+- The pass-timing allowance (`continuousGap`) is removed. With per-player cadence, a normal gap stays near one interval, and the three-interval stale rule applies unchanged.

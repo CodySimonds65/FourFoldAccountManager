@@ -54,7 +54,7 @@ The Workspace tab ranks XP gained during the current UTC day, ISO week, or calen
 
 Session XP and leaderboard XP cover different scopes: the tracker counts the active class from its local session start or reset, while the leaderboard totals valid gains across all classes in the selected UTC period after its first baseline. A saved leaderboard page may lag; interrupted participation or uncertain samples are not backfilled.
 
-When an opted-in profile becomes active, the server gives profiles awaiting a baseline priority at its next permitted public-profile request slot. That first server-verified observation records zero gained XP; later observations count the increase. Repeated heartbeats do not reset an established baseline, and the server does not accept an XP value from the client. XP earned before the first verified observation cannot be reconstructed.
+When an opted-in profile launches, its first heartbeat wakes the server, which reads that player's public profile right away, ahead of routine samples. That first server-verified observation records zero gained XP and lines up with the start of the desktop session within seconds. After that, each active player is sampled on its own `Collection:MinimumSampleInterval` cadence (five minutes in production), with consecutive site requests spaced by `Collection:RequestSpacing` (two seconds by default). A failed read waits one full interval before it is retried. Repeated heartbeats do not reset an established baseline, and the server does not accept an XP value from the client.
 
 ### Backup and recovery
 
