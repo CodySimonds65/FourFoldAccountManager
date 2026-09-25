@@ -280,6 +280,23 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task ConcurrentBaselineSaveDoesNotReopenEstablishedBaseline()
+    {
+        await _store.ApplyHeartbeatAsync(Heartbeat(Guid.NewGuid(), (1, "Alice")), Now, default);
+        await _store.SaveObservationAsync(Observation(1, "Alice", null, Now),
+            null, TimeSpan.FromMinutes(3), default);
+
+        await _store.SaveObservationAsync(Observation(1, "Alice", null, Now.AddSeconds(1)),
+            null, TimeSpan.FromMinutes(3), default);
+
+        var state = await _store.GetPlayerStateAsync(1, default);
+        Assert.NotNull(state);
+        Assert.False(state.NeedsBaseline);
+        Assert.Equal(Now, state.LastSampledAtUtc);
+        Assert.Empty(await _db.XpGainEvents.ToListAsync());
+    }
+
+    [Fact]
     public async Task AnotherFreshInstallationKeepsPlayerEligibleAfterFirstOptsOut()
     {
         var first = Guid.NewGuid();

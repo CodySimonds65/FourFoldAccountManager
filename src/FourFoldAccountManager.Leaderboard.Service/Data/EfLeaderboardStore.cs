@@ -181,11 +181,17 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
               state.SnapshotJson == expectedState.SnapshotJson &&
               state.LastSampledAtUtc == expectedState.LastSampledAtUtc &&
               state.NeedsBaseline == expectedState.NeedsBaseline;
-        if (!active || !unchanged)
+        if (!active)
         {
             if (state is not null)
                 await db.PlayerSampleStates.Where(x => x.PlayerId == observation.PlayerId)
                     .ExecuteUpdateAsync(setters => setters.SetProperty(x => x.NeedsBaseline, true), ct);
+            await transaction.CommitAsync(ct);
+            return;
+        }
+        if (!unchanged)
+        {
+            // Another observation or participation transition has already changed this state.
             await transaction.CommitAsync(ct);
             return;
         }

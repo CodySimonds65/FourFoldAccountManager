@@ -31,22 +31,27 @@ public sealed class LeaderboardSamplingService(
             var profiles = active.GroupBy(x => x.PlayerId).Select(x => x.First())
                 .OrderBy(x => x.PlayerId).ToArray();
             var fetched = false;
+            var attemptedPlayerIds = new HashSet<int>();
             foreach (var profile in profiles)
             {
                 ct.ThrowIfCancellationRequested();
-                var pending = await store.GetActiveProfilesNeedingBaselineAsync(
-                    now + _clock.GetElapsedTime(start) - options.ActiveLeaseDuration, ct);
-                var priority = pending.FirstOrDefault(x => !sampledPlayerIds.Contains(x.PlayerId));
-                if (priority is not null) await SampleActiveAsync(priority);
-                if (!sampledPlayerIds.Contains(profile.PlayerId)) await SampleActiveAsync(profile);
+                while (!attemptedPlayerIds.Contains(profile.PlayerId))
+                {
+                    if (fetched) await Task.Delay(options.MinimumSampleInterval, _clock, ct);
+                    var pending = await store.GetActiveProfilesNeedingBaselineAsync(
+                        now + _clock.GetElapsedTime(start) - options.ActiveLeaseDuration, ct);
+                    var candidate = pending.FirstOrDefault(x => !attemptedPlayerIds.Contains(x.PlayerId))
+                        ?? profile;
+                    attemptedPlayerIds.Add(candidate.PlayerId);
+                    await SampleActiveAsync(candidate);
+                }
             }
             var elapsed = _clock.GetElapsedTime(start);
             _schedule.Complete(now + elapsed, elapsed, sampledPlayerIds);
 
             async Task SampleActiveAsync(ActiveLeaderboardProfile candidate)
             {
-                if (fetched) await Task.Delay(options.MinimumSampleInterval, _clock, ct);
-                var observedAt = fetched ? now + _clock.GetElapsedTime(start) : now;
+                var observedAt = now + _clock.GetElapsedTime(start);
                 var currentActive = await store.GetActiveProfilesAsync(observedAt - options.ActiveLeaseDuration, ct);
                 var currentProfile = currentActive.FirstOrDefault(x => x.PlayerId == candidate.PlayerId);
                 if (currentProfile is null) return;

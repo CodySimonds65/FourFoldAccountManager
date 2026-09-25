@@ -275,6 +275,26 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
+    public async Task ActivationDuringRequestWaitGetsNextAvailableSlot()
+    {
+        var store = new FakeStore();
+        foreach (var id in new[] { 1, 2 }) store.Activate(id, "Alice", Now);
+        foreach (var id in new[] { 1, 2 })
+            store.States[id] = new PlayerSampleState(id, "Alice",
+                XpSnapshotJson.Serialize(Snapshot("Alice", 10)), Now.AddMinutes(-1), false);
+        var source = new RecordingSource(_ => Snapshot("Alice", 35));
+        var clock = new ActivationOnDelayTimeProvider(() => store.Activate(9, "Alice", Now));
+        var service = new LeaderboardSamplingService(store, source,
+            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = TimeSpan.FromMilliseconds(20) },
+            clock);
+
+        await service.RunOnceAsync(Now, default);
+
+        Assert.Equal([1, 9, 2], source.PlayerIds);
+        Assert.Null(Assert.Single(store.Observations, x => x.PlayerId == 9).ValidGain);
+    }
+
+    [Fact]
     public async Task PriorityBaselineKeepsApprovedRequestSpacing()
     {
         var store = new FakeStore();
@@ -302,8 +322,6 @@ public sealed class LeaderboardSamplingServiceTests
         var after = Snapshot("Alice", 35) with { ActiveClassName = "Warrior" };
         var local = new XpTrackingSession();
         local.ApplySnapshot(before, Now);
-        local.ApplySnapshot(after, Now.AddMilliseconds(61));
-        Assert.Equal(25, local.SessionGain);
 
         var service = new LeaderboardSamplingService(store, new PerPlayerSource(1, 2, 3),
             new LeaderboardCollectionOptions
@@ -312,8 +330,13 @@ public sealed class LeaderboardSamplingServiceTests
                 MinimumSampleInterval = TimeSpan.FromMilliseconds(20)
             });
 
+        var elapsed = Stopwatch.StartNew();
         await service.RunOnceAsync(Now, default);
-        await service.RunOnceAsync(Now.AddMilliseconds(61), default);
+        elapsed.Stop();
+        var nextAt = Now + elapsed.Elapsed + TimeSpan.FromMilliseconds(20);
+        local.ApplySnapshot(after, nextAt);
+        Assert.Equal(25, local.SessionGain);
+        await service.RunOnceAsync(nextAt, default);
 
         Assert.Equal(new long[] { 25, 25, 25 }, store.Gains.Order().ToArray());
     }
@@ -521,6 +544,19 @@ public sealed class LeaderboardSamplingServiceTests
             PlayerIds.Add(playerId);
             Timestamps.Add(Stopwatch.GetTimestamp());
             return Task.FromResult(response(playerId));
+        }
+    }
+
+    private sealed class ActivationOnDelayTimeProvider(Action activate) : TimeProvider
+    {
+        private int _activated;
+        public override long TimestampFrequency => TimeProvider.System.TimestampFrequency;
+        public override long GetTimestamp() => TimeProvider.System.GetTimestamp();
+        public override ITimer CreateTimer(TimerCallback callback, object? state,
+            TimeSpan dueTime, TimeSpan period)
+        {
+            if (Interlocked.Exchange(ref _activated, 1) == 0) activate();
+            return TimeProvider.System.CreateTimer(callback, state, dueTime, period);
         }
     }
 
