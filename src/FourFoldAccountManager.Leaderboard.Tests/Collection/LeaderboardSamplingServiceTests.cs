@@ -232,6 +232,68 @@ public sealed class LeaderboardSamplingServiceTests
     }
 
     [Fact]
+    public async Task NewParticipantGetsBaselineBeforeRoutineQueue()
+    {
+        var store = new FakeStore();
+        foreach (var id in new[] { 1, 2, 3, 9 }) store.Activate(id, "Alice", Now);
+        foreach (var id in new[] { 1, 2, 3 })
+            store.States[id] = new PlayerSampleState(id, "Alice",
+                XpSnapshotJson.Serialize(Snapshot("Alice", 10)), Now.AddMilliseconds(-40), false);
+        var source = new RecordingSource(_ => Snapshot("Alice", 35));
+        var service = new LeaderboardSamplingService(store, source,
+            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = TimeSpan.FromMilliseconds(20) });
+
+        await service.RunOnceAsync(Now, default);
+
+        Assert.Equal([9, 1, 2, 3], source.PlayerIds);
+        Assert.Null(Assert.Single(store.Observations, x => x.PlayerId == 9).ValidGain);
+        Assert.Equal(25, XpSnapshotJson.Deserialize(store.States[9].SnapshotJson, "Alice")
+            .Classes["Warrior"].CurrentXp);
+    }
+
+    [Fact]
+    public async Task ActivationDuringPassGetsBaselineBeforeRemainingRoutineProfiles()
+    {
+        var store = new FakeStore();
+        foreach (var id in new[] { 1, 2, 3 }) store.Activate(id, "Alice", Now);
+        foreach (var id in new[] { 1, 2, 3 })
+            store.States[id] = new PlayerSampleState(id, "Alice",
+                XpSnapshotJson.Serialize(Snapshot("Alice", 10)), Now.AddMilliseconds(-40), false);
+        var source = new RecordingSource(id =>
+        {
+            if (id == 1) store.Activate(9, "Alice", Now);
+            return Snapshot("Alice", 35);
+        });
+        var service = new LeaderboardSamplingService(store, source,
+            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = TimeSpan.FromMilliseconds(20) });
+
+        await service.RunOnceAsync(Now, default);
+
+        Assert.Equal([1, 9, 2, 3], source.PlayerIds);
+        Assert.Null(Assert.Single(store.Observations, x => x.PlayerId == 9).ValidGain);
+        Assert.False(store.States[9].NeedsBaseline);
+    }
+
+    [Fact]
+    public async Task PriorityBaselineKeepsApprovedRequestSpacing()
+    {
+        var store = new FakeStore();
+        store.Activate(1, "Alice", Now);
+        store.Activate(9, "Alice", Now);
+        store.States[1] = new PlayerSampleState(1, "Alice",
+            XpSnapshotJson.Serialize(Snapshot("Alice", 10)), Now.AddMinutes(-1), false);
+        var source = new RecordingSource(_ => Snapshot("Alice", 35));
+        var service = new LeaderboardSamplingService(store, source,
+            new LeaderboardCollectionOptions { Enabled = true, MinimumSampleInterval = TimeSpan.FromMilliseconds(80) });
+
+        await service.RunOnceAsync(Now, default);
+
+        Assert.Equal([9, 1], source.PlayerIds);
+        Assert.True(Stopwatch.GetElapsedTime(source.Timestamps[0], source.Timestamps[1]) >=
+            TimeSpan.FromMilliseconds(65));
+    }
+
+    [Fact]
     public async Task ThreeContinuouslyActivePlayersDoNotLoseQueuedGain()
     {
         var store = new FakeStore();
@@ -450,6 +512,18 @@ public sealed class LeaderboardSamplingServiceTests
         }
     }
 
+    private sealed class RecordingSource(Func<int, PlayerProgressSnapshot> response) : ILeaderboardPublicProfileSource
+    {
+        public List<int> PlayerIds { get; } = [];
+        public List<long> Timestamps { get; } = [];
+        public Task<PlayerProgressSnapshot> FetchAsync(int playerId, CancellationToken ct)
+        {
+            PlayerIds.Add(playerId);
+            Timestamps.Add(Stopwatch.GetTimestamp());
+            return Task.FromResult(response(playerId));
+        }
+    }
+
     private sealed class CallbackSource(PlayerProgressSnapshot response, Action callback) : ILeaderboardPublicProfileSource
     {
         public Task<PlayerProgressSnapshot> FetchAsync(int playerId, CancellationToken ct)
@@ -464,6 +538,7 @@ public sealed class LeaderboardSamplingServiceTests
         private readonly List<(ActiveLeaderboardProfile Profile, DateTimeOffset At)> _active = [];
         public Dictionary<int, PlayerSampleState> States { get; } = [];
         public List<long> Gains { get; } = [];
+        public List<PlayerObservation> Observations { get; } = [];
         public int BaselineMarks { get; private set; }
 
         public void Activate(int id, string username, DateTimeOffset at) =>
@@ -492,6 +567,7 @@ public sealed class LeaderboardSamplingServiceTests
             }
             States[observation.PlayerId] = new PlayerSampleState(observation.PlayerId, observation.Username,
                 observation.SnapshotJson, observation.ObservedAtUtc, observation.NeedsBaseline);
+            Observations.Add(observation);
             if (observation.ValidGain is { } gain) Gains.Add(gain);
             return Task.CompletedTask;
         }
