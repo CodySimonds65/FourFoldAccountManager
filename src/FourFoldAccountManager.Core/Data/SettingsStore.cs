@@ -150,12 +150,19 @@ public sealed class SettingsStore
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
             ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
+            TimerSplitShortcut = ValidOrDefault(settings.TimerSplitShortcut, GlobalHotkeyChord.DefaultTimerSplit),
+            TimerFinishShortcut = ValidOrDefault(settings.TimerFinishShortcut, GlobalHotkeyChord.DefaultTimerFinish),
+            TimerResetShortcut = ValidOrDefault(settings.TimerResetShortcut, GlobalHotkeyChord.DefaultTimerReset),
             TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = splitStates,
             GameViewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes),
             OverlayCards = overlayCards
         };
     }
+
+    // Timer shortcuts arrived after settings files existed, so a bad one falls back instead of blocking the load.
+    private static GlobalHotkeyChord ValidOrDefault(GlobalHotkeyChord? chord, GlobalHotkeyChord fallback) =>
+        chord is { IsValid: true } ? chord : fallback;
 
     private static IReadOnlyList<PanelSplitState> ValidateSplitStates(PanelSettings settings)
     {

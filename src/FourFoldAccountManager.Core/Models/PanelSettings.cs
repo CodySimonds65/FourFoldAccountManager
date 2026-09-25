@@ -28,6 +28,12 @@ public sealed record PanelSettings
     public GlobalHotkeyChord ToggleDividerResizingShortcut { get; init; } =
         GlobalHotkeyChord.DefaultToggleDividerResizing;
 
+    public GlobalHotkeyChord TimerSplitShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerSplit;
+
+    public GlobalHotkeyChord TimerFinishShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerFinish;
+
+    public GlobalHotkeyChord TimerResetShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerReset;
+
     public double TwoByThreeTopRowFraction { get; init; } = 0.6;
 
     public IReadOnlyList<PanelSplitState> SplitStates { get; init; } = Array.Empty<PanelSplitState>();

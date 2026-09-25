@@ -47,4 +47,31 @@ public sealed class PanelLayoutPolicyTests
         Assert.Equal(cards, PanelLayoutPolicy.ResetSplitStates(settings).OverlayCards);
         Assert.Equal([cards[1]], PanelLayoutPolicy.ClearAccount(settings, accountId).OverlayCards);
     }
+
+    [Fact]
+    public void SettingsTransformsPreserveTimerShortcuts()
+    {
+        var accountId = Guid.NewGuid();
+        var settings = PanelSettings.Default with
+        {
+            SlotAccountIds = [accountId, null, null, null, null],
+            TimerSplitShortcut = new GlobalHotkeyChord(0x61, GlobalHotkeyModifiers.None),
+            TimerFinishShortcut = new GlobalHotkeyChord(0x62, GlobalHotkeyModifiers.None),
+            TimerResetShortcut = new GlobalHotkeyChord(0x63, GlobalHotkeyModifiers.None)
+        };
+
+        foreach (var transformed in new[]
+                 {
+                     PanelLayoutPolicy.WithLayout(settings, PanelLayout.OneByTwo),
+                     PanelLayoutPolicy.Assign(settings, 1, Guid.NewGuid()),
+                     PanelLayoutPolicy.ClearAccount(settings, accountId),
+                     PanelLayoutPolicy.WithSplitState(settings, new PanelSplitState("2x2.rows", [0.7, 0.3])),
+                     PanelLayoutPolicy.ResetSplitStates(settings)
+                 })
+        {
+            Assert.Equal(settings.TimerSplitShortcut, transformed.TimerSplitShortcut);
+            Assert.Equal(settings.TimerFinishShortcut, transformed.TimerFinishShortcut);
+            Assert.Equal(settings.TimerResetShortcut, transformed.TimerResetShortcut);
+        }
+    }
 }
