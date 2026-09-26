@@ -2,6 +2,8 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -48,6 +50,7 @@ public partial class MainWindow : Window
     private readonly TimerCoordinator _timer = new();
     private HwndSource? _windowSource;
     private GlobalShortcutRegistry? _shortcuts;
+    private FocusedClientPipeServer? _focusedClientPipe;
     private PanelSettings _panelSettings = PanelSettings.Default;
     private bool _isReady;
     private bool _batchLaunchInProgress;
@@ -154,6 +157,45 @@ public partial class MainWindow : Window
 
         _windowSource.AddHook(MainWindow_HwndSourceHook);
         _shortcuts = new GlobalShortcutRegistry(new WindowsGlobalHotkeyRegistrar(windowHandle));
+        _focusedClientPipe = new FocusedClientPipeServer(Dispatcher, FocusedClientSnapshot);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    private string FocusedClientSnapshot()
+    {
+        if (_shutdownStarted ||
+            GetForegroundWindow() != new WindowInteropHelper(this).Handle)
+        {
+            return "null";
+        }
+
+        var focused = _slotCards
+            .Where(slot => slot.View is { IsLoaded: true, IsVisible: true, IsKeyboardFocusWithin: true })
+            .ToArray();
+        if (focused.Length != 1 || focused[0].View is not { } view)
+        {
+            return "null";
+        }
+
+        var topLeft = view.PointToScreen(new Point(0, 0));
+        var bottomRight = view.PointToScreen(new Point(view.ActualWidth, view.ActualHeight));
+        var left = (int)Math.Round(topLeft.X);
+        var top = (int)Math.Round(topLeft.Y);
+        var width = (int)Math.Round(bottomRight.X - topLeft.X);
+        var height = (int)Math.Round(bottomRight.Y - topLeft.Y);
+        if (width <= 0 || height <= 0)
+        {
+            return "null";
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            pid = Environment.ProcessId,
+            slot = focused[0].SlotIndex,
+            rect = new[] { left, top, width, height }
+        });
     }
 
     private IntPtr MainWindow_HwndSourceHook(
@@ -2820,6 +2862,9 @@ public partial class MainWindow : Window
         {
             return;
         }
+
+        _focusedClientPipe?.Dispose();
+        _focusedClientPipe = null;
 
         var shortcuts = _shortcuts;
         _shortcuts = null;
