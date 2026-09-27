@@ -60,6 +60,27 @@ public sealed class SettingsStoreTimerShortcutTests : IDisposable
         Assert.Equal(reset, loaded.TimerResetShortcut);
     }
 
+    [Fact]
+    public async Task PlainKeyShortcutsSurviveARestart()
+    {
+        // Before plain keys were allowed, an invalid reveal or divider shortcut failed validation outright.
+        var reveal = new GlobalHotkeyChord(0x4F, GlobalHotkeyModifiers.None);
+        var divider = new GlobalHotkeyChord(0x74, GlobalHotkeyModifiers.None);
+        var split = new GlobalHotkeyChord(0x46, GlobalHotkeyModifiers.None);
+
+        await _store.SaveAsync(PanelSettings.Default with
+        {
+            RevealXpOverlayTabShortcut = reveal,
+            ToggleDividerResizingShortcut = divider,
+            TimerSplitShortcut = split
+        });
+        var loaded = await _store.LoadAsync();
+
+        Assert.Equal(reveal, loaded.RevealXpOverlayTabShortcut);
+        Assert.Equal(divider, loaded.ToggleDividerResizingShortcut);
+        Assert.Equal(split, loaded.TimerSplitShortcut);
+    }
+
     private async Task WriteSettingsAsync(Action<JsonObject> edit)
     {
         await _store.SaveAsync(PanelSettings.Default);
