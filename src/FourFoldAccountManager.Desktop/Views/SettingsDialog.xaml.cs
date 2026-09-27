@@ -10,7 +10,7 @@ public partial class SettingsDialog : Window
     private const string CapturePrompt = "Press a key, with or without Ctrl, Alt, or Shift. Esc cancels.";
 
     private const string InvalidKeysMessage =
-        "Esc, Tab, Enter, Backspace, the Windows key, and Ctrl, Alt, or Shift on their own can't be shortcuts.";
+        "Esc, Tab, Enter, Backspace, F5, the Windows key, and Ctrl, Alt, or Shift on their own can't be shortcuts.";
 
     private readonly Func<MessageBoxResult>? _confirmResetLayoutSizes;
     private readonly IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> _initialShortcuts;

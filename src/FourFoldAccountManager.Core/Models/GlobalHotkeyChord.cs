@@ -31,12 +31,13 @@ public sealed record GlobalHotkeyChord(ushort VirtualKey, GlobalHotkeyModifiers 
     public static GlobalHotkeyChord DefaultTimerReset { get; } =
         new(0x52, SupportedModifiers);
 
-    // Any key except the Windows and modifier keys, with or without Ctrl, Alt, or Shift. Esc, Tab, Enter,
-    // and Backspace sit below 0x20 and stay excluded because they drive the Settings dialog.
+    // Any key except the Windows keys, the modifier keys, and F5, with or without Ctrl, Alt, or Shift. F5 stays
+    // a browser refresh for the game panels. Esc, Tab, Enter, and Backspace sit below 0x20 and stay excluded
+    // because they drive the Settings dialog.
     [JsonIgnore]
     public bool IsValid =>
         (VirtualKey is >= 0x20 and <= 0xFE || VirtualKey == 0x13) &&
-        VirtualKey is not (0x5B or 0x5C or >= 0xA0 and <= 0xA5) &&
+        VirtualKey is not (0x5B or 0x5C or 0x74 or >= 0xA0 and <= 0xA5) &&
         (Modifiers & ~SupportedModifiers) == 0;
 
     // A key with no Ctrl, Alt, or Shift. FourFold listens for it through raw input and never takes it from

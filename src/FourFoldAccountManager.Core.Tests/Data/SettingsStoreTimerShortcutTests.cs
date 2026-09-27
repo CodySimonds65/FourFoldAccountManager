@@ -65,7 +65,7 @@ public sealed class SettingsStoreTimerShortcutTests : IDisposable
     {
         // Before plain keys were allowed, an invalid reveal or divider shortcut failed validation outright.
         var reveal = new GlobalHotkeyChord(0x4F, GlobalHotkeyModifiers.None);
-        var divider = new GlobalHotkeyChord(0x74, GlobalHotkeyModifiers.None);
+        var divider = new GlobalHotkeyChord(0x75, GlobalHotkeyModifiers.None);
         var split = new GlobalHotkeyChord(0x46, GlobalHotkeyModifiers.None);
 
         await _store.SaveAsync(PanelSettings.Default with
@@ -79,6 +79,22 @@ public sealed class SettingsStoreTimerShortcutTests : IDisposable
         Assert.Equal(reveal, loaded.RevealXpOverlayTabShortcut);
         Assert.Equal(divider, loaded.ToggleDividerResizingShortcut);
         Assert.Equal(split, loaded.TimerSplitShortcut);
+    }
+
+    [Fact]
+    public async Task F5ShortcutsFallBackToDefaultsWithoutFailingTheLoad()
+    {
+        // F5 stays a browser refresh for the game panels, so F5 shortcuts saved by earlier builds are dropped.
+        await WriteSettingsAsync(json =>
+        {
+            json["revealXpOverlayTabShortcut"] = new JsonObject { ["virtualKey"] = 0x74, ["modifiers"] = 1 };
+            json["timerSplitShortcut"] = new JsonObject { ["virtualKey"] = 0x74, ["modifiers"] = 0 };
+        });
+
+        var loaded = await _store.LoadAsync();
+
+        Assert.Equal(GlobalHotkeyChord.DefaultRevealXpOverlayTab, loaded.RevealXpOverlayTabShortcut);
+        Assert.Equal(GlobalHotkeyChord.DefaultTimerSplit, loaded.TimerSplitShortcut);
     }
 
     private async Task WriteSettingsAsync(Action<JsonObject> edit)
