@@ -114,16 +114,6 @@ public sealed class SettingsStore
             throw new InvalidDataException("Panel settings must contain four or five slot assignments.");
         }
 
-        if (settings.RevealXpOverlayTabShortcut is null || !settings.RevealXpOverlayTabShortcut.IsValid)
-        {
-            throw new InvalidDataException("Panel settings contain an invalid XP overlay reveal shortcut.");
-        }
-
-        if (settings.ToggleDividerResizingShortcut is null || !settings.ToggleDividerResizingShortcut.IsValid)
-        {
-            throw new InvalidDataException("Panel settings contain an invalid divider resizing shortcut.");
-        }
-
         if (settings.TwoByThreeTopRowFraction is < 0.2 or > 0.8)
         {
             throw new InvalidDataException("The 2 × 3 top-row height must be between 20% and 80%.");
@@ -151,8 +141,10 @@ public sealed class SettingsStore
             ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
             PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
             XpCalculatorTargetLevels = XpCalculatorTargets.Normalize(settings.XpCalculatorTargetLevels),
-            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
-            ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
+            RevealXpOverlayTabShortcut = ValidOrDefault(settings.RevealXpOverlayTabShortcut,
+                GlobalHotkeyChord.DefaultRevealXpOverlayTab),
+            ToggleDividerResizingShortcut = ValidOrDefault(settings.ToggleDividerResizingShortcut,
+                GlobalHotkeyChord.DefaultToggleDividerResizing),
             TimerSplitShortcut = ValidOrDefault(settings.TimerSplitShortcut, GlobalHotkeyChord.DefaultTimerSplit),
             TimerFinishShortcut = ValidOrDefault(settings.TimerFinishShortcut, GlobalHotkeyChord.DefaultTimerFinish),
             TimerResetShortcut = ValidOrDefault(settings.TimerResetShortcut, GlobalHotkeyChord.DefaultTimerReset),
@@ -163,7 +155,8 @@ public sealed class SettingsStore
         };
     }
 
-    // Timer shortcuts arrived after settings files existed, so a bad one falls back instead of blocking the load.
+    // A shortcut that is missing, malformed, or no longer allowed (such as an F5 chord saved by an earlier build)
+    // falls back to its default instead of blocking the load.
     private static GlobalHotkeyChord ValidOrDefault(GlobalHotkeyChord? chord, GlobalHotkeyChord fallback) =>
         chord is { IsValid: true } ? chord : fallback;
 

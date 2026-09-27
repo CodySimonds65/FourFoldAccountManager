@@ -7,11 +7,10 @@ namespace FourFoldAccountManager.Desktop.Views;
 
 public partial class SettingsDialog : Window
 {
-    private const string CapturePrompt =
-        "Press Ctrl, Alt, or Shift with one key, or a single numpad, F13–F24, Pause, Scroll Lock, or Insert key. Esc cancels.";
+    private const string CapturePrompt = "Press a key, with or without Ctrl, Alt, or Shift. Esc cancels.";
 
     private const string InvalidKeysMessage =
-        "Use Ctrl, Alt, or Shift plus one key, or a single numpad (with Num Lock on), F13–F24, Pause, Scroll Lock, or Insert key. Windows-key shortcuts are not supported.";
+        "Esc, Tab, Enter, Backspace, F5, the Windows key, and Ctrl, Alt, or Shift on their own can't be shortcuts.";
 
     private readonly Func<MessageBoxResult>? _confirmResetLayoutSizes;
     private readonly IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> _initialShortcuts;
@@ -168,16 +167,35 @@ public partial class SettingsDialog : Window
 
     private void SettingsDialog_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (_capturingShortcut is null)
+        if (_capturingShortcut is not { } action)
         {
             return;
         }
 
         e.Handled = true;
-        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        var key = e.Key switch
+        {
+            Key.System => e.SystemKey,
+            Key.ImeProcessed => e.ImeProcessedKey,
+            Key.DeadCharProcessed => e.DeadCharProcessedKey,
+            _ => e.Key
+        };
         if (key == Key.Escape)
         {
             CancelCapture();
+            return;
+        }
+
+        // Pressing Ctrl, Alt, or Shift first is how a chord starts; keep waiting for its main key.
+        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift)
+        {
+            return;
+        }
+
+        // Without this, Win+F would be recorded as a plain F.
+        if (key is Key.LWin or Key.RWin || (Keyboard.Modifiers & ModifierKeys.Windows) != 0)
+        {
+            _rows[action].SetStatus(InvalidKeysMessage);
             return;
         }
 
