@@ -612,6 +612,8 @@ public sealed class AccountBrowserSessionService
             await view.EnsureCoreWebView2Async(environment, options);
             cancellationToken.ThrowIfCancellationRequested();
             view.CoreWebView2.Settings.AreDevToolsEnabled = false;
+            // Plain-key shortcuts reach the game panels unblocked, so browser keys like F5 must not reload the game.
+            view.CoreWebView2.Settings.AreBrowserAcceleratorKeysEnabled = false;
             view.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
             return view;
         }
