@@ -1022,6 +1022,7 @@ public partial class MainWindow : Window
                 return;
             }
 
+            RefreshPlainKeyBindings();
             if (dialog.ResetLayoutSizes)
             {
                 await RebuildPanelAsync(closeExistingViews: false);
@@ -1033,7 +1034,6 @@ public partial class MainWindow : Window
             }
             UpdateManageSlotsButton();
             UpdateTimerHotkeys();
-            RefreshPlainKeyBindings();
             if (stillUnavailable.Count > 0)
             {
                 var unavailableNames = string.Join(", ", stillUnavailable.Select(GlobalShortcutActions.DisplayName));
