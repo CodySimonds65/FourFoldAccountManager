@@ -46,7 +46,8 @@ public sealed record StatsCardContent(
                 CharacterStatLabels.Short(row.Stat),
                 row.ProfileValue.ToString("N0", CultureInfo.InvariantCulture),
                 row.Average.ToString("N0", CultureInfo.InvariantCulture),
-                row.PercentageDifference is { } percentage ? Percent(percentage) : "—",
+                // The raw gap reads faster in play than a percentage; the summary keeps the mean %.
+                row.Difference.ToString("+#,##0;-#,##0;0", CultureInfo.InvariantCulture),
                 row.Direction))
             .ToArray();
         return new StatsCardContent(true, header, counts, summary, string.Empty, rows);
