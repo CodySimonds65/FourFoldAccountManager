@@ -3,9 +3,8 @@ using System.Text.Json.Serialization;
 
 namespace FourFoldAccountManager.Core.Models;
 
-// Timer shortcuts arrived after settings files existed, so a hand-edited or older/newer-build value with the
-// wrong JSON shape (a string instead of an object, an out-of-range virtualKey, a non-numeric modifiers) must
-// not fail the whole PanelSettings load. This reads the raw JSON element and returns null on any shape or
+// A hand-edited or older/newer-build shortcut value with the wrong JSON shape (a string instead of an object,
+// an out-of-range virtualKey, a non-numeric modifiers) must not fail the whole PanelSettings load. This reads the raw JSON element and returns null on any shape or
 // range problem instead of throwing; SettingsStore.ValidOrDefault then falls back to that shortcut's default,
 // the same way it already handles a semantically-invalid (but well-shaped) chord.
 public sealed class LenientHotkeyChordJsonConverter : JsonConverter<GlobalHotkeyChord?>

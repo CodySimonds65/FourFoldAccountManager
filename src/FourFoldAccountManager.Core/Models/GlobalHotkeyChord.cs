@@ -31,17 +31,19 @@ public sealed record GlobalHotkeyChord(ushort VirtualKey, GlobalHotkeyModifiers 
     public static GlobalHotkeyChord DefaultTimerReset { get; } =
         new(0x52, SupportedModifiers);
 
-    // Keys a speedrunner can bind alone. Every other key needs Ctrl, Alt, or Shift so ordinary typing keeps working.
-    private static readonly HashSet<ushort> SingleKeys = BuildSingleKeys();
-
+    // Any key except the Windows keys, the modifier keys, and F5, with or without Ctrl, Alt, or Shift. F5 stays
+    // a browser refresh for the game panels. Esc, Tab, Enter, and Backspace sit below 0x20 and stay excluded
+    // because they drive the Settings dialog.
     [JsonIgnore]
     public bool IsValid =>
         (VirtualKey is >= 0x20 and <= 0xFE || VirtualKey == 0x13) &&
-        VirtualKey is not (0x5B or 0x5C or >= 0xA0 and <= 0xA5) &&
-        (Modifiers & ~SupportedModifiers) == 0 &&
-        (Modifiers != GlobalHotkeyModifiers.None || CanBeBoundAlone(VirtualKey));
+        VirtualKey is not (0x5B or 0x5C or 0x74 or >= 0xA0 and <= 0xA5) &&
+        (Modifiers & ~SupportedModifiers) == 0;
 
-    public static bool CanBeBoundAlone(ushort virtualKey) => SingleKeys.Contains(virtualKey);
+    // A key with no Ctrl, Alt, or Shift. FourFold listens for it through raw input and never takes it from
+    // the game or other apps; only modifier chords are registered with Windows.
+    [JsonIgnore]
+    public bool IsPlainKey => Modifiers == GlobalHotkeyModifiers.None;
 
     public static bool TryCreate(
         ushort virtualKey,
@@ -50,22 +52,5 @@ public sealed record GlobalHotkeyChord(ushort VirtualKey, GlobalHotkeyModifiers 
     {
         chord = new GlobalHotkeyChord(virtualKey, modifiers);
         return chord.IsValid;
-    }
-
-    private static HashSet<ushort> BuildSingleKeys()
-    {
-        // Pause, Scroll Lock, Insert, and numpad * + - . /
-        var keys = new HashSet<ushort> { 0x13, 0x91, 0x2D, 0x6A, 0x6B, 0x6D, 0x6E, 0x6F };
-        for (ushort key = 0x60; key <= 0x69; key++)
-        {
-            keys.Add(key); // Numpad 0-9
-        }
-
-        for (ushort key = 0x7C; key <= 0x87; key++)
-        {
-            keys.Add(key); // F13-F24
-        }
-
-        return keys;
     }
 }

@@ -118,7 +118,7 @@
                     <views:ShortcutRow x:Name="TimerResetShortcutRow" Action="TimerReset" Margin="0,10,0,0"
                                        Title="Timer reset" Description="Clear the timer and all laps." />
                     <TextBlock Margin="2,13,0,0" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
-                               Text="Single keys (numpad, F13–F24, Pause, Scroll Lock, Insert) stop reaching games and other apps while FourFold is open." />
+                               Text="A key bound on its own still reaches the game and other apps, so it also fires while you type it, for example in game chat." />
                 </StackPanel>
             </ScrollViewer>
         </Grid>
