@@ -21,9 +21,6 @@ public sealed class TimerCoordinator : IDisposable
 
     public TimerDisplay Display { get; } = new();
 
-    // Set while the Settings dialog records shortcuts so a key press cannot change the run.
-    public bool ShortcutsSuspended { get; set; }
-
     internal bool IsTicking => _ticker.IsEnabled;
 
     public void Split()
@@ -48,31 +45,19 @@ public sealed class TimerCoordinator : IDisposable
         OnStateChanged();
     }
 
-    // Returns true for timer actions, whether or not they ran; other actions belong to the caller.
+    // Returns true for timer actions; other actions belong to the caller.
     public bool TryHandleShortcut(GlobalShortcutAction action)
     {
         switch (action)
         {
             case GlobalShortcutAction.TimerSplit:
-                if (!ShortcutsSuspended)
-                {
-                    Split();
-                }
-
+                Split();
                 return true;
             case GlobalShortcutAction.TimerFinish:
-                if (!ShortcutsSuspended)
-                {
-                    Finish();
-                }
-
+                Finish();
                 return true;
             case GlobalShortcutAction.TimerReset:
-                if (!ShortcutsSuspended)
-                {
-                    Reset();
-                }
-
+                Reset();
                 return true;
             default:
                 return false;

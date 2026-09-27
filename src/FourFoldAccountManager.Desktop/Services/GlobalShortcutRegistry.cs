@@ -26,6 +26,15 @@ internal sealed class GlobalShortcutRegistry : IDisposable
 
     public bool IsAvailable(GlobalShortcutAction action) => _available.Contains(action);
 
+    // The chords of the actions that are live right now, plain keys included; the plain-key matcher uses them.
+    public IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> ActiveChords(PanelSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return GlobalShortcutActions.All
+            .Where(_available.Contains)
+            .ToDictionary(action => action, action => GlobalShortcutActions.GetChord(settings, action));
+    }
+
     public void Initialize(PanelSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);

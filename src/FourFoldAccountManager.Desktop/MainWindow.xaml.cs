@@ -11,6 +11,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using FourFoldAccountManager.Core.Calculation;
 using FourFoldAccountManager.Core.Data;
+using FourFoldAccountManager.Core.Input;
 using FourFoldAccountManager.Core.Launch;
 using FourFoldAccountManager.Core.Leaderboard;
 using FourFoldAccountManager.Core.Models;
@@ -27,6 +28,7 @@ namespace FourFoldAccountManager.Desktop;
 public partial class MainWindow : Window
 {
     private const int WmHotkey = 0x0312;
+    private const int WmInput = 0x00FF;
 
     private readonly ObservableCollection<AccountProfile> _accounts = [];
     private readonly HashSet<Guid> _openAccountIds = [];
@@ -48,6 +50,10 @@ public partial class MainWindow : Window
     private readonly TimerCoordinator _timer = new();
     private HwndSource? _windowSource;
     private GlobalShortcutRegistry? _shortcuts;
+    private RawKeyboardListener? _rawKeyboard;
+    private readonly PlainKeyShortcutMatcher _plainKeys = new();
+    // Recording a shortcut must not reveal overlays, toggle dividers, or change a live run.
+    private bool _settingsDialogOpen;
     private PanelSettings _panelSettings = PanelSettings.Default;
     private bool _isReady;
     private bool _batchLaunchInProgress;
@@ -153,7 +159,9 @@ public partial class MainWindow : Window
         }
 
         _windowSource.AddHook(MainWindow_HwndSourceHook);
-        _shortcuts = new GlobalShortcutRegistry(new WindowsGlobalHotkeyRegistrar(windowHandle));
+        _rawKeyboard = RawKeyboardListener.TryRegister(windowHandle);
+        _shortcuts = new GlobalShortcutRegistry(new PlainKeyRoutingRegistrar(
+            new WindowsGlobalHotkeyRegistrar(windowHandle), plainKeysAvailable: _rawKeyboard is not null));
     }
 
     private IntPtr MainWindow_HwndSourceHook(
@@ -163,6 +171,17 @@ public partial class MainWindow : Window
         IntPtr lParam,
         ref bool handled)
     {
+        if (message == WmInput)
+        {
+            // Plain keys are only observed; leaving WM_INPUT unhandled lets Windows finish with it.
+            if (_rawKeyboard is { } rawKeyboard && rawKeyboard.TryRead(lParam, out var virtualKey, out var isKeyDown))
+            {
+                HandlePlainKey(virtualKey, isKeyDown);
+            }
+
+            return IntPtr.Zero;
+        }
+
         if (message == WmHotkey &&
             _shortcuts is { } shortcuts &&
             shortcuts.TryResolve(unchecked((int)wParam.ToInt64()), _panelSettings, out var action) &&
@@ -176,6 +195,11 @@ public partial class MainWindow : Window
 
     private bool HandleGlobalShortcut(GlobalShortcutAction action)
     {
+        if (_settingsDialogOpen)
+        {
+            return true;
+        }
+
         switch (action)
         {
             case GlobalShortcutAction.RevealOverlays:
@@ -188,6 +212,30 @@ public partial class MainWindow : Window
                 return _timer.TryHandleShortcut(action);
         }
     }
+
+    private void HandlePlainKey(ushort virtualKey, bool isKeyDown)
+    {
+        if (!isKeyDown)
+        {
+            _plainKeys.KeyUp(virtualKey);
+            return;
+        }
+
+        if (_plainKeys.KeyDown(virtualKey) is { } action && !IsTypingInFourFold())
+        {
+            HandleGlobalShortcut(action);
+        }
+    }
+
+    // Plain keys stay quiet while someone types into FourFold's own text boxes. The game's chat lives inside
+    // WebView2 and cannot be detected, so plain keys still fire there.
+    private static bool IsTypingInFourFold() =>
+        System.Windows.Input.Keyboard.FocusedElement is TextBoxBase or PasswordBox &&
+        Application.Current.Windows.OfType<Window>().Any(window => window.IsActive);
+
+    private void RefreshPlainKeyBindings() =>
+        _plainKeys.SetBindings(_shortcuts?.ActiveChords(_panelSettings) ??
+            new Dictionary<GlobalShortcutAction, GlobalHotkeyChord>());
 
     private void UpdateTimerHotkeys()
     {
@@ -234,6 +282,7 @@ public partial class MainWindow : Window
             LeaderboardPanelView.Configure(_leaderboard, enabled => SetLeaderboardSharingAsync(enabled));
             _shortcuts?.Initialize(_panelSettings);
             UpdateTimerHotkeys();
+            RefreshPlainKeyBindings();
             foreach (var (accountId, size) in _panelSettings.GameViewportSizes)
             {
                 await _browserSessions.SetGameViewportSizeAsync(accountId, size);
@@ -886,8 +935,7 @@ public partial class MainWindow : Window
         {
             Owner = this
         };
-        // Recording a shortcut must not split, finish, or reset a live run.
-        _timer.ShortcutsSuspended = true;
+        _settingsDialogOpen = true;
         bool? accepted;
         try
         {
@@ -895,7 +943,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            _timer.ShortcutsSuspended = false;
+            _settingsDialogOpen = false;
         }
 
         if (accepted != true)
@@ -985,6 +1033,7 @@ public partial class MainWindow : Window
             }
             UpdateManageSlotsButton();
             UpdateTimerHotkeys();
+            RefreshPlainKeyBindings();
             if (stillUnavailable.Count > 0)
             {
                 var unavailableNames = string.Join(", ", stillUnavailable.Select(GlobalShortcutActions.DisplayName));
@@ -2830,6 +2879,17 @@ public partial class MainWindow : Window
         catch
         {
             // Native hotkey cleanup must not prevent the manager from closing.
+        }
+
+        var rawKeyboard = _rawKeyboard;
+        _rawKeyboard = null;
+        try
+        {
+            rawKeyboard?.Dispose();
+        }
+        catch
+        {
+            // Raw input cleanup must not prevent the manager from closing.
         }
 
         _timer.Dispose();
