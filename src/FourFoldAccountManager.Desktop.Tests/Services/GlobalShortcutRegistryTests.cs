@@ -75,6 +75,18 @@ public sealed class GlobalShortcutRegistryTests
         Assert.Equal(GlobalShortcutAction.TimerSplit, resolved);
         // RegisterHotKey would take a plain key from every other app, so plain keys must never reach Windows.
         Assert.DoesNotContain(windows.Registered.Values, chord => chord.IsPlainKey);
+
+        // Retrying without the refused chord must succeed: a plain key leaked by the rollback would be refused
+        // as a duplicate here, leaving the user unable to bind it.
+        var retry = GlobalShortcutActions.WithChord(next, GlobalShortcutAction.TimerReset, GlobalHotkeyChord.DefaultTimerReset);
+        var retried = await registry.ApplyAsync(current, retry, () => { persisted++; return Task.CompletedTask; });
+
+        Assert.True(retried.Saved);
+        Assert.Empty(retried.StillUnavailable);
+        Assert.Equal(1, persisted);
+        Assert.Equal(PlainF, registry.ActiveChords(retry)[GlobalShortcutAction.TimerSplit]);
+        Assert.Equal(PlainH, registry.ActiveChords(retry)[GlobalShortcutAction.TimerFinish]);
+        Assert.DoesNotContain(windows.Registered.Values, chord => chord.IsPlainKey);
     }
 
     private sealed class FakeRegistrar : IGlobalHotkeyRegistrar
