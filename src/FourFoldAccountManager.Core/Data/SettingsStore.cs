@@ -155,7 +155,8 @@ public sealed class SettingsStore
         };
     }
 
-    // Timer shortcuts arrived after settings files existed, so a bad one falls back instead of blocking the load.
+    // A shortcut that is missing, malformed, or no longer allowed (such as an F5 chord saved by an earlier build)
+    // falls back to its default instead of blocking the load.
     private static GlobalHotkeyChord ValidOrDefault(GlobalHotkeyChord? chord, GlobalHotkeyChord fallback) =>
         chord is { IsValid: true } ? chord : fallback;
 

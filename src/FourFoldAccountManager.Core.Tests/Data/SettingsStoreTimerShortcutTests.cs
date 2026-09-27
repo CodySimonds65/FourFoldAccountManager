@@ -21,20 +21,24 @@ public sealed class SettingsStoreTimerShortcutTests : IDisposable
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
     [Fact]
-    public async Task MalformedTimerShortcutShapesFallBackToDefaultsWithoutFailingTheLoad()
+    public async Task MalformedShortcutShapesFallBackToDefaultsWithoutFailingTheLoad()
     {
         await WriteSettingsAsync(json =>
         {
             // Whole value has the wrong JSON kind (string instead of an object).
             json["timerSplitShortcut"] = "Numpad1";
+            json["revealXpOverlayTabShortcut"] = "Shift+O";
             // virtualKey is outside ushort range.
             json["timerFinishShortcut"] = new JsonObject { ["virtualKey"] = 70000 };
             // modifiers has the wrong JSON kind (string instead of a number).
             json["timerResetShortcut"] = new JsonObject { ["virtualKey"] = 0x52, ["modifiers"] = "Ctrl" };
+            json["toggleDividerResizingShortcut"] = new JsonObject { ["virtualKey"] = 0x4C, ["modifiers"] = "Ctrl" };
         });
 
         var loaded = await _store.LoadAsync();
 
+        Assert.Equal(GlobalHotkeyChord.DefaultRevealXpOverlayTab, loaded.RevealXpOverlayTabShortcut);
+        Assert.Equal(GlobalHotkeyChord.DefaultToggleDividerResizing, loaded.ToggleDividerResizingShortcut);
         Assert.Equal(GlobalHotkeyChord.DefaultTimerSplit, loaded.TimerSplitShortcut);
         Assert.Equal(GlobalHotkeyChord.DefaultTimerFinish, loaded.TimerFinishShortcut);
         Assert.Equal(GlobalHotkeyChord.DefaultTimerReset, loaded.TimerResetShortcut);

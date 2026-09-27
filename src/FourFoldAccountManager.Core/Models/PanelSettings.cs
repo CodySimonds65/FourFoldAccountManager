@@ -24,9 +24,11 @@ public sealed record PanelSettings
 
     public bool PluginsSidebarExpanded { get; init; } = true;
 
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
     public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =
         GlobalHotkeyChord.DefaultRevealXpOverlayTab;
 
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
     public GlobalHotkeyChord ToggleDividerResizingShortcut { get; init; } =
         GlobalHotkeyChord.DefaultToggleDividerResizing;
 
