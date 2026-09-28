@@ -68,3 +68,7 @@ pg_restore --list leaderboard.dump
 ```
 
 Restore into a new empty database, then verify table counts and `/health/ready` before switching the service. For rollback, disable collection and restart; deploy only an image compatible with the current schema because code rollback does not undo migrations. To erase data, disconnect clients, disable collection, purge the four application tables and provider backups, and remove local caches.
+
+## License
+
+Copyright 2026 Cody Simonds. Licensed under the [Apache License 2.0](LICENSE).
