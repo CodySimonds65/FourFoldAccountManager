@@ -121,15 +121,17 @@ public partial class StatsWindow : Window
         {
             // The themed MenuItem draws no check mark, so the tick is a CheckBox. Its content is a TextBlock so
             // an underscore in an account name is not read as an access key.
+            var checkBox = new CheckBox
+            {
+                Content = new TextBlock { Text = item.Label },
+                IsChecked = item.InWindow,
+                IsHitTestVisible = false,
+                Focusable = false
+            };
+            checkBox.SetResourceReference(Control.ForegroundProperty, "Brush.TextPrimary");
             var menuItem = new MenuItem
             {
-                Header = new CheckBox
-                {
-                    Content = new TextBlock { Text = item.Label },
-                    IsChecked = item.InWindow,
-                    IsHitTestVisible = false,
-                    Focusable = false
-                }
+                Header = checkBox
             };
             var show = !item.InWindow;
             menuItem.Click += (_, _) =>
