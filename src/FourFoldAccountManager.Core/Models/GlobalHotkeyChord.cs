@@ -31,6 +31,12 @@ public sealed record GlobalHotkeyChord(ushort VirtualKey, GlobalHotkeyModifiers 
     public static GlobalHotkeyChord DefaultTimerReset { get; } =
         new(0x52, SupportedModifiers);
 
+    public static GlobalHotkeyChord DefaultNextTab { get; } =
+        new(0x27, SupportedModifiers);
+
+    public static GlobalHotkeyChord DefaultPreviousTab { get; } =
+        new(0x25, SupportedModifiers);
+
     // Any key except the Windows keys, the modifier keys, and F5, with or without Ctrl, Alt, or Shift. F5 stays
     // a browser refresh for the game panels. Esc, Tab, Enter, and Backspace sit below 0x20 and stay excluded
     // because they drive the Settings dialog.

@@ -209,8 +209,23 @@ public partial class MainWindow : Window
             case GlobalShortcutAction.ToggleDividerResizing:
                 ToggleLayoutDividerResizing();
                 return true;
+            case GlobalShortcutAction.NextTab:
+                StepTab(1);
+                return true;
+            case GlobalShortcutAction.PreviousTab:
+                StepTab(-1);
+                return true;
             default:
                 return _timer.TryHandleShortcut(action);
+        }
+    }
+
+    // Outside the Tabs layout, behind the Leaderboard view, or with a single tab, the shortcut does nothing.
+    private void StepTab(int direction)
+    {
+        if (_panelSettings.Layout == PanelLayout.Tabs && !_showingLeaderboard && _panelSettings.Tabs.Count > 1)
+        {
+            _ = SelectTabAsync(settings => PanelTabPolicy.Step(settings, direction));
         }
     }
 
