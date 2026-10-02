@@ -51,8 +51,13 @@ public sealed record PanelSettings
     [JsonConverter(typeof(LenientTargetLevelsJsonConverter))]
     public IReadOnlyDictionary<Guid, long> XpCalculatorTargetLevels { get; init; } = new Dictionary<Guid, long>();
 
-    [JsonConverter(typeof(OverlayCardListJsonConverter))]
+    [JsonConverter(typeof(LenientListJsonConverter<OverlayCardPlacement>))]
     public IReadOnlyList<OverlayCardPlacement> OverlayCards { get; init; } = Array.Empty<OverlayCardPlacement>();
+
+    [JsonConverter(typeof(LenientListJsonConverter<PanelTab>))]
+    public IReadOnlyList<PanelTab> Tabs { get; init; } = Array.Empty<PanelTab>();
+
+    public int ActiveTab { get; init; }
 
     // Migration input from settings written before overlay add-ons; validation converts it and never writes it back.
     [JsonPropertyName("xpOverlayBoundsByAccount")]
