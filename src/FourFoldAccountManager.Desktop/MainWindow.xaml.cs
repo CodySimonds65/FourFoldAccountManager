@@ -137,7 +137,8 @@ public partial class MainWindow : Window
             new LayoutChoice(PanelLayout.TwoByThree, "2 × 3 · Five clients"),
             new LayoutChoice(PanelLayout.OneByThree, "1 × 3 · One above three"),
             new LayoutChoice(PanelLayout.OneByTwoVertical, "1 × 2 · Vertical split"),
-            new LayoutChoice(PanelLayout.OneByOne, "1 × 1 · Single client")
+            new LayoutChoice(PanelLayout.OneByOne, "1 × 1 · Single client"),
+            new LayoutChoice(PanelLayout.Tabs, "Tabs · One client per tab")
         };
 
         LayoutPicker.SelectedValuePath = nameof(LayoutChoice.Layout);
@@ -489,7 +490,9 @@ public partial class MainWindow : Window
         await RefreshSlotPickersAsync();
         GlobalStatusText.Text = visibleSlot >= 0
             ? $"Added {account.Label} and assigned it to slot {visibleSlot + 1}. Press Launch accounts to continue."
-            : $"Added {account.Label}. Choose a panel slot to assign it.";
+            : _panelSettings.Layout == PanelLayout.Tabs
+                ? $"Added {account.Label}. Add it to a tab with +."
+                : $"Added {account.Label}. Choose a panel slot to assign it.";
     }
 
     private async void RenameAccount_Click(object sender, RoutedEventArgs e)
@@ -887,6 +890,7 @@ public partial class MainWindow : Window
         AccountsGapColumn.Width = _isFullScreen || !accountsVisible
             ? new GridLength(0) : new GridLength(16);
         UpdateTopLevelButtons();
+        RefreshTabStrip();
         UpdatePluginSidebarVisibility();
     }
 
@@ -1129,6 +1133,7 @@ public partial class MainWindow : Window
             : Visibility.Collapsed;
         UpdateAllSlotPresentations();
         UpdateManageSlotsButton();
+        RefreshTabStrip();
 
         WindowState = WindowState.Normal;
         WindowStyle = WindowStyle.None;
@@ -1167,6 +1172,7 @@ public partial class MainWindow : Window
         FullScreenExitButton.Visibility = Visibility.Collapsed;
         UpdateAllSlotPresentations();
         UpdateManageSlotsButton();
+        RefreshTabStrip();
         RefreshTrackerRows();
 
         WindowState = _previousWindowState;
@@ -1181,7 +1187,9 @@ public partial class MainWindow : Window
 
     private void UpdateManageSlotsButton()
     {
-        ManageSlotsButton.Visibility = _openAccountIds.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ManageSlotsButton.Visibility = _openAccountIds.Count > 0 && _panelSettings.Layout != PanelLayout.Tabs
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         ManageSlotsButton.Content = _slotManagementVisible ? "Done" : "Manage slots";
         ManageSlotsButton.ToolTip = _slotManagementVisible
             ? "Hide account selectors for started views."
@@ -1398,7 +1406,8 @@ public partial class MainWindow : Window
                 ? "Choose an account above to fill this slot."
                 : "Select Launch accounts to start playing together.";
 
-        var showPicker = _slotManagementVisible || !isOpen;
+        // Tabs are filled with + and x, not with the slot account picker.
+        var showPicker = _panelSettings.Layout != PanelLayout.Tabs && (_slotManagementVisible || !isOpen);
         slot.AccountPicker.Visibility = showPicker ? Visibility.Visible : Visibility.Collapsed;
         slot.AccountLabel.Visibility = showPicker ? Visibility.Collapsed : Visibility.Visible;
 
@@ -1428,7 +1437,9 @@ public partial class MainWindow : Window
             .ToArray();
         if (assignedSlots.Length == 0)
         {
-            GlobalStatusText.Text = "Assign at least one profile to a visible slot before starting accounts.";
+            GlobalStatusText.Text = _panelSettings.Layout == PanelLayout.Tabs
+                ? "Add a tab with + before starting accounts."
+                : "Assign at least one profile to a visible slot before starting accounts.";
             return;
         }
 
@@ -1593,6 +1604,8 @@ public partial class MainWindow : Window
             slot.AccountPicker.IsEnabled = !isActive;
             slot.RelaunchButton.IsEnabled = !isActive && _isReady;
         }
+
+        RefreshTabStrip();
     }
 
     private async void RelaunchAccount_Click(object sender, RoutedEventArgs e)
@@ -1686,6 +1699,169 @@ public partial class MainWindow : Window
         }
     }
 
+    private void RefreshTabStrip()
+    {
+        var tabsLayout = _panelSettings.Layout == PanelLayout.Tabs;
+        TabStrip.Visibility = tabsLayout && !_showingLeaderboard && !_isFullScreen
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        if (!tabsLayout)
+        {
+            return;
+        }
+
+        var canEdit = _isReady && !_batchLaunchInProgress;
+        TabStrip.Children.Clear();
+        for (var index = 0; index < _panelSettings.Tabs.Count; index++)
+        {
+            var accountId = _panelSettings.Tabs[index].AccountId;
+            var label = _accounts.FirstOrDefault(account => account.Id == accountId)?.Label ?? "Unknown profile";
+            var active = index == _panelSettings.ActiveTab;
+            var foreground = (Brush)FindResource(active ? "Brush.AccentGold" : "Brush.TextPrimary");
+            var selectButton = new Button
+            {
+                Tag = index, Height = 34, MaxWidth = 200, Padding = new Thickness(14, 0, 14, 0),
+                Style = (Style)FindResource("AppButtonStyle"),
+                Background = (Brush)FindResource(active ? "Brush.AccentSoft" : "Brush.SurfaceRaised"),
+                Foreground = foreground,
+                ToolTip = label,
+                // A TextBlock, not a string, so an underscore in the label is not read as an access key.
+                Content = new TextBlock
+                {
+                    Text = label, Foreground = foreground, TextTrimming = TextTrimming.CharacterEllipsis
+                }
+            };
+            System.Windows.Automation.AutomationProperties.SetName(selectButton, $"{label} tab");
+            selectButton.Click += SelectTab_Click;
+            TabStrip.Children.Add(selectButton);
+
+            var closeButton = new Button
+            {
+                Tag = index, Width = 28, Height = 34, Padding = new Thickness(0),
+                Margin = new Thickness(2, 0, 8, 0),
+                Style = (Style)FindResource("AppButtonStyle"),
+                Content = "×", ToolTip = "Close tab and end its game session",
+                IsEnabled = canEdit
+            };
+            System.Windows.Automation.AutomationProperties.SetName(closeButton, $"Close {label} tab");
+            closeButton.Click += CloseTab_Click;
+            TabStrip.Children.Add(closeButton);
+        }
+
+        var tabbed = PanelTabPolicy.AccountIds(_panelSettings);
+        var allTabbed = _accounts.All(account => tabbed.Contains(account.Id));
+        AddTabButton.IsEnabled = canEdit && !allTabbed;
+        AddTabButton.ToolTip = allTabbed ? "Every profile already has a tab." : "Add a tab";
+        TabStrip.Children.Add(AddTabButton);
+    }
+
+    // Every tab's card stays visible so its game keeps running at full speed. The active card is simply on
+    // top, and the covered ones ignore the mouse and keyboard navigation.
+    private void ShowActiveTab(bool focusGame)
+    {
+        if (_panelSettings.Layout == PanelLayout.Tabs)
+        {
+            foreach (var slot in _slotCards)
+            {
+                var active = slot.SlotIndex == _panelSettings.ActiveTab;
+                Panel.SetZIndex(slot.Root, active ? 1 : 0);
+                slot.Root.IsHitTestVisible = active;
+                System.Windows.Input.KeyboardNavigation.SetTabNavigation(slot.Root, active
+                    ? System.Windows.Input.KeyboardNavigationMode.Continue
+                    : System.Windows.Input.KeyboardNavigationMode.None);
+                if (active && focusGame)
+                {
+                    slot.View?.Focus();
+                }
+            }
+        }
+
+        // Also runs outside the Tabs layout, where it hides the strip.
+        RefreshTabStrip();
+    }
+
+    // ponytail: the swap waits for the settings save, a few milliseconds. If a swap ever feels slow, show
+    // the tab first and save afterward.
+    private async Task SelectTabAsync(Func<PanelSettings, PanelSettings> select)
+    {
+        try
+        {
+            await UpdateSettingsAsync(select);
+        }
+        catch
+        {
+            // The swap still happens on screen; only the saved choice is stale.
+            _panelSettings = select(_panelSettings);
+            GlobalStatusText.Text = "The tab choice could not be saved.";
+        }
+
+        ShowActiveTab(focusGame: true);
+    }
+
+    private async void SelectTab_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button { Tag: int index } && index != _panelSettings.ActiveTab)
+        {
+            await SelectTabAsync(settings => PanelTabPolicy.Select(settings, index));
+        }
+    }
+
+    private void AddTab_Click(object sender, RoutedEventArgs e)
+    {
+        var tabbed = PanelTabPolicy.AccountIds(_panelSettings);
+        var menu = new ContextMenu { PlacementTarget = AddTabButton, Placement = PlacementMode.Bottom };
+        foreach (var account in _accounts.Where(account => !tabbed.Contains(account.Id)))
+        {
+            // A TextBlock header, so an underscore in the label is not read as an access key.
+            var item = new MenuItem { Header = new TextBlock { Text = account.Label }, Tag = account.Id };
+            item.Click += AddTabMenuItem_Click;
+            menu.Items.Add(item);
+        }
+
+        menu.IsOpen = true;
+    }
+
+    private async void AddTabMenuItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (_batchLaunchInProgress || sender is not MenuItem { Tag: Guid accountId })
+        {
+            return;
+        }
+
+        try
+        {
+            await UpdateSettingsAsync(settings => PanelTabPolicy.Add(settings, accountId));
+            await RebuildPanelAsync(closeExistingViews: false);
+            GlobalStatusText.Text = "Tab added. Press Launch accounts to start it.";
+        }
+        catch
+        {
+            MessageBox.Show(this, "The tab could not be saved.", "FourFold Account Manager",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    private async void CloseTab_Click(object sender, RoutedEventArgs e)
+    {
+        if (_batchLaunchInProgress || sender is not Button { Tag: int index })
+        {
+            return;
+        }
+
+        try
+        {
+            await UpdateSettingsAsync(settings => PanelTabPolicy.Close(settings, index));
+            // The rebuild closes the session of the account that is no longer in a tab.
+            await RebuildPanelAsync(closeExistingViews: false);
+            GlobalStatusText.Text = "Tab closed and its game session ended.";
+        }
+        catch
+        {
+            MessageBox.Show(this, "The tab could not be closed.", "FourFold Account Manager",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
     private async Task RebuildPanelAsync(bool closeExistingViews)
     {
         if (closeExistingViews)
@@ -1706,8 +1882,30 @@ public partial class MainWindow : Window
         PanelGridHost.RowDefinitions.Clear();
         PanelGridHost.ColumnDefinitions.Clear();
 
-        PanelGridHost.Children.Add(BuildLayoutNode(
-            PanelLayoutPolicy.GetLayoutTree(_panelSettings.Layout)));
+        if (_panelSettings.Layout == PanelLayout.Tabs)
+        {
+            // Every tab's card shares the one cell; ShowActiveTab puts the active one on top.
+            for (var index = 0; index < _panelSettings.Tabs.Count; index++)
+            {
+                PanelGridHost.Children.Add(BuildSlotElement(index));
+            }
+
+            if (_panelSettings.Tabs.Count == 0)
+            {
+                PanelGridHost.Children.Add(new TextBlock
+                {
+                    Text = "Add a tab with +",
+                    Style = (Style)FindResource("QuietTextStyle"),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center
+                });
+            }
+        }
+        else
+        {
+            PanelGridHost.Children.Add(BuildLayoutNode(
+                PanelLayoutPolicy.GetLayoutTree(_panelSettings.Layout)));
+        }
 
         if (!closeExistingViews)
         {
@@ -1716,6 +1914,7 @@ public partial class MainWindow : Window
 
         UpdateManageSlotsButton();
         UpdateAllSlotPresentations();
+        ShowActiveTab(focusGame: false);
         _xpTracker.RefreshActiveAccounts(_slotCards
             .Select(slot => AccountIdFor(slot.SlotIndex))
             .OfType<Guid>().Where(_openAccountIds.Contains).ToArray());
@@ -2457,6 +2656,8 @@ public partial class MainWindow : Window
             slot.AccountPicker.SelectionChanged += SlotAccountPicker_SelectionChanged;
             UpdateSlotPresentation(slot);
         }
+
+        RefreshTabStrip();
     }
 
     private void AttachBrowserView(PanelSlotCard slot, Guid accountId, WebView2CompositionControl view)
@@ -2924,6 +3125,7 @@ public partial class MainWindow : Window
         PanelLayout.OneByThree => "1 × 3 · One above three",
         PanelLayout.OneByTwoVertical => "1 × 2 vertical",
         PanelLayout.OneByOne => "1 × 1",
+        PanelLayout.Tabs => "Tabs",
         _ => "Unknown"
     };
 

@@ -197,8 +197,20 @@
                 <Border x:Name="PanelBorder" Grid.Row="1" Padding="0" CornerRadius="0" BorderThickness="0"
                         Background="{DynamicResource Brush.AppBackground}">
                     <Grid>
-                        <Grid x:Name="PanelGridHost" />
-                        <views:LeaderboardPanel x:Name="LeaderboardPanelView" Visibility="Collapsed" />
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <WrapPanel x:Name="TabStrip" Visibility="Collapsed" Margin="4,0,4,8">
+                            <Button x:Name="AddTabButton" Width="34" Height="34" Padding="0" Click="AddTab_Click"
+                                    Style="{StaticResource AppButtonStyle}" ToolTipService.ShowOnDisabled="True"
+                                    ToolTip="Add a tab" AutomationProperties.Name="Add tab">
+                                <Path Data="M0,6 H12 M6,0 V12" Stroke="{DynamicResource Brush.TextSecondary}"
+                                      StrokeThickness="1.8" Width="12" Height="12" Stretch="Uniform" />
+                            </Button>
+                        </WrapPanel>
+                        <Grid x:Name="PanelGridHost" Grid.Row="1" />
+                        <views:LeaderboardPanel x:Name="LeaderboardPanelView" Grid.RowSpan="2" Visibility="Collapsed" />
                     </Grid>
                 </Border>
                 <TextBlock x:Name="GlobalStatusText" Grid.Row="2" Margin="6,10,6,0" Style="{StaticResource QuietTextStyle}"
