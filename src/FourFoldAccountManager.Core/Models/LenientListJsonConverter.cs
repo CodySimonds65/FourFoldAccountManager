@@ -4,11 +4,12 @@ using System.Text.Json.Serialization;
 namespace FourFoldAccountManager.Core.Models;
 
 // Settings files may be hand-edited or written by an older/newer build. Loading settings must
-// never throw because of overlay data, so this reads the raw JSON element and skips whatever it
-// cannot make sense of instead of failing the whole PanelSettings deserialization.
-public sealed class OverlayCardListJsonConverter : JsonConverter<IReadOnlyList<OverlayCardPlacement>>
+// never throw because of list data such as overlay cards or tabs, so this reads the raw JSON element and
+// skips whatever it cannot make sense of instead of failing the whole PanelSettings deserialization.
+public sealed class LenientListJsonConverter<T> : JsonConverter<IReadOnlyList<T>>
+    where T : class
 {
-    public override IReadOnlyList<OverlayCardPlacement> Read(
+    public override IReadOnlyList<T> Read(
         ref Utf8JsonReader reader,
         Type typeToConvert,
         JsonSerializerOptions options)
@@ -16,25 +17,25 @@ public sealed class OverlayCardListJsonConverter : JsonConverter<IReadOnlyList<O
         var element = JsonElement.ParseValue(ref reader);
         if (element.ValueKind != JsonValueKind.Array)
         {
-            return Array.Empty<OverlayCardPlacement>();
+            return Array.Empty<T>();
         }
 
-        var result = new List<OverlayCardPlacement>();
+        var result = new List<T>();
         foreach (var item in element.EnumerateArray())
         {
-            OverlayCardPlacement? placement;
+            T? value;
             try
             {
-                placement = item.Deserialize<OverlayCardPlacement>(options);
+                value = item.Deserialize<T>(options);
             }
             catch (JsonException)
             {
                 continue;
             }
 
-            if (placement is not null)
+            if (value is not null)
             {
-                result.Add(placement);
+                result.Add(value);
             }
         }
 
@@ -43,7 +44,7 @@ public sealed class OverlayCardListJsonConverter : JsonConverter<IReadOnlyList<O
 
     public override void Write(
         Utf8JsonWriter writer,
-        IReadOnlyList<OverlayCardPlacement> value,
+        IReadOnlyList<T> value,
         JsonSerializerOptions options) =>
         JsonSerializer.Serialize(writer, value, options);
 }

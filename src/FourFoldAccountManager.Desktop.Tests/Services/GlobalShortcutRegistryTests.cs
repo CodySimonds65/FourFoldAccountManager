@@ -20,7 +20,7 @@ public sealed class GlobalShortcutRegistryTests
 
         registry.Initialize(settings);
 
-        Assert.Equal(5, registrar.Registered.Count);
+        Assert.Equal(8, registrar.Registered.Count);
         foreach (var action in GlobalShortcutActions.All)
         {
             Assert.True(registry.IsAvailable(action));

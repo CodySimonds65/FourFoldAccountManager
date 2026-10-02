@@ -16,9 +16,9 @@ A Windows desktop client for managing FourFold accounts, saved logins, multi-cli
 ## Features
 
 - **Account profiles** — Create, edit, favorite, reorder, and remove local profiles. Saved credentials use Windows Credential Manager.
-- **Flexible layouts** — Run 1×1, 1×2, 2×1, 2×2, 2×3, or vertical split client layouts together.
+- **Flexible layouts** — Run 1×1, 1×2, 2×1, 2×2, 2×3, or vertical split client layouts together, or give each client its own tab.
 - **Plugins** — Use XP Tracker, Class Comparison, and XP Calculator from the right-side Plugins sidebar.
-- **Game controls** — Fit or fill each game panel, adjust viewport sizes, use full screen, and configure keyboard shortcuts.
+- **Game controls** — Fit or fill each game panel, adjust viewport sizes, use full screen or theatre mode, and configure keyboard shortcuts.
 - **Updates** — Stable Windows releases are published through [GitHub Releases](https://github.com/CodySimonds65/FourFoldAccountManager/releases).
 
 ## Profile tools
@@ -34,6 +34,14 @@ Choose an account directly from the dropdown on the **Stats** or **XP Calculator
 The tracker polls every minute and measures the active class for XP/hour and session XP. It also shows XP to next level and time-to-level estimates. Right-click a row to reset its XP/hour rate or all tracking data. Tracker behavior remains available inside the Plugins sidebar. In full screen, open the edge tab (or press the reveal shortcut) to show the Overlays panel, switch each account's XP/hr, Stats, and XP calc cards on or off, and drag cards into place. The Stats card shows the active class's full stat comparison, and the XP calc card shows the XP and levels left to the target saved in the sidebar XP calc (or the next level). Both use the XP tracker's once-a-minute profile reads, so they add no extra requests. The button at the right of the toolbar collapses the Plugins sidebar; FourFold remembers the choice.
 
 The **Timer** plugin is a speedrun stopwatch. Press the split shortcut to start a run and again to record each lap, the finish shortcut to stop, and the reset shortcut (or **Reset**) to clear it. The shortcuts default to Ctrl+Alt+Shift+S, F, and R and can be changed on the **Shortcuts** tab in Settings to any key, with or without Ctrl, Alt, or Shift, including F1–F12. A key bound on its own still reaches the game and other apps, and it fires even while Ctrl, Alt, or Shift is held, unless that exact combination is another shortcut. Because it isn't blocked, it also fires while you type it, for example in game chat, but not while you type in FourFold's own boxes. F5 can't be a shortcut, because it reloads a game panel whose browser misbehaves. In full screen, switch the Timer card on in the Overlays panel and drag it anywhere. Runs are not saved when the app closes.
+
+## Tabs
+
+Choose **Tabs** in the layout picker to give each account its own full-size tab. Press **+** to add a tab for a profile and **×** to close it, which also ends that game session. Games in background tabs keep running. Swap tabs by clicking them or with the Next tab and Previous tab shortcuts, which default to Ctrl+Alt+Shift+Right and Ctrl+Alt+Shift+Left and can be changed on the **Shortcuts** tab in Settings. In full screen the tab strip is hidden, so swap with the shortcuts. Opening the Leaderboard view slows every game until you return to the Workspace view. Switching to or from the Tabs layout closes any running game that is not shown in the new layout.
+
+## Theatre mode
+
+Press **Theatre** in the header, or the Toggle theatre mode shortcut (Ctrl+Alt+Shift+T by default), to hide the accounts panel, the Plugins sidebar, the toolbar, the tab strip, and each panel's header without leaving the window. The header row stays, and **Esc** or **Exit theatre** returns to the normal view. Your overlay cards and the edge tab work in theatre mode the same as in full screen; turn that off with **Show overlays in theatre mode** in Settings. You can go full screen from theatre mode, and Esc then returns you to theatre mode.
 
 ## Requirements
 
