@@ -83,7 +83,6 @@ public static class PanelLayoutPolicy
         return CopySettings(settings, GetDefaultSplitStates());
     }
 
-
     public static int GetVisibleSlotCount(PanelLayout layout) =>
         GetSlotPlacements(layout).Count;
 

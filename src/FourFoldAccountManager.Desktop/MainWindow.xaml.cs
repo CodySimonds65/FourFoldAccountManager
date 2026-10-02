@@ -1389,10 +1389,13 @@ public partial class MainWindow : Window
     }
 
     // The account a card shows: its tab's account in the Tabs layout, otherwise its grid slot's.
+    // A card left over from the Tabs layout can carry an index past the grid slots; it has no account.
     private Guid? AccountIdFor(int slotIndex) =>
         _panelSettings.Layout == PanelLayout.Tabs
             ? PanelTabPolicy.AccountIdAt(_panelSettings, slotIndex)
-            : _panelSettings.SlotAccountIds[slotIndex];
+            : slotIndex >= 0 && slotIndex < _panelSettings.SlotAccountIds.Count
+                ? _panelSettings.SlotAccountIds[slotIndex]
+                : null;
 
     private void UpdateAllSlotPresentations()
     {
@@ -1748,19 +1751,23 @@ public partial class MainWindow : Window
             };
             System.Windows.Automation.AutomationProperties.SetName(selectButton, $"{label} tab");
             selectButton.Click += SelectTab_Click;
-            TabStrip.Children.Add(selectButton);
 
             var closeButton = new Button
             {
                 Tag = accountId, Width = 28, Height = 34, Padding = new Thickness(0),
-                Margin = new Thickness(2, 0, 8, 0),
+                Margin = new Thickness(2, 0, 0, 0),
                 Style = (Style)FindResource("AppButtonStyle"),
                 Content = "×", ToolTip = "Close tab and end its game session",
                 IsEnabled = canEdit
             };
             System.Windows.Automation.AutomationProperties.SetName(closeButton, $"Close {label} tab");
             closeButton.Click += CloseTab_Click;
-            TabStrip.Children.Add(closeButton);
+
+            // One panel per tab, so the x never wraps onto a row apart from its label.
+            var tab = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 8, 0) };
+            tab.Children.Add(selectButton);
+            tab.Children.Add(closeButton);
+            TabStrip.Children.Add(tab);
         }
 
         var tabbed = PanelTabPolicy.AccountIds(_panelSettings);
@@ -1786,7 +1793,15 @@ public partial class MainWindow : Window
                     : System.Windows.Input.KeyboardNavigationMode.None);
                 if (active && focusGame)
                 {
-                    slot.View?.Focus();
+                    if (slot.View is { } view)
+                    {
+                        view.Focus();
+                    }
+                    else
+                    {
+                        // No game in this tab yet: take the keyboard away from the covered game it was in.
+                        System.Windows.Input.Keyboard.ClearFocus();
+                    }
                 }
             }
         }
@@ -1845,7 +1860,19 @@ public partial class MainWindow : Window
 
         try
         {
-            await UpdateSettingsAsync(settings => PanelTabPolicy.Add(settings, accountId));
+            var changed = false;
+            await UpdateSettingsAsync(settings =>
+            {
+                var next = PanelTabPolicy.Add(settings, accountId);
+                changed = !ReferenceEquals(next, settings);
+                return next;
+            });
+            if (!changed)
+            {
+                // The account already has a tab.
+                return;
+            }
+
             await RebuildPanelAsync(closeExistingViews: false);
             GlobalStatusText.Text = "Tab added. Press Launch accounts to start it.";
         }
@@ -1865,7 +1892,19 @@ public partial class MainWindow : Window
 
         try
         {
-            await UpdateSettingsAsync(settings => PanelTabPolicy.RemoveAccount(settings, accountId));
+            var changed = false;
+            await UpdateSettingsAsync(settings =>
+            {
+                var next = PanelTabPolicy.RemoveAccount(settings, accountId);
+                changed = !ReferenceEquals(next, settings);
+                return next;
+            });
+            if (!changed)
+            {
+                // A stale click on a tab that is already gone.
+                return;
+            }
+
             // The rebuild closes the session of the account that is no longer in a tab.
             await RebuildPanelAsync(closeExistingViews: false);
             GlobalStatusText.Text = "Tab closed and its game session ended.";
