@@ -18,7 +18,7 @@ A Windows desktop client for managing FourFold accounts, saved logins, multi-cli
 - **Account profiles** — Create, edit, favorite, reorder, and remove local profiles. Saved credentials use Windows Credential Manager.
 - **Flexible layouts** — Run 1×1, 1×2, 2×1, 2×2, 2×3, or vertical split client layouts together, or give each client its own tab.
 - **Plugins** — Use XP Tracker, Class Comparison, and XP Calculator from the right-side Plugins sidebar.
-- **Game controls** — Fit or fill each game panel, adjust viewport sizes, use full screen, and configure keyboard shortcuts.
+- **Game controls** — Fit or fill each game panel, adjust viewport sizes, use full screen or theatre mode, and configure keyboard shortcuts.
 - **Updates** — Stable Windows releases are published through [GitHub Releases](https://github.com/CodySimonds65/FourFoldAccountManager/releases).
 
 ## Profile tools
@@ -38,6 +38,10 @@ The **Timer** plugin is a speedrun stopwatch. Press the split shortcut to start 
 ## Tabs
 
 Choose **Tabs** in the layout picker to give each account its own full-size tab. Press **+** to add a tab for a profile and **×** to close it, which also ends that game session. Games in background tabs keep running. Swap tabs by clicking them or with the Next tab and Previous tab shortcuts, which default to Ctrl+Alt+Shift+Right and Ctrl+Alt+Shift+Left and can be changed on the **Shortcuts** tab in Settings. In full screen the tab strip is hidden, so swap with the shortcuts. Opening the Leaderboard view slows every game until you return to the Workspace view. Switching to or from the Tabs layout closes any running game that is not shown in the new layout.
+
+## Theatre mode
+
+Press **Theatre** in the header, or the Toggle theatre mode shortcut (Ctrl+Alt+Shift+T by default), to hide the accounts panel, the Plugins sidebar, the toolbar, the tab strip, and each panel's header without leaving the window. The header row stays, and **Esc** or **Exit theatre** returns to the normal view. Your overlay cards and the edge tab work in theatre mode the same as in full screen; turn that off with **Show overlays in theatre mode** in Settings. You can go full screen from theatre mode, and Esc then returns you to theatre mode.
 
 ## Requirements
 

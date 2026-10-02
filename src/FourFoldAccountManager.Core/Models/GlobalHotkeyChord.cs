@@ -37,6 +37,9 @@ public sealed record GlobalHotkeyChord(ushort VirtualKey, GlobalHotkeyModifiers 
     public static GlobalHotkeyChord DefaultPreviousTab { get; } =
         new(0x25, SupportedModifiers);
 
+    public static GlobalHotkeyChord DefaultToggleTheatreMode { get; } =
+        new(0x54, SupportedModifiers);
+
     // Any key except the Windows keys, the modifier keys, and F5, with or without Ctrl, Alt, or Shift. F5 stays
     // a browser refresh for the game panels. Esc, Tab, Enter, and Backspace sit below 0x20 and stay excluded
     // because they drive the Settings dialog.

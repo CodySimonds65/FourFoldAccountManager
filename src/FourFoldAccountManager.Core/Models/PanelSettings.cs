@@ -24,6 +24,8 @@ public sealed record PanelSettings
 
     public bool PluginsSidebarExpanded { get; init; } = true;
 
+    public bool ShowOverlaysInTheatreMode { get; init; } = true;
+
     [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
     public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =
         GlobalHotkeyChord.DefaultRevealXpOverlayTab;
@@ -46,6 +48,9 @@ public sealed record PanelSettings
 
     [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
     public GlobalHotkeyChord PreviousTabShortcut { get; init; } = GlobalHotkeyChord.DefaultPreviousTab;
+
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    public GlobalHotkeyChord ToggleTheatreModeShortcut { get; init; } = GlobalHotkeyChord.DefaultToggleTheatreMode;
 
     public double TwoByThreeTopRowFraction { get; init; } = 0.6;
 

@@ -74,6 +74,19 @@
                             </StackPanel>
                         </CheckBox>
                     </Border>
+                    <TextBlock Text="THEATRE MODE" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}"
+                               Margin="0,20,0,9" />
+                    <Border Padding="14" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}"
+                            Background="{DynamicResource Brush.Surface}">
+                        <CheckBox x:Name="ShowOverlaysInTheatreModeOption" VerticalContentAlignment="Top"
+                                  Foreground="{DynamicResource Brush.TextPrimary}">
+                            <StackPanel Margin="8,-2,0,0">
+                                <TextBlock Text="Show overlays in theatre mode" FontWeight="SemiBold" />
+                                <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
+                                           Text="Show your overlay cards and the edge tab in theatre mode, the same as in full screen." />
+                            </StackPanel>
+                        </CheckBox>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 
@@ -105,6 +118,9 @@
                     <views:ShortcutRow x:Name="RevealShortcutRow" Action="RevealOverlays"
                                        Title="Reveal overlays tab"
                                        Description="Show the hidden edge arrow without opening its tray." />
+                    <views:ShortcutRow x:Name="TheatreShortcutRow" Action="ToggleTheatreMode" Margin="0,10,0,0"
+                                       Title="Toggle theatre mode"
+                                       Description="Hide the side panels and toolbars without leaving the window." />
                     <TextBlock Text="CLIENT LAYOUT" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}"
                                Margin="0,20,0,9" />
                     <views:ShortcutRow x:Name="DividerShortcutRow" Action="ToggleDividerResizing"
