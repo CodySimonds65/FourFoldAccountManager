@@ -37,7 +37,7 @@ The **Timer** plugin is a speedrun stopwatch. Press the split shortcut to start 
 
 ## Tabs
 
-Choose **Tabs** in the layout picker to give each account its own full-size tab. Press **+** to add a tab for a profile and **×** to close it, which also ends that game session. Games in background tabs keep running. Swap tabs by clicking them or with the Next tab and Previous tab shortcuts, which default to Ctrl+Alt+Shift+Right and Ctrl+Alt+Shift+Left and can be changed on the **Shortcuts** tab in Settings. In full screen the tab strip is hidden, so swap with the shortcuts. Opening the Leaderboard view pauses background games until you return to the Workspace view.
+Choose **Tabs** in the layout picker to give each account its own full-size tab. Press **+** to add a tab for a profile and **×** to close it, which also ends that game session. Games in background tabs keep running. Swap tabs by clicking them or with the Next tab and Previous tab shortcuts, which default to Ctrl+Alt+Shift+Right and Ctrl+Alt+Shift+Left and can be changed on the **Shortcuts** tab in Settings. In full screen the tab strip is hidden, so swap with the shortcuts. Opening the Leaderboard view slows every game until you return to the Workspace view. Switching to or from the Tabs layout closes any running game that is not shown in the new layout.
 
 ## Requirements
 
