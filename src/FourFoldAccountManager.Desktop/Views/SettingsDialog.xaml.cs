@@ -58,7 +58,8 @@ public partial class SettingsDialog : Window
         ShowFullScreenExitOption.IsChecked = showFullScreenExitButton;
         _rows = new[]
         {
-            RevealShortcutRow, DividerShortcutRow, TimerSplitShortcutRow, TimerFinishShortcutRow, TimerResetShortcutRow
+            RevealShortcutRow, DividerShortcutRow, TimerSplitShortcutRow, TimerFinishShortcutRow, TimerResetShortcutRow,
+            NextTabShortcutRow, PreviousTabShortcutRow
         }.ToDictionary(row => row.Action);
         foreach (var (action, row) in _rows)
         {

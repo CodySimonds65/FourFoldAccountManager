@@ -7,7 +7,9 @@ public enum GlobalShortcutAction
     ToggleDividerResizing,
     TimerSplit,
     TimerFinish,
-    TimerReset
+    TimerReset,
+    NextTab,
+    PreviousTab
 }
 
 public static class GlobalShortcutActions
@@ -25,6 +27,8 @@ public static class GlobalShortcutActions
             GlobalShortcutAction.TimerSplit => settings.TimerSplitShortcut,
             GlobalShortcutAction.TimerFinish => settings.TimerFinishShortcut,
             GlobalShortcutAction.TimerReset => settings.TimerResetShortcut,
+            GlobalShortcutAction.NextTab => settings.NextTabShortcut,
+            GlobalShortcutAction.PreviousTab => settings.PreviousTabShortcut,
             _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Unknown shortcut action.")
         };
     }
@@ -40,6 +44,8 @@ public static class GlobalShortcutActions
             GlobalShortcutAction.TimerSplit => settings with { TimerSplitShortcut = chord },
             GlobalShortcutAction.TimerFinish => settings with { TimerFinishShortcut = chord },
             GlobalShortcutAction.TimerReset => settings with { TimerResetShortcut = chord },
+            GlobalShortcutAction.NextTab => settings with { NextTabShortcut = chord },
+            GlobalShortcutAction.PreviousTab => settings with { PreviousTabShortcut = chord },
             _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Unknown shortcut action.")
         };
     }
@@ -51,6 +57,8 @@ public static class GlobalShortcutActions
         GlobalShortcutAction.TimerSplit => "Timer split",
         GlobalShortcutAction.TimerFinish => "Timer finish",
         GlobalShortcutAction.TimerReset => "Timer reset",
+        GlobalShortcutAction.NextTab => "Next tab",
+        GlobalShortcutAction.PreviousTab => "Previous tab",
         _ => throw new ArgumentOutOfRangeException(nameof(action), action, "Unknown shortcut action.")
     };
 

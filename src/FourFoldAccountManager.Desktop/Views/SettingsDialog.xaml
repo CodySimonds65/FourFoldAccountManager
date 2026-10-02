@@ -117,6 +117,12 @@
                                        Title="Timer finish" Description="Record the final lap and stop the run." />
                     <views:ShortcutRow x:Name="TimerResetShortcutRow" Action="TimerReset" Margin="0,10,0,0"
                                        Title="Timer reset" Description="Clear the timer and all laps." />
+                    <TextBlock Text="TABS" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}"
+                               Margin="0,20,0,9" />
+                    <views:ShortcutRow x:Name="NextTabShortcutRow" Action="NextTab"
+                                       Title="Next tab" Description="Show the next tab in the Tabs layout." />
+                    <views:ShortcutRow x:Name="PreviousTabShortcutRow" Action="PreviousTab" Margin="0,10,0,0"
+                                       Title="Previous tab" Description="Show the previous tab in the Tabs layout." />
                     <TextBlock Margin="2,13,0,0" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
                                Text="A key bound on its own still reaches the game and other apps, so it also fires while you type it, for example in game chat." />
                 </StackPanel>

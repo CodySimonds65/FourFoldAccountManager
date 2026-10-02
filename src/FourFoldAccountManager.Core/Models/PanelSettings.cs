@@ -41,6 +41,12 @@ public sealed record PanelSettings
     [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
     public GlobalHotkeyChord TimerResetShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerReset;
 
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    public GlobalHotkeyChord NextTabShortcut { get; init; } = GlobalHotkeyChord.DefaultNextTab;
+
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    public GlobalHotkeyChord PreviousTabShortcut { get; init; } = GlobalHotkeyChord.DefaultPreviousTab;
+
     public double TwoByThreeTopRowFraction { get; init; } = 0.6;
 
     public IReadOnlyList<PanelSplitState> SplitStates { get; init; } = Array.Empty<PanelSplitState>();

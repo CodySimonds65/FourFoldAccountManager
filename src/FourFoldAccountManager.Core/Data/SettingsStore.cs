@@ -144,6 +144,8 @@ public sealed class SettingsStore
             TimerSplitShortcut = ValidOrDefault(settings.TimerSplitShortcut, GlobalHotkeyChord.DefaultTimerSplit),
             TimerFinishShortcut = ValidOrDefault(settings.TimerFinishShortcut, GlobalHotkeyChord.DefaultTimerFinish),
             TimerResetShortcut = ValidOrDefault(settings.TimerResetShortcut, GlobalHotkeyChord.DefaultTimerReset),
+            NextTabShortcut = ValidOrDefault(settings.NextTabShortcut, GlobalHotkeyChord.DefaultNextTab),
+            PreviousTabShortcut = ValidOrDefault(settings.PreviousTabShortcut, GlobalHotkeyChord.DefaultPreviousTab),
             SplitStates = splitStates,
             GameViewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes),
             OverlayCards = OverlayCardPolicy.Normalize(settings.OverlayCards, settings.LegacyXpOverlayBoundsByAccount),
