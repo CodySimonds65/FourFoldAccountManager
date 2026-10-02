@@ -1736,38 +1736,43 @@ public partial class MainWindow : Window
             var label = _accounts.FirstOrDefault(account => account.Id == accountId)?.Label ?? "Unknown profile";
             var active = index == _panelSettings.ActiveTab;
             var foreground = (Brush)FindResource(active ? "Brush.AccentGold" : "Brush.TextPrimary");
-            var selectButton = new Button
-            {
-                Tag = index, Height = 34, MaxWidth = 200, Padding = new Thickness(14, 0, 14, 0),
-                Style = (Style)FindResource("AppButtonStyle"),
-                Background = (Brush)FindResource(active ? "Brush.AccentSoft" : "Brush.SurfaceRaised"),
-                Foreground = foreground,
-                ToolTip = label,
-                // A TextBlock, not a string, so an underscore in the label is not read as an access key.
-                Content = new TextBlock
-                {
-                    Text = label, Foreground = foreground, TextTrimming = TextTrimming.CharacterEllipsis
-                }
-            };
-            System.Windows.Automation.AutomationProperties.SetName(selectButton, $"{label} tab");
-            selectButton.Click += SelectTab_Click;
-
+            // The x sits inside the tab. It handles its own click, so closing never also selects the tab.
             var closeButton = new Button
             {
-                Tag = accountId, Width = 28, Height = 34, Padding = new Thickness(0),
-                Margin = new Thickness(2, 0, 0, 0),
+                Tag = accountId, Width = 20, Height = 20, MinHeight = 0, Padding = new Thickness(0),
+                Margin = new Thickness(8, 0, 0, 0), FontSize = 14,
                 Style = (Style)FindResource("AppButtonStyle"),
+                Background = Brushes.Transparent, BorderThickness = new Thickness(0),
+                Foreground = foreground,
                 Content = "×", ToolTip = "Close tab and end its game session",
                 IsEnabled = canEdit
             };
             System.Windows.Automation.AutomationProperties.SetName(closeButton, $"Close {label} tab");
             closeButton.Click += CloseTab_Click;
+            DockPanel.SetDock(closeButton, Dock.Right);
 
-            // One panel per tab, so the x never wraps onto a row apart from its label.
-            var tab = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 8, 0) };
-            tab.Children.Add(selectButton);
-            tab.Children.Add(closeButton);
-            TabStrip.Children.Add(tab);
+            var content = new DockPanel();
+            content.Children.Add(closeButton);
+            // A TextBlock, not a string, so an underscore in the label is not read as an access key.
+            content.Children.Add(new TextBlock
+            {
+                Text = label, Foreground = foreground, VerticalAlignment = VerticalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis
+            });
+
+            var selectButton = new Button
+            {
+                Tag = index, Height = 34, MaxWidth = 220, Padding = new Thickness(14, 0, 7, 0),
+                Margin = new Thickness(0, 0, 8, 0),
+                Style = (Style)FindResource("AppButtonStyle"),
+                Background = (Brush)FindResource(active ? "Brush.AccentSoft" : "Brush.SurfaceRaised"),
+                Foreground = foreground,
+                ToolTip = label,
+                Content = content
+            };
+            System.Windows.Automation.AutomationProperties.SetName(selectButton, $"{label} tab");
+            selectButton.Click += SelectTab_Click;
+            TabStrip.Children.Add(selectButton);
         }
 
         var tabbed = PanelTabPolicy.AccountIds(_panelSettings);
