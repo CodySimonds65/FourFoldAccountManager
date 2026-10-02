@@ -31,6 +31,7 @@
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
                 <Grid Margin="0,0,0,10">
@@ -47,7 +48,10 @@
                             Style="{StaticResource AppButtonStyle}" Height="30" Padding="10,0"
                             VerticalAlignment="Center" />
                 </Grid>
-                <ScrollViewer Grid.Row="1" MaxHeight="420" VerticalScrollBarVisibility="Auto"
+                <Button x:Name="OpenStatsWindowButton" Grid.Row="1" Content="Open stats window"
+                        Click="OpenStatsWindowButton_Click" Style="{StaticResource AppButtonStyle}"
+                        Height="30" Margin="0,0,0,10" HorizontalAlignment="Stretch" />
+                <ScrollViewer Grid.Row="2" MaxHeight="380" VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
                     <StackPanel>
                         <Border x:Name="GlobalSection" Padding="10,8" Margin="0,3" CornerRadius="8"

@@ -62,6 +62,7 @@ public partial class MainWindow : Window
     private bool _viewAdjustmentVisible;
     private bool _isFullScreen;
     private bool _isTheatre;
+    private StatsWindow? _statsWindow;
     private bool _showingLeaderboard;
     private bool _overlayEditing;
     private WindowState _previousWindowState;
@@ -93,6 +94,7 @@ public partial class MainWindow : Window
         FullscreenOverlayTray.EditRequested += (_, _) => SetOverlayEditing(true);
         FullscreenOverlayTray.DoneRequested += (_, _) => SetOverlayEditing(false);
         FullscreenOverlayTray.CardToggleRequested += FullscreenOverlayTray_CardToggleRequested;
+        FullscreenOverlayTray.StatsWindowRequested += (_, _) => OpenStatsWindow(activate: true);
         GlobalOverlayLayer.BoundsCommitted += OverlayLayer_BoundsCommitted;
         PluginSidebar.SetTrackerItemsSource(_xpTrackerRows);
         PluginSidebar.AttachTimer(_timer);
@@ -318,6 +320,11 @@ public partial class MainWindow : Window
             AccountsListBox.SelectedIndex = _accounts.Count > 0 ? 0 : -1;
             UpdateAccountActions();
             await RebuildPanelAsync(closeExistingViews: false);
+            if (_panelSettings.StatsWindow is { IsOpen: true })
+            {
+                OpenStatsWindow(activate: false);
+            }
+
             GlobalStatusText.Text = "Choose your layout, assign your accounts, and launch your party.";
             _ = CheckForUpdatesAsync();
         }
@@ -1117,6 +1124,75 @@ public partial class MainWindow : Window
         ExitFullScreen();
     }
 
+    private void StatsWindow_Click(object sender, RoutedEventArgs e) => OpenStatsWindow(activate: true);
+
+    // Opens the stats window, or brings an open one to the front.
+    private void OpenStatsWindow(bool activate)
+    {
+        if (_statsWindow is { } open)
+        {
+            if (open.WindowState == WindowState.Minimized)
+            {
+                open.WindowState = WindowState.Normal;
+            }
+
+            open.Activate();
+            return;
+        }
+
+        var window = new StatsWindow { ShowActivated = activate };
+        window.ApplyPlacement(_panelSettings.StatsWindow);
+        window.Layer.BoundsCommitted += OverlayLayer_BoundsCommitted;
+        window.CardToggleRequested += StatsWindow_CardToggleRequested;
+        window.ClosedByUser += StatsWindow_ClosedByUser;
+        _statsWindow = window;
+        window.Show();
+        RefreshTrackerRows();
+    }
+
+    private async void StatsWindow_ClosedByUser(object? sender, StatsWindowPlacement placement)
+    {
+        if (sender is StatsWindow window)
+        {
+            window.Layer.BoundsCommitted -= OverlayLayer_BoundsCommitted;
+            window.CardToggleRequested -= StatsWindow_CardToggleRequested;
+            window.ClosedByUser -= StatsWindow_ClosedByUser;
+        }
+
+        _statsWindow = null;
+        try
+        {
+            await UpdateSettingsAsync(settings => settings with { StatsWindow = placement });
+        }
+        catch
+        {
+            GlobalStatusText.Text = "The stats window position could not be saved.";
+        }
+    }
+
+    private async void StatsWindow_CardToggleRequested(object? sender, OverlayCardToggleRequestedEventArgs args)
+    {
+        if (!OverlayCardPolicy.IsValidKey(args.Key))
+        {
+            return;
+        }
+
+        try
+        {
+            await UpdateSettingsAsync(settings => OverlayCardPolicy.WithStatsWindow(settings, args.Key, args.Enabled));
+        }
+        catch
+        {
+            MessageBox.Show(_statsWindow ?? (Window)this, "The card setting could not be saved.",
+                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            // Rebuild from saved settings so a failed save also reverts the checklist.
+            RefreshTrackerRows();
+        }
+    }
+
     private void Theatre_Click(object sender, RoutedEventArgs e) => ToggleTheatreMode();
 
     // Esc leaves full screen first, then theatre mode.
@@ -1256,14 +1332,14 @@ public partial class MainWindow : Window
         var editing = OverlaysShown && _overlayEditing;
         _xpTrackerRows.Clear();
 
-        // Every card sits on the one window-wide layer, so it can go anywhere in the window, header included.
-        var cards = new List<OverlayCardModel>();
+        // Every card over the game sits on the one window-wide layer, so it can go anywhere in the window.
+        var build = new OverlayCardBuild();
         var globalSwitches = new List<OverlayTraySwitch>();
         foreach (var definition in OverlayAddOnCatalog.All.Where(
                      definition => definition.Scope == OverlayAddOnScope.Global))
         {
             AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, null),
-                string.Empty, null, false, cards, globalSwitches);
+                string.Empty, null, false, showOverGame: true, globalSwitches, build);
         }
 
         foreach (var slot in _slotCards.OrderBy(slot => slot.SlotIndex))
@@ -1292,9 +1368,9 @@ public partial class MainWindow : Window
                     foreach (var definition in OverlayAddOnCatalog.All.Where(
                                  definition => definition.Scope == OverlayAddOnScope.Account))
                     {
-                        // A background tab's account keeps its switches in the Overlays panel but shows no cards.
+                        // A background tab's account shows no cards over the game; its stats window cards still show.
                         AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, trackedAccountId),
-                            label, trackerRow, isStale, ShowsAccountCards(slot) ? cards : null, switches);
+                            label, trackerRow, isStale, ShowsAccountCards(slot), switches, build);
                     }
 
                     accountRows.Add(new OverlayTrayAccountRow(trackedAccountId, label, switches));
@@ -1302,7 +1378,9 @@ public partial class MainWindow : Window
             }
         }
 
-        GlobalOverlayLayer.SetCards(cards, editing);
+        GlobalOverlayLayer.SetCards(build.GameCards, editing);
+        _statsWindow?.SetCards(build.WindowCards);
+        _statsWindow?.SetChecklist(build.Checklist);
         FullscreenOverlayTray.SetRows(globalSwitches, accountRows);
         UpdatePluginSidebarVisibility();
     }
@@ -1311,15 +1389,17 @@ public partial class MainWindow : Window
     private bool ShowsAccountCards(PanelSlotCard slot) =>
         _panelSettings.Layout != PanelLayout.Tabs || slot.SlotIndex == _panelSettings.ActiveTab;
 
-    // A null cards list adds the Overlays panel switch without putting a card on screen.
+    // Adds the card's Overlays panel switch and stats window checklist entry, then puts the card in the one place
+    // it is assigned to. showOverGame is false for a background tab's account, whose cards stay off the game.
     private void AddOverlayAddOn(
         OverlayAddOnDefinition definition,
         OverlayCardKey key,
         string accountLabel,
         XpTrackerRow? trackerRow,
         bool isStale,
-        List<OverlayCardModel>? cards,
-        List<OverlayTraySwitch> switches)
+        bool showOverGame,
+        List<OverlayTraySwitch> switches,
+        OverlayCardBuild build)
     {
         if (CreateOverlayCardData(definition.Kind, key.AccountId, accountLabel, trackerRow, isStale) is not { } data)
         {
@@ -1327,15 +1407,32 @@ public partial class MainWindow : Window
         }
 
         var placement = OverlayCardPolicy.Get(_panelSettings, key);
+        var inStatsWindow = placement is { Enabled: true, InStatsWindow: true };
         var accessibleName = accountLabel.Length > 0
             ? $"{accountLabel} {definition.DisplayName}"
             : definition.DisplayName;
-        switches.Add(new OverlayTraySwitch(key, definition.DisplayName, data.Summary,
-            placement?.Enabled == true, accessibleName));
-        if (cards is not null && OverlaysShown && placement is { Enabled: true })
+        switches.Add(new OverlayTraySwitch(key, definition.DisplayName,
+            inStatsWindow ? "In stats window" : data.Summary,
+            placement is { Enabled: true, InStatsWindow: false }, accessibleName));
+        build.Checklist.Add(new StatsWindowChecklistItem(key, accessibleName, inStatsWindow));
+        if (placement is { Enabled: true, InStatsWindow: true } windowPlacement)
         {
-            cards.Add(new OverlayCardModel(key, definition, placement.Bounds, cards.Count, data));
+            build.WindowCards.Add(new OverlayCardModel(
+                key, definition, windowPlacement.StatsWindowBounds, build.WindowCards.Count, data));
         }
+        else if (showOverGame && OverlaysShown && placement is { Enabled: true })
+        {
+            build.GameCards.Add(new OverlayCardModel(key, definition, placement.Bounds, build.GameCards.Count, data));
+        }
+    }
+
+    private sealed class OverlayCardBuild
+    {
+        public List<OverlayCardModel> GameCards { get; } = [];
+
+        public List<OverlayCardModel> WindowCards { get; } = [];
+
+        public List<StatsWindowChecklistItem> Checklist { get; } = [];
     }
 
     // Each overlay add-on supplies its card data here; a kind without data is not offered in the Overlays panel.
@@ -1391,31 +1488,49 @@ public partial class MainWindow : Window
 
     private async void OverlayLayer_BoundsCommitted(object? sender, OverlayCardBoundsCommittedEventArgs args)
     {
-        if (sender is not OverlayCardLayer layer || !OverlaysShown || !_overlayEditing ||
-            !IsOverlayCardOnScreen(args.Key))
+        if (sender is not OverlayCardLayer layer)
+        {
+            return;
+        }
+
+        var inStatsWindow = _statsWindow is { } statsWindow && ReferenceEquals(layer, statsWindow.Layer);
+        var accepted = inStatsWindow
+            ? IsOverlayCardInStatsWindow(args.Key)
+            : OverlaysShown && _overlayEditing && IsOverlayCardOnScreen(args.Key);
+        if (!accepted)
         {
             return;
         }
 
         try
         {
-            await UpdateSettingsAsync(settings => OverlayCardPolicy.WithBounds(settings, args.Key, args.Bounds));
+            await UpdateSettingsAsync(settings => inStatsWindow
+                ? OverlayCardPolicy.WithStatsWindowBounds(settings, args.Key, args.Bounds)
+                : OverlayCardPolicy.WithBounds(settings, args.Key, args.Bounds));
             RefreshTrackerRows();
         }
         catch
         {
             layer.RestoreSavedBounds();
-            MessageBox.Show(this,
+            MessageBox.Show(Window.GetWindow(layer) ?? this,
                 "The overlay placement could not be saved. Its previous position was restored.",
                 "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
-    // A drag that ends after its card left the screen (its tab swapped away, its game closed) is not saved.
+    // A drag that ends after its card left the game (moved to the stats window, its tab swapped away, its game
+    // closed) is not saved.
     private bool IsOverlayCardOnScreen(OverlayCardKey key) =>
-        key.AccountId is not { } accountId ||
-        _slotCards.Any(slot => AccountIdFor(slot.SlotIndex) == accountId && ShowsAccountCards(slot) &&
-            _openAccountIds.Contains(accountId) && slot.View is not null);
+        OverlayCardPolicy.Get(_panelSettings, key) is not { InStatsWindow: true } &&
+        (key.AccountId is not { } accountId ||
+            _slotCards.Any(slot => AccountIdFor(slot.SlotIndex) == accountId && ShowsAccountCards(slot) &&
+                _openAccountIds.Contains(accountId) && slot.View is not null));
+
+    // A drag in the stats window counts only while its card is still assigned there and, for an account card,
+    // that account's game is running.
+    private bool IsOverlayCardInStatsWindow(OverlayCardKey key) =>
+        OverlayCardPolicy.Get(_panelSettings, key) is { Enabled: true, InStatsWindow: true } &&
+        (key.AccountId is not { } accountId || _openAccountIds.Contains(accountId));
 
     // The account a card shows: its tab's account in the Tabs layout, otherwise its grid slot's.
     // A card left over from the Tabs layout can carry an index past the grid slots; it has no account.
@@ -3123,6 +3238,13 @@ public partial class MainWindow : Window
             // Flush a pending sidebar XP target save before the final settings save, so a target
             // typed just before closing reaches disk instead of being lost.
             PluginSidebar.FlushPendingXpTarget();
+            // Keep the stats window marked open, with its current spot, so it reopens there next launch.
+            if (_statsWindow is { } statsWindow)
+            {
+                _statsWindow = null;
+                _panelSettings = _panelSettings with { StatsWindow = statsWindow.CapturePlacement(isOpen: true) };
+                statsWindow.CloseForShutdown();
+            }
             try
             {
                 await SaveSettingsAsync();
