@@ -91,4 +91,32 @@ public sealed class OverlayCardPolicyTests
 
         Assert.Equal([kept], result);
     }
+
+    [Fact]
+    public void MovingACardBetweenTheGameAndTheStatsWindowKeepsOnePlaceAndBothPositions()
+    {
+        var key = new OverlayCardKey(OverlayAddOnKind.Xp, Guid.NewGuid());
+        var overGame = OverlayCardPolicy.WithBounds(PanelSettings.Default, key, First);
+        var inWindow = OverlayCardPolicy.WithStatsWindowBounds(
+            OverlayCardPolicy.WithStatsWindow(overGame, key, true), key, Second);
+
+        var windowCard = OverlayCardPolicy.Get(inWindow, key)!;
+        Assert.True(windowCard.Enabled);
+        Assert.True(windowCard.InStatsWindow);
+        Assert.Equal(First, windowCard.Bounds);
+        Assert.Equal(Second, windowCard.StatsWindowBounds);
+
+        // Switching it on over the game moves it back, keeping both positions.
+        var backOverGame = OverlayCardPolicy.Get(OverlayCardPolicy.WithEnabled(inWindow, key, true), key)!;
+        Assert.True(backOverGame.Enabled);
+        Assert.False(backOverGame.InStatsWindow);
+        Assert.Equal(First, backOverGame.Bounds);
+        Assert.Equal(Second, backOverGame.StatsWindowBounds);
+
+        // Unticking it in the window switches it off everywhere.
+        var off = OverlayCardPolicy.Get(OverlayCardPolicy.WithStatsWindow(inWindow, key, false), key)!;
+        Assert.False(off.Enabled);
+        Assert.False(off.InStatsWindow);
+        Assert.Equal(Second, off.StatsWindowBounds);
+    }
 }

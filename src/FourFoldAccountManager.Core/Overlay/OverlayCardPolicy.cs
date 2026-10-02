@@ -28,7 +28,11 @@ public static class OverlayCardPolicy
                 continue;
             }
 
-            result.Add(card.Bounds is { IsValid: false } ? card with { Bounds = null } : card);
+            result.Add(card with
+            {
+                Bounds = card.Bounds is { IsValid: true } ? card.Bounds : null,
+                StatsWindowBounds = card.StatsWindowBounds is { IsValid: true } ? card.StatsWindowBounds : null
+            });
         }
 
         foreach (var (accountId, bounds) in legacyXpBounds ?? new Dictionary<Guid, OverlayBounds>())
@@ -59,9 +63,38 @@ public static class OverlayCardPolicy
         return settings.OverlayCards.FirstOrDefault(card => card.Key == key);
     }
 
+    // Showing a card over the game takes it out of the stats window, so a card is only ever in one place.
     public static PanelSettings WithEnabled(PanelSettings settings, OverlayCardKey key, bool enabled) =>
         Upsert(settings, key, existing =>
-            (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, false, null)) with { Enabled = enabled });
+            (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, false, null)) with
+            {
+                Enabled = enabled,
+                InStatsWindow = false
+            });
+
+    // Ticking a card in the stats window shows it there and takes it off the game; unticking switches it off.
+    public static PanelSettings WithStatsWindow(PanelSettings settings, OverlayCardKey key, bool show) =>
+        Upsert(settings, key, existing =>
+            (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, false, null)) with
+            {
+                Enabled = show,
+                InStatsWindow = show
+            });
+
+    public static PanelSettings WithStatsWindowBounds(PanelSettings settings, OverlayCardKey key, OverlayBounds bounds)
+    {
+        ArgumentNullException.ThrowIfNull(bounds);
+        if (!bounds.IsValid)
+        {
+            throw new ArgumentException("Overlay bounds must be valid and within the normalized viewport.", nameof(bounds));
+        }
+
+        return Upsert(settings, key, existing =>
+            (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, true, null) { InStatsWindow = true }) with
+            {
+                StatsWindowBounds = bounds
+            });
+    }
 
     public static PanelSettings WithBounds(PanelSettings settings, OverlayCardKey key, OverlayBounds bounds)
     {

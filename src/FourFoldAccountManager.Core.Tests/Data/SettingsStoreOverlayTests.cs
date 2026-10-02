@@ -92,6 +92,52 @@ public sealed class SettingsStoreOverlayTests : IDisposable
         Assert.Empty(loaded.OverlayCards);
     }
 
+    [Fact]
+    public async Task StatsWindowCardsAndPlacementRoundTripThroughSaveAndLoad()
+    {
+        var accountId = Guid.NewGuid();
+        var cards = new[]
+        {
+            new OverlayCardPlacement(OverlayAddOnKind.Xp, accountId, true, new OverlayBounds(0.5, 0.5, 0.2, 0.1))
+            {
+                InStatsWindow = true,
+                StatsWindowBounds = new OverlayBounds(0.1, 0.2, 0.4, 0.2)
+            }
+        };
+        // A second monitor to the left of the main one has a negative Left.
+        var window = new StatsWindowPlacement(true, -1500, 120, 900, 600, true);
+
+        await _store.SaveAsync(PanelSettings.Default with
+        {
+            SlotAccountIds = [accountId, null, null, null, null],
+            OverlayCards = cards,
+            StatsWindow = window
+        });
+        var loaded = await _store.LoadAsync();
+
+        Assert.Equal(cards, loaded.OverlayCards);
+        Assert.Equal(window, loaded.StatsWindow);
+    }
+
+    [Fact]
+    public async Task MalformedOrImpossibleStatsWindowLoadsAsClosedWithoutFailingTheLoad()
+    {
+        // Wrong JSON kind.
+        await WriteSettingsAsync(Guid.NewGuid(), json => json["statsWindow"] = "not an object");
+        Assert.Null((await _store.LoadAsync()).StatsWindow);
+
+        // A field of the wrong JSON kind.
+        await WriteSettingsAsync(Guid.NewGuid(), json => json["statsWindow"] = new JsonObject { ["isOpen"] = "yes" });
+        Assert.Null((await _store.LoadAsync()).StatsWindow);
+
+        // Smaller than the window's minimum size.
+        await WriteSettingsAsync(Guid.NewGuid(), json => json["statsWindow"] = new JsonObject
+        {
+            ["isOpen"] = true, ["left"] = 0, ["top"] = 0, ["width"] = 10, ["height"] = 10, ["isMaximized"] = false
+        });
+        Assert.Null((await _store.LoadAsync()).StatsWindow);
+    }
+
     private async Task WriteSettingsAsync(Guid accountId, Action<JsonObject> edit)
     {
         await _store.SaveAsync(PanelSettings.Default with { SlotAccountIds = [accountId, null, null, null, null] });

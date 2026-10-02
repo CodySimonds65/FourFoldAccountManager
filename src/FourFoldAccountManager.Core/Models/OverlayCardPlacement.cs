@@ -12,4 +12,11 @@ public sealed record OverlayCardPlacement(
 {
     [JsonIgnore]
     public OverlayCardKey Key => new(Kind, AccountId);
+
+    // Shown in the stats window instead of over the game. Only meaningful while Enabled.
+    public bool InStatsWindow { get; init; }
+
+    // The card's position in the stats window, kept apart from Bounds so a card moved between the two places
+    // returns to where it was in each.
+    public OverlayBounds? StatsWindowBounds { get; init; }
 }

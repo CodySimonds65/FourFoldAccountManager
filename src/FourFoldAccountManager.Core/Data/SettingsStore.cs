@@ -154,7 +154,8 @@ public sealed class SettingsStore
             // The legacy bounds were just folded into OverlayCards and are never written back.
             LegacyXpOverlayBoundsByAccount = null,
             Tabs = tabs,
-            ActiveTab = PanelTabPolicy.ClampActive(settings.ActiveTab, tabs.Count)
+            ActiveTab = PanelTabPolicy.ClampActive(settings.ActiveTab, tabs.Count),
+            StatsWindow = settings.StatsWindow is { IsUsable: true } ? settings.StatsWindow : null
         };
     }
 
