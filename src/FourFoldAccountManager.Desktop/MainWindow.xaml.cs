@@ -61,6 +61,7 @@ public partial class MainWindow : Window
     private bool _slotManagementVisible = true;
     private bool _viewAdjustmentVisible;
     private bool _isFullScreen;
+    private bool _isTheatre;
     private bool _showingLeaderboard;
     private bool _overlayEditing;
     private WindowState _previousWindowState;
@@ -214,6 +215,9 @@ public partial class MainWindow : Window
                 return true;
             case GlobalShortcutAction.PreviousTab:
                 StepTab(-1);
+                return true;
+            case GlobalShortcutAction.ToggleTheatreMode:
+                ToggleTheatreMode();
                 return true;
             default:
                 return _timer.TryHandleShortcut(action);
@@ -870,7 +874,7 @@ public partial class MainWindow : Window
 
     private void LeaderboardView_Click(object sender, RoutedEventArgs e)
     {
-        if (_isFullScreen || _showingLeaderboard) return;
+        if (ClutterHidden || _showingLeaderboard) return;
         _showingLeaderboard = true;
         ApplyTopLevelView();
         _leaderboardRefreshTimer.Start();
@@ -892,17 +896,17 @@ public partial class MainWindow : Window
         LeaderboardPanelView.Visibility = _showingLeaderboard ? Visibility.Visible : Visibility.Collapsed;
         WorkspaceControls.Visibility = _showingLeaderboard ? Visibility.Collapsed : Visibility.Visible;
         ToggleAccountsButton.Visibility = _showingLeaderboard ? Visibility.Collapsed : Visibility.Visible;
-        GlobalStatusText.Visibility = _showingLeaderboard || _isFullScreen
+        GlobalStatusText.Visibility = _showingLeaderboard || ClutterHidden
             ? Visibility.Collapsed : Visibility.Visible;
         ViewSubtitle.Text = _showingLeaderboard
             ? "Daily, weekly, and monthly XP gains."
             : "Your accounts, together.";
         var accountsVisible = _showingLeaderboard || _accountsPanelVisible;
-        AccountsPanel.Visibility = _isFullScreen || !accountsVisible
+        AccountsPanel.Visibility = ClutterHidden || !accountsVisible
             ? Visibility.Collapsed : Visibility.Visible;
-        AccountsColumn.Width = _isFullScreen || !accountsVisible
+        AccountsColumn.Width = ClutterHidden || !accountsVisible
             ? new GridLength(0) : new GridLength(232);
-        AccountsGapColumn.Width = _isFullScreen || !accountsVisible
+        AccountsGapColumn.Width = ClutterHidden || !accountsVisible
             ? new GridLength(0) : new GridLength(16);
         UpdateTopLevelButtons();
         RefreshTabStrip();
@@ -950,7 +954,8 @@ public partial class MainWindow : Window
             GlobalShortcutActions.All.ToDictionary(
                 action => action,
                 action => GlobalShortcutActions.GetChord(_panelSettings, action)),
-            GlobalShortcutActions.All.Where(action => _shortcuts?.IsAvailable(action) != true).ToHashSet())
+            GlobalShortcutActions.All.Where(action => _shortcuts?.IsAvailable(action) != true).ToHashSet(),
+            showOverlaysInTheatreMode: _panelSettings.ShowOverlaysInTheatreMode)
         {
             Owner = this
         };
@@ -973,8 +978,10 @@ public partial class MainWindow : Window
         var changedShortcuts = GlobalShortcutActions.All
             .Where(action => dialog.Shortcuts[action] != GlobalShortcutActions.GetChord(_panelSettings, action))
             .ToArray();
+        var theatreOverlaysChanged = dialog.ShowOverlaysInTheatreMode != _panelSettings.ShowOverlaysInTheatreMode;
         if (dialog.FillGameToPanel == _panelSettings.FillGameToPanel &&
             dialog.ShowFullScreenExitButton == _panelSettings.ShowFullScreenExitButton &&
+            !theatreOverlaysChanged &&
             changedShortcuts.Length == 0 &&
             !dialog.ResetLayoutSizes)
         {
@@ -1000,7 +1007,8 @@ public partial class MainWindow : Window
                     candidate = WithDialogShortcuts(candidate with
                     {
                         FillGameToPanel = dialog.FillGameToPanel,
-                        ShowFullScreenExitButton = dialog.ShowFullScreenExitButton
+                        ShowFullScreenExitButton = dialog.ShowFullScreenExitButton,
+                        ShowOverlaysInTheatreMode = dialog.ShowOverlaysInTheatreMode
                     });
                     scalingChanged = candidate.FillGameToPanel != currentSettings.FillGameToPanel;
                     if (scalingChanged)
@@ -1053,6 +1061,12 @@ public partial class MainWindow : Window
             }
             UpdateManageSlotsButton();
             UpdateTimerHotkeys();
+            if (theatreOverlaysChanged && _isTheatre)
+            {
+                ApplyClutterVisibility();
+                RefreshTrackerRows();
+            }
+
             if (stillUnavailable.Count > 0)
             {
                 var unavailableNames = string.Join(", ", stillUnavailable.Select(GlobalShortcutActions.DisplayName));
@@ -1073,6 +1087,10 @@ public partial class MainWindow : Window
                     ? "Global shortcuts updated."
                     : changedShortcuts.Length == 1
                     ? $"{GlobalShortcutActions.DisplayName(changedShortcuts[0])} shortcut updated."
+                    : theatreOverlaysChanged
+                    ? nextSettings.ShowOverlaysInTheatreMode
+                        ? "Overlays now show in theatre mode."
+                        : "Overlays now stay hidden in theatre mode."
                     : nextSettings.ShowFullScreenExitButton
                         ? "Full-screen Exit button enabled."
                         : "Full-screen Exit button hidden. Press Esc to leave full screen.";
@@ -1099,11 +1117,24 @@ public partial class MainWindow : Window
         ExitFullScreen();
     }
 
+    private void Theatre_Click(object sender, RoutedEventArgs e) => ToggleTheatreMode();
+
+    // Esc leaves full screen first, then theatre mode.
     private void MainWindow_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        if (_isFullScreen && e.Key == System.Windows.Input.Key.Escape)
+        if (e.Key != System.Windows.Input.Key.Escape)
+        {
+            return;
+        }
+
+        if (_isFullScreen)
         {
             ExitFullScreen();
+            e.Handled = true;
+        }
+        else if (_isTheatre)
+        {
+            ToggleTheatreMode();
             e.Handled = true;
         }
     }
@@ -1127,28 +1158,7 @@ public partial class MainWindow : Window
         _previousWindowStyle = WindowStyle;
         _previousResizeMode = ResizeMode;
         _isFullScreen = true;
-        _overlayEditing = false;
-        FullscreenOverlayTray.SetFullscreen(true);
-        FullscreenOverlayTray.SetEditing(false);
-
-        AppHeaderBorder.Visibility = Visibility.Collapsed;
-        AppHeaderRow.Height = new GridLength(0);
-        MainContentGrid.Margin = new Thickness(0);
-        AccountsPanel.Visibility = Visibility.Collapsed;
-        AccountsColumn.Width = new GridLength(0);
-        AccountsGapColumn.Width = new GridLength(0);
-        UpdatePluginSidebarVisibility();
-        PanelToolbar.Visibility = Visibility.Collapsed;
-        GlobalStatusText.Visibility = Visibility.Collapsed;
-        PanelBorder.Padding = new Thickness(0);
-        PanelBorder.CornerRadius = new CornerRadius(0);
-        PanelBorder.BorderThickness = new Thickness(0);
-        FullScreenExitButton.Visibility = _panelSettings.ShowFullScreenExitButton
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        UpdateAllSlotPresentations();
-        UpdateManageSlotsButton();
-        RefreshTabStrip();
+        ApplyClutterVisibility();
 
         WindowState = WindowState.Normal;
         WindowStyle = WindowStyle.None;
@@ -1168,34 +1178,55 @@ public partial class MainWindow : Window
         WindowStyle = _previousWindowStyle;
         ResizeMode = _previousResizeMode;
 
-        _overlayEditing = false;
-        FullscreenOverlayTray.SetEditing(false);
-        FullscreenOverlayTray.SetFullscreen(false);
         _isFullScreen = false;
-        AppHeaderBorder.Visibility = Visibility.Visible;
-        AppHeaderRow.Height = new GridLength(60);
-        MainContentGrid.Margin = new Thickness(16);
-        AccountsPanel.Visibility = _accountsPanelVisible ? Visibility.Visible : Visibility.Collapsed;
-        AccountsColumn.Width = _accountsPanelVisible ? new GridLength(232) : new GridLength(0);
-        AccountsGapColumn.Width = _accountsPanelVisible ? new GridLength(16) : new GridLength(0);
-        UpdatePluginSidebarVisibility();
-        PanelToolbar.Visibility = Visibility.Visible;
-        GlobalStatusText.Visibility = Visibility.Visible;
-        PanelBorder.Padding = new Thickness(0);
-        PanelBorder.CornerRadius = new CornerRadius(0);
-        PanelBorder.BorderThickness = new Thickness(0);
-        FullScreenExitButton.Visibility = Visibility.Collapsed;
-        UpdateAllSlotPresentations();
-        UpdateManageSlotsButton();
-        RefreshTabStrip();
+        ApplyClutterVisibility();
         RefreshTrackerRows();
 
         WindowState = _previousWindowState;
     }
 
+    // Does nothing in full screen, which already hides everything theatre mode hides.
+    private void ToggleTheatreMode()
+    {
+        if (_isFullScreen)
+        {
+            return;
+        }
+
+        if (!_isTheatre && _showingLeaderboard) ShowWorkspaceView();
+        _isTheatre = !_isTheatre;
+        ApplyClutterVisibility();
+        RefreshTrackerRows();
+    }
+
+    // Full screen and theatre mode both hide the side panels, toolbars, tab strip, status line, and card headers.
+    // Only full screen also hides the app header and takes over the whole screen.
+    private bool ClutterHidden => _isFullScreen || _isTheatre;
+
+    private bool OverlaysShown => _isFullScreen || (_isTheatre && _panelSettings.ShowOverlaysInTheatreMode);
+
+    private void ApplyClutterVisibility()
+    {
+        _overlayEditing = false;
+        FullscreenOverlayTray.SetFullscreen(OverlaysShown);
+        FullscreenOverlayTray.SetEditing(false);
+
+        AppHeaderBorder.Visibility = _isFullScreen ? Visibility.Collapsed : Visibility.Visible;
+        AppHeaderRow.Height = new GridLength(_isFullScreen ? 0 : 60);
+        MainContentGrid.Margin = new Thickness(ClutterHidden ? 0 : 16);
+        PanelToolbar.Visibility = ClutterHidden ? Visibility.Collapsed : Visibility.Visible;
+        TheatreButton.Content = _isTheatre ? "Exit theatre" : "Theatre";
+        FullScreenExitButton.Visibility = _isFullScreen && _panelSettings.ShowFullScreenExitButton
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        ApplyTopLevelView();
+        UpdateAllSlotPresentations();
+        UpdateManageSlotsButton();
+    }
+
     private void SetOverlayEditing(bool isEditing)
     {
-        _overlayEditing = _isFullScreen && isEditing;
+        _overlayEditing = OverlaysShown && isEditing;
         FullscreenOverlayTray.SetEditing(_overlayEditing);
         RefreshTrackerRows();
     }
@@ -1209,7 +1240,7 @@ public partial class MainWindow : Window
         ManageSlotsButton.ToolTip = _slotManagementVisible
             ? "Hide account selectors for started views."
             : "Show account selectors to change slot assignments.";
-        AdjustViewsButton.Visibility = _openAccountIds.Count > 0 && _panelSettings.FillGameToPanel && !_isFullScreen
+        AdjustViewsButton.Visibility = _openAccountIds.Count > 0 && _panelSettings.FillGameToPanel && !ClutterHidden
             ? Visibility.Visible
             : Visibility.Collapsed;
         AdjustViewsButton.Content = _viewAdjustmentVisible ? "Done adjusting" : "Adjust views";
@@ -1222,7 +1253,7 @@ public partial class MainWindow : Window
     {
         var states = _xpTracker.GetStates().ToDictionary(state => state.AccountId);
         var accountRows = new List<OverlayTrayAccountRow>();
-        var editing = _isFullScreen && _overlayEditing;
+        var editing = OverlaysShown && _overlayEditing;
         _xpTrackerRows.Clear();
         foreach (var slot in _slotCards.OrderBy(slot => slot.SlotIndex))
         {
@@ -1296,7 +1327,7 @@ public partial class MainWindow : Window
             : definition.DisplayName;
         switches.Add(new OverlayTraySwitch(key, definition.DisplayName, data.Summary,
             placement?.Enabled == true, accessibleName));
-        if (_isFullScreen && placement is { Enabled: true })
+        if (OverlaysShown && placement is { Enabled: true })
         {
             cards.Add(new OverlayCardModel(key, definition, placement.Bounds, cards.Count, data));
         }
@@ -1324,14 +1355,14 @@ public partial class MainWindow : Window
             ? "Hide the plugins sidebar to expand the multi-box panel."
             : "Show the plugins sidebar.";
         var visible = PluginSidebar.UpdateHostVisibility(!_showingLeaderboard,
-            _isFullScreen, expanded, _openAccountIds);
+            ClutterHidden, expanded, _openAccountIds);
         TrackerGapColumn.Width = visible ? new GridLength(6) : new GridLength(0);
         TrackerColumn.Width = visible ? new GridLength(250) : new GridLength(0);
     }
 
     private async void FullscreenOverlayTray_CardToggleRequested(object? sender, OverlayCardToggleRequestedEventArgs args)
     {
-        if (!_isFullScreen || !_overlayEditing || !OverlayCardPolicy.IsValidKey(args.Key))
+        if (!OverlaysShown || !_overlayEditing || !OverlayCardPolicy.IsValidKey(args.Key))
         {
             return;
         }
@@ -1355,7 +1386,7 @@ public partial class MainWindow : Window
 
     private async void OverlayLayer_BoundsCommitted(object? sender, OverlayCardBoundsCommittedEventArgs args)
     {
-        if (sender is not OverlayCardLayer layer || !_isFullScreen || !_overlayEditing ||
+        if (sender is not OverlayCardLayer layer || !OverlaysShown || !_overlayEditing ||
             !IsOverlayCardOwnedByLayer(layer, args.Key))
         {
             return;
@@ -1420,6 +1451,8 @@ public partial class MainWindow : Window
         slot.EmptyTitle.Text = account is null ? "An open spot in your party" : $"{account.Label} is ready";
         slot.EmptyDescription.Text = _isFullScreen
             ? "Exit full screen to set up this slot."
+            : _isTheatre
+            ? "Exit theatre mode to set up this slot."
             : account is null
                 ? "Choose an account above to fill this slot."
                 : "Select Launch accounts to start playing together.";
@@ -1429,14 +1462,14 @@ public partial class MainWindow : Window
         slot.AccountPicker.Visibility = showPicker ? Visibility.Visible : Visibility.Collapsed;
         slot.AccountLabel.Visibility = showPicker ? Visibility.Collapsed : Visibility.Visible;
 
-        slot.Header.Visibility = _isFullScreen ? Visibility.Collapsed : Visibility.Visible;
-        slot.Status.Visibility = !_isFullScreen && slot.Tone is StatusTone.Info or StatusTone.Warning or StatusTone.Error
+        slot.Header.Visibility = ClutterHidden ? Visibility.Collapsed : Visibility.Visible;
+        slot.Status.Visibility = !ClutterHidden && slot.Tone is StatusTone.Info or StatusTone.Warning or StatusTone.Error
             ? Visibility.Visible : Visibility.Collapsed;
-        slot.Root.Margin = _isFullScreen ? new Thickness(0) : new Thickness(4);
-        slot.Root.Padding = _isFullScreen ? new Thickness(0) : new Thickness(10);
-        slot.Root.BorderThickness = _isFullScreen ? new Thickness(0) : new Thickness(1);
-        slot.Root.CornerRadius = _isFullScreen ? new CornerRadius(0) : new CornerRadius(10);
-        slot.ViewAdjustmentOverlay.Visibility = _viewAdjustmentVisible && !_isFullScreen &&
+        slot.Root.Margin = ClutterHidden ? new Thickness(0) : new Thickness(4);
+        slot.Root.Padding = ClutterHidden ? new Thickness(0) : new Thickness(10);
+        slot.Root.BorderThickness = ClutterHidden ? new Thickness(0) : new Thickness(1);
+        slot.Root.CornerRadius = ClutterHidden ? new CornerRadius(0) : new CornerRadius(10);
+        slot.ViewAdjustmentOverlay.Visibility = _viewAdjustmentVisible && !ClutterHidden &&
             _panelSettings.FillGameToPanel && isOpen
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -1720,7 +1753,7 @@ public partial class MainWindow : Window
     private void RefreshTabStrip()
     {
         var tabsLayout = _panelSettings.Layout == PanelLayout.Tabs;
-        TabStrip.Visibility = tabsLayout && !_showingLeaderboard && !_isFullScreen
+        TabStrip.Visibility = tabsLayout && !_showingLeaderboard && !ClutterHidden
             ? Visibility.Visible
             : Visibility.Collapsed;
         if (!tabsLayout)

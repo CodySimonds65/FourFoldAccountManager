@@ -38,7 +38,8 @@ public partial class SettingsDialog : Window
         bool showFullScreenExitButton,
         IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> shortcuts,
         IReadOnlySet<GlobalShortcutAction> unavailableShortcuts,
-        Func<MessageBoxResult>? confirmResetLayoutSizes = null)
+        Func<MessageBoxResult>? confirmResetLayoutSizes = null,
+        bool showOverlaysInTheatreMode = true)
     {
         ArgumentNullException.ThrowIfNull(shortcuts);
         ArgumentNullException.ThrowIfNull(unavailableShortcuts);
@@ -56,10 +57,11 @@ public partial class SettingsDialog : Window
         FillOption.IsChecked = fillGameToPanel;
         FitOption.IsChecked = !fillGameToPanel;
         ShowFullScreenExitOption.IsChecked = showFullScreenExitButton;
+        ShowOverlaysInTheatreModeOption.IsChecked = showOverlaysInTheatreMode;
         _rows = new[]
         {
             RevealShortcutRow, DividerShortcutRow, TimerSplitShortcutRow, TimerFinishShortcutRow, TimerResetShortcutRow,
-            NextTabShortcutRow, PreviousTabShortcutRow
+            NextTabShortcutRow, PreviousTabShortcutRow, TheatreShortcutRow
         }.ToDictionary(row => row.Action);
         foreach (var (action, row) in _rows)
         {
@@ -74,6 +76,8 @@ public partial class SettingsDialog : Window
     public bool FillGameToPanel { get; private set; }
 
     public bool ShowFullScreenExitButton { get; private set; }
+
+    public bool ShowOverlaysInTheatreMode { get; private set; }
 
     public IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> Shortcuts => _shortcuts;
 
@@ -227,6 +231,7 @@ public partial class SettingsDialog : Window
 
         FillGameToPanel = FillOption.IsChecked == true;
         ShowFullScreenExitButton = ShowFullScreenExitOption.IsChecked == true;
+        ShowOverlaysInTheatreMode = ShowOverlaysInTheatreModeOption.IsChecked == true;
         DialogResult = true;
     }
 

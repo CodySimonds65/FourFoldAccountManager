@@ -37,6 +37,9 @@
                     <Button x:Name="SettingsButton" Content="Settings" Click="Settings_Click"
                             Style="{StaticResource AppButtonStyle}" Height="34" Padding="14,0" Margin="0,0,8,0"
                             ToolTip="Adjust how the game fits each account panel." />
+                    <Button x:Name="TheatreButton" Content="Theatre" Click="Theatre_Click"
+                            Style="{StaticResource AppButtonStyle}" Height="34" Padding="14,0" Margin="0,0,8,0"
+                            ToolTip="Hide the side panels and toolbars without leaving the window. Press Esc to return." />
                     <Button x:Name="FullScreenButton" Content="Full screen" Click="FullScreen_Click"
                             Style="{StaticResource AppButtonStyle}" Height="34" Padding="14,0"
                             ToolTip="Expand the client layout. Press Esc to return." />
