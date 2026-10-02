@@ -95,4 +95,58 @@ public sealed class PanelLayoutPolicyTests
         Assert.Equal(new Dictionary<Guid, long> { [otherId] = 20 },
             PanelLayoutPolicy.ClearAccount(settings, accountId).XpCalculatorTargetLevels);
     }
+
+    [Fact]
+    public void SettingsTransformsPreserveTabsAndClearAccountRemovesTheAccountsTab()
+    {
+        var accountId = Guid.NewGuid();
+        var otherId = Guid.NewGuid();
+        var settings = PanelSettings.Default with
+        {
+            SlotAccountIds = [accountId, null, null, null, null],
+            Tabs = [PanelTab.ForAccount(otherId), PanelTab.ForAccount(accountId)],
+            ActiveTab = 1
+        };
+
+        foreach (var transformed in new[]
+                 {
+                     PanelLayoutPolicy.WithLayout(settings, PanelLayout.OneByTwo),
+                     PanelLayoutPolicy.Assign(settings, 1, Guid.NewGuid()),
+                     PanelLayoutPolicy.WithSplitState(settings, new PanelSplitState("2x2.rows", [0.7, 0.3])),
+                     PanelLayoutPolicy.ResetSplitStates(settings)
+                 })
+        {
+            Assert.Equal(new Guid?[] { otherId, accountId }, transformed.Tabs.Select(tab => tab.AccountId));
+            Assert.Equal(1, transformed.ActiveTab);
+        }
+
+        var cleared = PanelLayoutPolicy.ClearAccount(settings, accountId);
+        Assert.Equal(new Guid?[] { otherId }, cleared.Tabs.Select(tab => tab.AccountId));
+        Assert.Equal(0, cleared.ActiveTab);
+    }
+
+    [Fact]
+    public void SettingsTransformsPreserveTabShortcuts()
+    {
+        var accountId = Guid.NewGuid();
+        var settings = PanelSettings.Default with
+        {
+            SlotAccountIds = [accountId, null, null, null, null],
+            NextTabShortcut = new GlobalHotkeyChord(0x64, GlobalHotkeyModifiers.None),
+            PreviousTabShortcut = new GlobalHotkeyChord(0x65, GlobalHotkeyModifiers.None)
+        };
+
+        foreach (var transformed in new[]
+                 {
+                     PanelLayoutPolicy.WithLayout(settings, PanelLayout.Tabs),
+                     PanelLayoutPolicy.Assign(settings, 1, Guid.NewGuid()),
+                     PanelLayoutPolicy.ClearAccount(settings, accountId),
+                     PanelLayoutPolicy.WithSplitState(settings, new PanelSplitState("2x2.rows", [0.7, 0.3])),
+                     PanelLayoutPolicy.ResetSplitStates(settings)
+                 })
+        {
+            Assert.Equal(settings.NextTabShortcut, transformed.NextTabShortcut);
+            Assert.Equal(settings.PreviousTabShortcut, transformed.PreviousTabShortcut);
+        }
+    }
 }

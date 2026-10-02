@@ -8,10 +8,10 @@ public enum PanelLayout
     TwoByThree,
     OneByTwoVertical,
     OneByOne,
-    OneByThree
+    OneByThree,
+    // One client per tab, taken from PanelSettings.Tabs instead of the grid slots.
+    Tabs
 }
-
-public readonly record struct GridDimensions(int Rows, int Columns);
 
 public readonly record struct PanelSlotPlacement(
     int Row,

@@ -24,6 +24,8 @@ public sealed record PanelSettings
 
     public bool PluginsSidebarExpanded { get; init; } = true;
 
+    public bool ShowOverlaysInTheatreMode { get; init; } = true;
+
     [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
     public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =
         GlobalHotkeyChord.DefaultRevealXpOverlayTab;
@@ -41,6 +43,15 @@ public sealed record PanelSettings
     [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
     public GlobalHotkeyChord TimerResetShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerReset;
 
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    public GlobalHotkeyChord NextTabShortcut { get; init; } = GlobalHotkeyChord.DefaultNextTab;
+
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    public GlobalHotkeyChord PreviousTabShortcut { get; init; } = GlobalHotkeyChord.DefaultPreviousTab;
+
+    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    public GlobalHotkeyChord ToggleTheatreModeShortcut { get; init; } = GlobalHotkeyChord.DefaultToggleTheatreMode;
+
     public double TwoByThreeTopRowFraction { get; init; } = 0.6;
 
     public IReadOnlyList<PanelSplitState> SplitStates { get; init; } = Array.Empty<PanelSplitState>();
@@ -51,8 +62,13 @@ public sealed record PanelSettings
     [JsonConverter(typeof(LenientTargetLevelsJsonConverter))]
     public IReadOnlyDictionary<Guid, long> XpCalculatorTargetLevels { get; init; } = new Dictionary<Guid, long>();
 
-    [JsonConverter(typeof(OverlayCardListJsonConverter))]
+    [JsonConverter(typeof(LenientListJsonConverter<OverlayCardPlacement>))]
     public IReadOnlyList<OverlayCardPlacement> OverlayCards { get; init; } = Array.Empty<OverlayCardPlacement>();
+
+    [JsonConverter(typeof(LenientListJsonConverter<PanelTab>))]
+    public IReadOnlyList<PanelTab> Tabs { get; init; } = Array.Empty<PanelTab>();
+
+    public int ActiveTab { get; init; }
 
     // Migration input from settings written before overlay add-ons; validation converts it and never writes it back.
     [JsonPropertyName("xpOverlayBoundsByAccount")]
