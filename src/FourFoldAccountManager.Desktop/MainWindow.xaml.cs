@@ -1737,7 +1737,7 @@ public partial class MainWindow : Window
 
             var closeButton = new Button
             {
-                Tag = index, Width = 28, Height = 34, Padding = new Thickness(0),
+                Tag = accountId, Width = 28, Height = 34, Padding = new Thickness(0),
                 Margin = new Thickness(2, 0, 8, 0),
                 Style = (Style)FindResource("AppButtonStyle"),
                 Content = "×", ToolTip = "Close tab and end its game session",
@@ -1843,14 +1843,14 @@ public partial class MainWindow : Window
 
     private async void CloseTab_Click(object sender, RoutedEventArgs e)
     {
-        if (_batchLaunchInProgress || sender is not Button { Tag: int index })
+        if (_batchLaunchInProgress || sender is not Button { Tag: Guid accountId })
         {
             return;
         }
 
         try
         {
-            await UpdateSettingsAsync(settings => PanelTabPolicy.Close(settings, index));
+            await UpdateSettingsAsync(settings => PanelTabPolicy.RemoveAccount(settings, accountId));
             // The rebuild closes the session of the account that is no longer in a tab.
             await RebuildPanelAsync(closeExistingViews: false);
             GlobalStatusText.Text = "Tab closed and its game session ended.";
