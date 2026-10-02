@@ -132,14 +132,10 @@ public sealed class SettingsStore
         }
 
         var splitStates = ValidateSplitStates(settings);
-        var assignments = settings.SlotAccountIds.Concat(new Guid?[5]).Take(5).ToArray();
-        var overlayCards = OverlayCardPolicy.Normalize(settings.OverlayCards, settings.LegacyXpOverlayBoundsByAccount);
-        return new PanelSettings(settings.Layout, assignments)
+        var tabs = PanelTabPolicy.Normalize(settings.Tabs);
+        return settings with
         {
-            FillGameToPanel = settings.FillGameToPanel,
-            ShareLinkedAccounts = settings.ShareLinkedAccounts,
-            ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
-            PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
+            SlotAccountIds = Array.AsReadOnly(settings.SlotAccountIds.Concat(new Guid?[5]).Take(5).ToArray()),
             XpCalculatorTargetLevels = XpCalculatorTargets.Normalize(settings.XpCalculatorTargetLevels),
             RevealXpOverlayTabShortcut = ValidOrDefault(settings.RevealXpOverlayTabShortcut,
                 GlobalHotkeyChord.DefaultRevealXpOverlayTab),
@@ -148,10 +144,13 @@ public sealed class SettingsStore
             TimerSplitShortcut = ValidOrDefault(settings.TimerSplitShortcut, GlobalHotkeyChord.DefaultTimerSplit),
             TimerFinishShortcut = ValidOrDefault(settings.TimerFinishShortcut, GlobalHotkeyChord.DefaultTimerFinish),
             TimerResetShortcut = ValidOrDefault(settings.TimerResetShortcut, GlobalHotkeyChord.DefaultTimerReset),
-            TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
             SplitStates = splitStates,
             GameViewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes),
-            OverlayCards = overlayCards
+            OverlayCards = OverlayCardPolicy.Normalize(settings.OverlayCards, settings.LegacyXpOverlayBoundsByAccount),
+            // The legacy bounds were just folded into OverlayCards and are never written back.
+            LegacyXpOverlayBoundsByAccount = null,
+            Tabs = tabs,
+            ActiveTab = PanelTabPolicy.ClampActive(settings.ActiveTab, tabs.Count)
         };
     }
 

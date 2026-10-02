@@ -83,19 +83,6 @@ public static class PanelLayoutPolicy
         return CopySettings(settings, GetDefaultSplitStates());
     }
 
-    public static GridDimensions GetDimensions(PanelLayout layout) =>
-        layout switch
-        {
-            PanelLayout.OneByTwo => new GridDimensions(1, 2),
-            PanelLayout.TwoByOne => new GridDimensions(2, 1),
-            PanelLayout.TwoByTwo => new GridDimensions(2, 2),
-            // Six grid units let the top slots span three each and the bottom slots span two each.
-            PanelLayout.TwoByThree => new GridDimensions(2, 6),
-            PanelLayout.OneByTwoVertical => new GridDimensions(2, 2),
-            PanelLayout.OneByOne => new GridDimensions(1, 1),
-            PanelLayout.OneByThree => new GridDimensions(2, 3),
-            _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
-        };
 
     public static int GetVisibleSlotCount(PanelLayout layout) =>
         GetSlotPlacements(layout).Count;
@@ -145,30 +132,20 @@ public static class PanelLayoutPolicy
                 new PanelSlotPlacement(1, 1),
                 new PanelSlotPlacement(1, 2)
             },
+            // The Tabs layout shows tabs instead of grid slots.
+            PanelLayout.Tabs => Array.Empty<PanelSlotPlacement>(),
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
 
     public static PanelSettings WithLayout(PanelSettings settings, PanelLayout layout)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        _ = GetDimensions(layout);
-        return new PanelSettings(layout, settings.SlotAccountIds)
+        if (!Enum.IsDefined(layout))
         {
-            FillGameToPanel = settings.FillGameToPanel,
-            ShareLinkedAccounts = settings.ShareLinkedAccounts,
-            ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
-            PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
-            XpCalculatorTargetLevels = settings.XpCalculatorTargetLevels,
-            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
-            ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
-            TimerSplitShortcut = settings.TimerSplitShortcut,
-            TimerFinishShortcut = settings.TimerFinishShortcut,
-            TimerResetShortcut = settings.TimerResetShortcut,
-            TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
-            SplitStates = settings.SplitStates,
-            GameViewportSizes = settings.GameViewportSizes,
-            OverlayCards = settings.OverlayCards
-        };
+            throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.");
+        }
+
+        return settings with { Layout = layout };
     }
 
     public static PanelSettings Assign(PanelSettings settings, int slotIndex, Guid? accountId)
@@ -202,23 +179,7 @@ public static class PanelLayoutPolicy
         }
 
         assignments[slotIndex] = accountId;
-        return new PanelSettings(settings.Layout, assignments)
-        {
-            FillGameToPanel = settings.FillGameToPanel,
-            ShareLinkedAccounts = settings.ShareLinkedAccounts,
-            ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
-            PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
-            XpCalculatorTargetLevels = settings.XpCalculatorTargetLevels,
-            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
-            ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
-            TimerSplitShortcut = settings.TimerSplitShortcut,
-            TimerFinishShortcut = settings.TimerFinishShortcut,
-            TimerResetShortcut = settings.TimerResetShortcut,
-            TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
-            SplitStates = settings.SplitStates,
-            GameViewportSizes = settings.GameViewportSizes,
-            OverlayCards = settings.OverlayCards
-        };
+        return settings with { SlotAccountIds = Array.AsReadOnly(assignments) };
     }
 
     public static PanelSettings ClearAccount(PanelSettings settings, Guid accountId)
@@ -239,23 +200,13 @@ public static class PanelLayoutPolicy
             .ToArray();
         var viewportSizes = new Dictionary<Guid, GameViewportSize>(settings.GameViewportSizes);
         viewportSizes.Remove(accountId);
-        return new PanelSettings(settings.Layout, assignments)
+        return PanelTabPolicy.RemoveAccount(settings with
         {
-            FillGameToPanel = settings.FillGameToPanel,
-            ShareLinkedAccounts = settings.ShareLinkedAccounts,
-            ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
-            PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
+            SlotAccountIds = Array.AsReadOnly(assignments),
             XpCalculatorTargetLevels = XpCalculatorTargets.RemoveAccount(settings.XpCalculatorTargetLevels, accountId),
-            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
-            ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
-            TimerSplitShortcut = settings.TimerSplitShortcut,
-            TimerFinishShortcut = settings.TimerFinishShortcut,
-            TimerResetShortcut = settings.TimerResetShortcut,
-            TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
-            SplitStates = settings.SplitStates,
             GameViewportSizes = viewportSizes,
             OverlayCards = OverlayCardPolicy.RemoveAccount(settings.OverlayCards, accountId)
-        };
+        }, accountId);
     }
 
     public static GameViewportSize GetGameViewportSize(PanelSettings settings, Guid accountId)
@@ -333,23 +284,7 @@ public static class PanelLayoutPolicy
     }
 
     private static PanelSettings CopySettings(PanelSettings settings, IReadOnlyList<PanelSplitState> splitStates) =>
-        new(settings.Layout, settings.SlotAccountIds)
-        {
-            FillGameToPanel = settings.FillGameToPanel,
-            ShareLinkedAccounts = settings.ShareLinkedAccounts,
-            ShowFullScreenExitButton = settings.ShowFullScreenExitButton,
-            PluginsSidebarExpanded = settings.PluginsSidebarExpanded,
-            XpCalculatorTargetLevels = settings.XpCalculatorTargetLevels,
-            RevealXpOverlayTabShortcut = settings.RevealXpOverlayTabShortcut,
-            ToggleDividerResizingShortcut = settings.ToggleDividerResizingShortcut,
-            TimerSplitShortcut = settings.TimerSplitShortcut,
-            TimerFinishShortcut = settings.TimerFinishShortcut,
-            TimerResetShortcut = settings.TimerResetShortcut,
-            TwoByThreeTopRowFraction = settings.TwoByThreeTopRowFraction,
-            SplitStates = Array.AsReadOnly(splitStates.Select(CloneSplitState).ToArray()),
-            GameViewportSizes = settings.GameViewportSizes,
-            OverlayCards = settings.OverlayCards
-        };
+        settings with { SplitStates = Array.AsReadOnly(splitStates.Select(CloneSplitState).ToArray()) };
 
     private static PanelSplitState CloneSplitState(PanelSplitState state) =>
         new(state.Id, Array.AsReadOnly(state.Weights.ToArray()));
