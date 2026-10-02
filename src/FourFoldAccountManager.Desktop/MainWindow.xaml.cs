@@ -1255,6 +1255,17 @@ public partial class MainWindow : Window
         var accountRows = new List<OverlayTrayAccountRow>();
         var editing = OverlaysShown && _overlayEditing;
         _xpTrackerRows.Clear();
+
+        // Every card sits on the one window-wide layer, so it can go anywhere in the window, header included.
+        var cards = new List<OverlayCardModel>();
+        var globalSwitches = new List<OverlayTraySwitch>();
+        foreach (var definition in OverlayAddOnCatalog.All.Where(
+                     definition => definition.Scope == OverlayAddOnScope.Global))
+        {
+            AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, null),
+                string.Empty, null, false, cards, globalSwitches);
+        }
+
         foreach (var slot in _slotCards.OrderBy(slot => slot.SlotIndex))
         {
             var assignedAccountId = AccountIdFor(slot.SlotIndex);
@@ -1264,7 +1275,6 @@ public partial class MainWindow : Window
             var label = account?.Label ?? "Account";
             var isOpen = assignedAccountId is { } openAccountId &&
                 _openAccountIds.Contains(openAccountId) && slot.View is not null;
-            var cards = new List<OverlayCardModel>();
 
             if (isOpen && assignedAccountId is { } trackedAccountId)
             {
@@ -1282,38 +1292,33 @@ public partial class MainWindow : Window
                     foreach (var definition in OverlayAddOnCatalog.All.Where(
                                  definition => definition.Scope == OverlayAddOnScope.Account))
                     {
+                        // A background tab's account keeps its switches in the Overlays panel but shows no cards.
                         AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, trackedAccountId),
-                            label, trackerRow, isStale, cards, switches);
+                            label, trackerRow, isStale, ShowsAccountCards(slot) ? cards : null, switches);
                     }
 
                     accountRows.Add(new OverlayTrayAccountRow(trackedAccountId, label, switches));
                 }
             }
-
-            slot.OverlayLayer.SetCards(cards, editing);
         }
 
-        var globalCards = new List<OverlayCardModel>();
-        var globalSwitches = new List<OverlayTraySwitch>();
-        foreach (var definition in OverlayAddOnCatalog.All.Where(
-                     definition => definition.Scope == OverlayAddOnScope.Global))
-        {
-            AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, null),
-                string.Empty, null, false, globalCards, globalSwitches);
-        }
-
-        GlobalOverlayLayer.SetCards(globalCards, editing);
+        GlobalOverlayLayer.SetCards(cards, editing);
         FullscreenOverlayTray.SetRows(globalSwitches, accountRows);
         UpdatePluginSidebarVisibility();
     }
 
+    // In the Tabs layout only the active tab's account shows its cards; in a grid every panel's account does.
+    private bool ShowsAccountCards(PanelSlotCard slot) =>
+        _panelSettings.Layout != PanelLayout.Tabs || slot.SlotIndex == _panelSettings.ActiveTab;
+
+    // A null cards list adds the Overlays panel switch without putting a card on screen.
     private void AddOverlayAddOn(
         OverlayAddOnDefinition definition,
         OverlayCardKey key,
         string accountLabel,
         XpTrackerRow? trackerRow,
         bool isStale,
-        List<OverlayCardModel> cards,
+        List<OverlayCardModel>? cards,
         List<OverlayTraySwitch> switches)
     {
         if (CreateOverlayCardData(definition.Kind, key.AccountId, accountLabel, trackerRow, isStale) is not { } data)
@@ -1327,7 +1332,7 @@ public partial class MainWindow : Window
             : definition.DisplayName;
         switches.Add(new OverlayTraySwitch(key, definition.DisplayName, data.Summary,
             placement?.Enabled == true, accessibleName));
-        if (OverlaysShown && placement is { Enabled: true })
+        if (cards is not null && OverlaysShown && placement is { Enabled: true })
         {
             cards.Add(new OverlayCardModel(key, definition, placement.Bounds, cards.Count, data));
         }
@@ -1387,7 +1392,7 @@ public partial class MainWindow : Window
     private async void OverlayLayer_BoundsCommitted(object? sender, OverlayCardBoundsCommittedEventArgs args)
     {
         if (sender is not OverlayCardLayer layer || !OverlaysShown || !_overlayEditing ||
-            !IsOverlayCardOwnedByLayer(layer, args.Key))
+            !IsOverlayCardOnScreen(args.Key))
         {
             return;
         }
@@ -1406,18 +1411,11 @@ public partial class MainWindow : Window
         }
     }
 
-    private bool IsOverlayCardOwnedByLayer(OverlayCardLayer layer, OverlayCardKey key)
-    {
-        if (ReferenceEquals(layer, GlobalOverlayLayer))
-        {
-            return key.AccountId is null;
-        }
-
-        var slot = _slotCards.FirstOrDefault(candidate => ReferenceEquals(candidate.OverlayLayer, layer));
-        return slot is not null && key.AccountId is { } accountId &&
-            AccountIdFor(slot.SlotIndex) == accountId &&
-            _openAccountIds.Contains(accountId) && slot.View is not null;
-    }
+    // A drag that ends after its card left the screen (its tab swapped away, its game closed) is not saved.
+    private bool IsOverlayCardOnScreen(OverlayCardKey key) =>
+        key.AccountId is not { } accountId ||
+        _slotCards.Any(slot => AccountIdFor(slot.SlotIndex) == accountId && ShowsAccountCards(slot) &&
+            _openAccountIds.Contains(accountId) && slot.View is not null);
 
     // The account a card shows: its tab's account in the Tabs layout, otherwise its grid slot's.
     // A card left over from the Tabs layout can carry an index past the grid slots; it has no account.
@@ -1864,6 +1862,8 @@ public partial class MainWindow : Window
         }
 
         ShowActiveTab(focusGame: true);
+        // The overlay cards follow the active tab's account.
+        RefreshTrackerRows();
     }
 
     private async void SelectTab_Click(object sender, RoutedEventArgs e)
@@ -2533,9 +2533,6 @@ public partial class MainWindow : Window
         placeholder.Children.Add(emptyTitle);
         placeholder.Children.Add(emptyDescription);
         browserHost.Children.Add(placeholder);
-        var overlayLayer = new OverlayCardLayer();
-        Panel.SetZIndex(overlayLayer, 50);
-        browserHost.Children.Add(overlayLayer);
 
         var viewportSize = assignedId is { } accountId
             ? PanelLayoutPolicy.GetGameViewportSize(_panelSettings, accountId)
@@ -2585,9 +2582,8 @@ public partial class MainWindow : Window
         Grid.SetRow(browserHost, 2);
         content.Children.Add(browserHost);
         var slot = new PanelSlotCard(slotIndex, root, header, relaunchButton, accountPicker, accountLabel, status, browserHost,
-            overlayLayer, placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider,
+            placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider,
             widthValue, heightValue);
-        overlayLayer.BoundsCommitted += OverlayLayer_BoundsCommitted;
         widthSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
         heightSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
         resetViewButton.Click += (_, _) => SetViewportSliderValues(slot, GameViewportSize.Default);
@@ -3250,7 +3246,6 @@ public partial class MainWindow : Window
         TextBlock accountLabel,
         TextBlock status,
         Grid browserHost,
-        OverlayCardLayer overlayLayer,
         FrameworkElement placeholder,
         TextBlock emptyTitle,
         TextBlock emptyDescription,
@@ -3268,7 +3263,6 @@ public partial class MainWindow : Window
         public TextBlock AccountLabel { get; } = accountLabel;
         public TextBlock Status { get; } = status;
         public Grid BrowserHost { get; } = browserHost;
-        public OverlayCardLayer OverlayLayer { get; } = overlayLayer;
         public FrameworkElement Placeholder { get; } = placeholder;
         public TextBlock EmptyTitle { get; } = emptyTitle;
         public TextBlock EmptyDescription { get; } = emptyDescription;
