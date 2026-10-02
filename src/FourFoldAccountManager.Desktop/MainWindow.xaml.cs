@@ -1203,7 +1203,7 @@ public partial class MainWindow : Window
         _xpTrackerRows.Clear();
         foreach (var slot in _slotCards.OrderBy(slot => slot.SlotIndex))
         {
-            var assignedAccountId = _panelSettings.SlotAccountIds[slot.SlotIndex];
+            var assignedAccountId = AccountIdFor(slot.SlotIndex);
             var account = assignedAccountId is { } id
                 ? _accounts.FirstOrDefault(profile => profile.Id == id)
                 : null;
@@ -1361,9 +1361,15 @@ public partial class MainWindow : Window
 
         var slot = _slotCards.FirstOrDefault(candidate => ReferenceEquals(candidate.OverlayLayer, layer));
         return slot is not null && key.AccountId is { } accountId &&
-            _panelSettings.SlotAccountIds[slot.SlotIndex] == accountId &&
+            AccountIdFor(slot.SlotIndex) == accountId &&
             _openAccountIds.Contains(accountId) && slot.View is not null;
     }
+
+    // The account a card shows: its tab's account in the Tabs layout, otherwise its grid slot's.
+    private Guid? AccountIdFor(int slotIndex) =>
+        _panelSettings.Layout == PanelLayout.Tabs
+            ? PanelTabPolicy.AccountIdAt(_panelSettings, slotIndex)
+            : _panelSettings.SlotAccountIds[slotIndex];
 
     private void UpdateAllSlotPresentations()
     {
@@ -1375,7 +1381,7 @@ public partial class MainWindow : Window
 
     private void UpdateSlotPresentation(PanelSlotCard slot)
     {
-        var assignedAccountId = _panelSettings.SlotAccountIds[slot.SlotIndex];
+        var assignedAccountId = AccountIdFor(slot.SlotIndex);
         var isOpen = assignedAccountId is { } accountId && _openAccountIds.Contains(accountId);
         var hasAssignedAccount = assignedAccountId is not null;
         var account = assignedAccountId is { } id ? _accounts.FirstOrDefault(item => item.Id == id) : null;
@@ -1417,7 +1423,7 @@ public partial class MainWindow : Window
         }
 
         var assignedSlots = _slotCards
-            .Select(slot => (Slot: slot, AccountId: _panelSettings.SlotAccountIds[slot.SlotIndex]))
+            .Select(slot => (Slot: slot, AccountId: AccountIdFor(slot.SlotIndex)))
             .Where(item => item.AccountId is not null)
             .ToArray();
         if (assignedSlots.Length == 0)
@@ -1597,8 +1603,7 @@ public partial class MainWindow : Window
         }
 
         var slot = _slotCards.FirstOrDefault(item => item.SlotIndex == slotIndex);
-        if (slot is null || slotIndex < 0 || slotIndex >= _panelSettings.SlotAccountIds.Count ||
-            _panelSettings.SlotAccountIds[slotIndex] is not { } accountId)
+        if (slot is null || AccountIdFor(slotIndex) is not { } accountId)
         {
             return;
         }
@@ -1712,7 +1717,7 @@ public partial class MainWindow : Window
         UpdateManageSlotsButton();
         UpdateAllSlotPresentations();
         _xpTracker.RefreshActiveAccounts(_slotCards
-            .Select(slot => _panelSettings.SlotAccountIds[slot.SlotIndex])
+            .Select(slot => AccountIdFor(slot.SlotIndex))
             .OfType<Guid>().Where(_openAccountIds.Contains).ToArray());
         RefreshTrackerRows();
     }
@@ -2062,7 +2067,7 @@ public partial class MainWindow : Window
     private async Task RestoreVisibleOpenViewsAsync()
     {
         var visibleAccountIds = _slotCards
-            .Select(slot => _panelSettings.SlotAccountIds[slot.SlotIndex])
+            .Select(slot => AccountIdFor(slot.SlotIndex))
             .OfType<Guid>()
             .ToHashSet();
 
@@ -2076,7 +2081,7 @@ public partial class MainWindow : Window
 
         foreach (var slot in _slotCards)
         {
-            if (_panelSettings.SlotAccountIds[slot.SlotIndex] is not { } accountId ||
+            if (AccountIdFor(slot.SlotIndex) is not { } accountId ||
                 !_openAccountIds.Contains(accountId))
             {
                 continue;
@@ -2181,7 +2186,7 @@ public partial class MainWindow : Window
             VerticalContentAlignment = VerticalAlignment.Center
         };
         System.Windows.Automation.AutomationProperties.SetName(accountPicker, $"Account for slot {slotIndex + 1}");
-        var assignedId = _panelSettings.SlotAccountIds[slotIndex];
+        var assignedId = AccountIdFor(slotIndex);
         accountPicker.SelectedItem = accountPicker.Items.Cast<SlotAccountChoice>()
             .FirstOrDefault(choice => choice.AccountId == assignedId);
         accountPicker.SelectionChanged += SlotAccountPicker_SelectionChanged;
@@ -2363,7 +2368,7 @@ public partial class MainWindow : Window
 
     private async Task ApplyViewportSizeAsync(PanelSlotCard slot)
     {
-        if (_panelSettings.SlotAccountIds[slot.SlotIndex] is not { } accountId)
+        if (AccountIdFor(slot.SlotIndex) is not { } accountId)
         {
             return;
         }
@@ -2448,7 +2453,7 @@ public partial class MainWindow : Window
             slot.AccountPicker.SelectionChanged -= SlotAccountPicker_SelectionChanged;
             slot.AccountPicker.ItemsSource = choices;
             slot.AccountPicker.SelectedItem = choices.FirstOrDefault(
-                choice => choice.AccountId == _panelSettings.SlotAccountIds[slot.SlotIndex]);
+                choice => choice.AccountId == AccountIdFor(slot.SlotIndex));
             slot.AccountPicker.SelectionChanged += SlotAccountPicker_SelectionChanged;
             UpdateSlotPresentation(slot);
         }
@@ -2539,8 +2544,7 @@ public partial class MainWindow : Window
 
     private async Task CloseAccountViewAsync(Guid accountId, bool preserveFailure = false)
     {
-        var slot = _slotCards.FirstOrDefault(item =>
-            _panelSettings.SlotAccountIds[item.SlotIndex] == accountId);
+        var slot = _slotCards.FirstOrDefault(item => AccountIdFor(item.SlotIndex) == accountId);
         if (slot is not null)
         {
             DetachSlotEventHandlers(slot);
@@ -2801,7 +2805,7 @@ public partial class MainWindow : Window
 
     private void BrowserSessions_NavigationBlocked(object? sender, NavigationBlockedEventArgs e)
     {
-        var slot = _slotCards.FirstOrDefault(item => _panelSettings.SlotAccountIds[item.SlotIndex] == e.AccountId);
+        var slot = _slotCards.FirstOrDefault(item => AccountIdFor(item.SlotIndex) == e.AccountId);
         if (slot is not null)
         {
             SetSlotStatus(slot, "Blocked navigation outside FourFold Online.", StatusTone.Warning);
