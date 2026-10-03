@@ -131,7 +131,8 @@ public partial class MainWindow : Window
         _plugins.Stats.View.AccountSelectionRequested += SelectAccountFromPlugin;
         _plugins.XpCalc.View.AccountSelectionRequested += SelectAccountFromPlugin;
         _plugins.Timer.ShortcutChangeRequested += TimerPlugin_ShortcutChangeRequested;
-        PluginSidebar.SetPlugins(_plugins.All);
+        InitializeCommunityPlugins(paths);
+        RefreshPluginSidebar();
         PluginSidebar.OpenRequested += id =>
         {
             // The tools window always shows a plugin, so picking one there changes only which is open. Opening it
@@ -147,7 +148,7 @@ public partial class MainWindow : Window
             _ = ApplyPluginChangeAsync(PluginLayoutPolicy.WithClosed, refreshEffects: false);
         PluginSidebar.MoveRequested += (id, index) =>
             _ = ApplyPluginChangeAsync(
-                settings => PluginLayoutPolicy.WithMoved(settings, BuiltInPlugins.All, id, index), refreshEffects: false);
+                settings => PluginLayoutPolicy.WithMoved(settings, AllPluginDescriptors, id, index), refreshEffects: false);
         PluginSidebar.EnabledChangeRequested += (id, enabled) =>
             _ = ApplyPluginChangeAsync(
                 settings => PluginLayoutPolicy.WithEnabled(settings, id, enabled), refreshEffects: true);
@@ -328,6 +329,11 @@ public partial class MainWindow : Window
             await _browserSessions.SetGameScalingAsync(_panelSettings.FillGameToPanel);
             _isReady = true;
             SetManagerEnabled(true);
+            // Not awaited: a slow or stuck plugin start must never keep the manager disabled.
+            _ = _communityPlugins.ApplyAsync(_panelSettings);
+            // After ApplyAsync: the manager starts no hub plugin until it has seen the user's settings, so a plugin
+            // they switched off is never started first.
+            _ = _pluginHub.StartAsync();
             LayoutPicker.SelectedValue = _panelSettings.Layout;
             AccountsListBox.SelectedIndex = _accounts.Count > 0 ? 0 : -1;
             UpdateAccountActions();
@@ -745,7 +751,7 @@ public partial class MainWindow : Window
         var selectedAccount = AccountsListBox.SelectedItem as AccountProfile;
         CancelProfileRead();
         SetProfileAccount(selectedAccount);
-        var openPlugin = PluginLayoutPolicy.OpenPlugin(_panelSettings, BuiltInPlugins.All)?.Id;
+        var openPlugin = PluginLayoutPolicy.OpenPlugin(_panelSettings, AllPluginDescriptors)?.Id;
         if (selectedAccount is not null && (_toolsWindow is not null || _panelSettings.PluginsSidebarExpanded) &&
             openPlugin is BuiltInPlugins.StatsId or BuiltInPlugins.XpCalcId)
         {
@@ -861,6 +867,8 @@ public partial class MainWindow : Window
             RefreshPlainKeyBindings();
             UpdateTimerHotkeys();
             RefreshTrackerRows();
+            // Last, so a built-in plugin's switch never waits on a community plugin starting.
+            await _communityPlugins.ApplyAsync(_panelSettings);
         }
     }
 
@@ -1591,7 +1599,7 @@ public partial class MainWindow : Window
         var states = _xpTracker.GetStates().ToDictionary(state => state.AccountId);
         var accountRows = new List<OverlayTrayAccountRow>();
         var editing = OverlaysShown && _overlayEditing;
-        _xpTrackerRows.Clear();
+        var trackerRows = new List<XpTrackerRow>();
 
         // Every card over the game sits on the one window-wide layer, so it can go anywhere in the window.
         var build = new OverlayCardBuild();
@@ -1603,6 +1611,8 @@ public partial class MainWindow : Window
             AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, null),
                 string.Empty, null, false, showOverGame: true, globalSwitches, build);
         }
+
+        AddPluginCards(OverlayAddOnScope.Global, null, string.Empty, showOverGame: true, globalSwitches, build);
 
         foreach (var slot in _slotCards.OrderBy(slot => slot.SlotIndex))
         {
@@ -1620,7 +1630,7 @@ public partial class MainWindow : Window
                 if (states.TryGetValue(trackedAccountId, out var state))
                 {
                     trackerRow = XpTrackerRow.FromState(slot.SlotIndex + 1, label, state);
-                    _xpTrackerRows.Add(trackerRow);
+                    trackerRows.Add(trackerRow);
                 }
 
                 if (account is not null)
@@ -1636,20 +1646,41 @@ public partial class MainWindow : Window
                             label, trackerRow, isStale, ShowsAccountCards(slot), switches, build);
                     }
 
+                    AddPluginCards(
+                        OverlayAddOnScope.Account, trackedAccountId, label, ShowsAccountCards(slot), switches, build);
                     accountRows.Add(new OverlayTrayAccountRow(trackedAccountId, label, switches));
                 }
             }
         }
 
-        GlobalOverlayLayer.SetCards(build.GameCards, editing);
+        // Rows that show what the XP tracker already shows are left alone, so a refresh doesn't rebuild them under the
+        // mouse (a plugin's card can cause four a second).
+        if (!_xpTrackerRows.SequenceEqual(trackerRows))
+        {
+            _xpTrackerRows.Clear();
+            foreach (var row in trackerRows)
+            {
+                _xpTrackerRows.Add(row);
+            }
+        }
+
+        // Plugin cards go after every built-in card, so a plugin never moves where a built-in card that was never
+        // dragged first appears (its cascade spot, or its new floating window's).
+        var gameCards = build.GameCards
+            .OrderBy(card => card.Key.Kind == OverlayAddOnKind.Plugin)
+            .Select((card, index) => card with { CascadeIndex = index })
+            .ToList();
+        var floatingCards = build.FloatingCards.OrderBy(card => card.Key.Kind == OverlayAddOnKind.Plugin).ToList();
+        GlobalOverlayLayer.SetCards(gameCards, editing);
         _floatingChecklist = build.Checklist;
         // Floating windows exist only in Floating cards mode, and never during shutdown, when they are closed.
         _floatingCards.Update(
             _panelSettings.SecondMonitorMode == SecondMonitorMode.FloatingCards && !_shutdownStarted
-                ? build.FloatingCards
+                ? floatingCards
                 : [],
             _arrangingFloatingCards);
         FullscreenOverlayTray.SetRows(globalSwitches, accountRows);
+        NotifyPluginsOfDataChanges();
         UpdatePluginSidebarVisibility();
     }
 
@@ -1657,8 +1688,6 @@ public partial class MainWindow : Window
     private bool ShowsAccountCards(PanelSlotCard slot) =>
         _panelSettings.Layout != PanelLayout.Tabs || slot.SlotIndex == _panelSettings.ActiveTab;
 
-    // Adds the card's Overlays panel switch and floating checklist entry, then puts the card in the one place it is
-    // assigned to. showOverGame is false for a background tab's account, whose cards stay off the game.
     private void AddOverlayAddOn(
         OverlayAddOnDefinition definition,
         OverlayCardKey key,
@@ -1674,6 +1703,20 @@ public partial class MainWindow : Window
             return;
         }
 
+        AddOverlayCard(definition, key, accountLabel, data, showOverGame, switches, build);
+    }
+
+    // Adds the card's Overlays panel switch and floating checklist entry, then puts the card in the one place it is
+    // assigned to. showOverGame is false for a background tab's account, whose cards stay off the game.
+    private void AddOverlayCard(
+        OverlayAddOnDefinition definition,
+        OverlayCardKey key,
+        string accountLabel,
+        IOverlayCardData data,
+        bool showOverGame,
+        List<OverlayTraySwitch> switches,
+        OverlayCardBuild build)
+    {
         var placement = OverlayCardPolicy.Get(_panelSettings, key);
         var isFloating = placement is { Enabled: true, IsFloating: true };
         var accessibleName = accountLabel.Length > 0
@@ -3381,6 +3424,10 @@ public partial class MainWindow : Window
             // Flush a pending sidebar XP target save before the final settings save, so a target
             // typed just before closing reaches disk instead of being lost.
             _plugins.XpCalc.View.FlushPendingTargetSave();
+            _pluginCardRefreshTimer?.Stop();
+            // First, so a download that finishes now can't reach the plugins that are being disposed.
+            _pluginHub.Dispose();
+            _communityPlugins.Dispose();
 
             try
             {
