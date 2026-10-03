@@ -4,13 +4,14 @@ using System.Windows.Threading;
 using FourFoldAccountManager.Core.Data;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Plugins;
+using FourFoldAccountManager.Core.Plugins.Hub;
 
 namespace FourFoldAccountManager.Desktop.Plugins.Web;
 
 public sealed record RejectedPlugin(string FolderName, string Reason);
 
-// Loads community plugins from the dev plugins folder while developer mode is on, runs the ones that are switched on,
-// and reloads a plugin when its files change. Create and use it on the UI thread.
+// Runs community plugins from two places: the plugins installed from the hub, and, while developer mode is on, the
+// dev plugins folder (reloading a plugin when its files change). Create and use it on the UI thread.
 public sealed class CommunityPluginManager : IDisposable
 {
     private readonly LocalDataPaths _paths;
@@ -21,10 +22,19 @@ public sealed class CommunityPluginManager : IDisposable
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private readonly DispatcherTimer _reloadTimer;
     private readonly HashSet<string> _changedFolders = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<WebPlugin> _plugins = [];
+    private readonly List<WebPlugin> _dev = [];
+    private readonly List<WebPlugin> _hub = [];
+    private readonly Dictionary<WebPlugin, HubLoad> _hubLoadOf = [];
     private readonly List<RejectedPlugin> _rejected = [];
+
+    // One settings store per plugin id, so a hub plugin, its update and a dev copy of it never write the same file
+    // from two stores.
+    private readonly Dictionary<string, PluginStorage> _storages = new(StringComparer.Ordinal);
+    private IReadOnlyList<HubLoad> _hubLoads = [];
     private FileSystemWatcher? _watcher;
     private bool _disposed;
+    private string? _folderError;
+    private string? _startError;
     private PanelSettings _settings = PanelSettings.Default;
 
     public CommunityPluginManager(LocalDataPaths paths, IPluginHostData host, Panel parkingHost, PluginCardStore cards)
@@ -48,18 +58,19 @@ public sealed class CommunityPluginManager : IDisposable
         };
     }
 
-    public IReadOnlyList<WebPlugin> Plugins => _plugins;
+    // Dev-folder plugins first, then hub plugins.
+    public IReadOnlyList<WebPlugin> Plugins => [.. _dev, .. _hub];
 
     public IReadOnlyList<RejectedPlugin> Rejected => _rejected;
 
-    // Set when the dev folder can't be read or the plugin browser can't start; the plugin list shows it.
-    public string? StartupError { get; private set; }
+    // Set when the dev folder can't be read or a plugin can't start; the plugin list shows it.
+    public string? StartupError => _folderError ?? _startError;
 
     // Raised when the set of plugins, or whether one is running, changed.
     public event Action? Changed;
 
-    // Matches what is loaded and running to the settings. Never throws: a folder that can't be read, or a plugin that
-    // can't start, is reported through StartupError.
+    // Matches the dev-folder plugins, and what is running, to the settings. Never throws: a folder that can't be
+    // read, or a plugin that can't start, is reported through StartupError.
     public async Task ApplyAsync(PanelSettings settings)
     {
         // A click while the window is closing must not build new web views.
@@ -71,32 +82,30 @@ public sealed class CommunityPluginManager : IDisposable
         _settings = settings;
         if (!settings.PluginDeveloperMode)
         {
-            var hadState = _plugins.Count > 0 || _rejected.Count > 0 || StartupError is not null;
-            UnloadAll();
-            StartupError = null;
-            if (hadState)
+            if (_dev.Count > 0 || _rejected.Count > 0 || _watcher is not null || _folderError is not null)
             {
+                UnloadDev();
+                _folderError = null;
+                // A hub plugin that a dev copy was standing in for comes back.
+                ReconcileHub();
                 Changed?.Invoke();
             }
-
-            return;
         }
-
-        if (_watcher is null)
+        else if (_watcher is null)
         {
             try
             {
                 Directory.CreateDirectory(_paths.DevPluginsRoot);
                 Rescan(changedFolders: null);
                 StartWatching();
+                _folderError = null;
             }
             catch (Exception)
             {
                 AbandonLoad();
-                Changed?.Invoke();
-                return;
             }
 
+            ReconcileHub();
             Changed?.Invoke();
         }
 
@@ -106,9 +115,47 @@ public sealed class CommunityPluginManager : IDisposable
         }
     }
 
+    // The installed hub plugins that may run. Never throws.
+    public async Task SetHubPluginsAsync(IReadOnlyList<HubLoad> loads)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _hubLoads = loads;
+        ReconcileHub();
+        Changed?.Invoke();
+        if (await SyncRunningAsync())
+        {
+            Changed?.Invoke();
+        }
+    }
+
+    // Stops a hub plugin and lets go of its folder, before the folder is swapped or deleted. It stays unloaded until
+    // the next SetHubPluginsAsync.
+    public void Unload(string id)
+    {
+        // After Dispose the plugins are gone for good; reconciling would load the other hub plugins again.
+        if (_disposed)
+        {
+            return;
+        }
+
+        _hubLoads = _hubLoads.Where(load => load.Id != id).ToArray();
+        ReconcileHub();
+        Changed?.Invoke();
+    }
+
+    // After an uninstall deleted the plugin's settings file: the store that cached it must not write it back.
+    public void Forget(string id) => _storages.Remove(id);
+
+    public Task ClearBrowserDataAsync(string id) =>
+        _browser.ClearOriginAsync(_parkingHost, PluginNetworkPolicy.Origin(id));
+
     public void PostEvent(string name, object? data)
     {
-        foreach (var plugin in _plugins)
+        foreach (var plugin in Plugins)
         {
             plugin.PostEvent(name, data);
         }
@@ -117,7 +164,77 @@ public sealed class CommunityPluginManager : IDisposable
     public void Dispose()
     {
         _disposed = true;
-        UnloadAll();
+        UnloadDev();
+        foreach (var plugin in _hub)
+        {
+            plugin.Dispose();
+        }
+
+        _hub.Clear();
+        _hubLoadOf.Clear();
+    }
+
+    // Makes the loaded hub plugins match the loads that may run and aren't stood in for by a dev plugin. A load whose
+    // folder, commit or trust changed is a different load, so its plugin is replaced.
+    private void ReconcileHub()
+    {
+        var wanted = HubPolicy.Visible(_hubLoads, _dev.Select(plugin => plugin.Manifest.Id).ToHashSet(StringComparer.Ordinal));
+        foreach (var plugin in _hub.ToArray())
+        {
+            if (!wanted.Contains(_hubLoadOf[plugin]))
+            {
+                plugin.Dispose();
+                _hub.Remove(plugin);
+                _hubLoadOf.Remove(plugin);
+            }
+        }
+
+        foreach (var load in wanted)
+        {
+            if (_hubLoadOf.ContainsValue(load))
+            {
+                continue;
+            }
+
+            // An install that was damaged on disk simply doesn't load; the next hub check installs it again.
+            var manifest = PluginManifestReader.Read(load.Folder).Manifest;
+            if (manifest is null || manifest.Id != load.Id)
+            {
+                continue;
+            }
+
+            try
+            {
+                var plugin = Create(manifest, load.Trust);
+                _hub.Add(plugin);
+                _hubLoadOf[plugin] = load;
+            }
+            catch (Exception)
+            {
+                // One plugin that can't be loaded must never take the others down.
+            }
+        }
+    }
+
+    private WebPlugin Create(PluginManifest manifest, PluginTrust trust)
+    {
+        if (!_storages.TryGetValue(manifest.Id, out var storage))
+        {
+            storage = new PluginStorage(Path.Combine(_paths.PluginDataRoot, manifest.Id + ".json"));
+            _storages[manifest.Id] = storage;
+        }
+
+        var plugin = new WebPlugin(manifest, trust, _browser, _parkingHost, _host, _cards, storage);
+        // A plugin stops or restarts by itself (a flood, a crash, its Reload button). That can happen inside a web view
+        // event or mid-start, and Changed re-renders the sidebar, so it is raised later.
+        plugin.RunningChanged += () => _dispatcher.BeginInvoke(() =>
+        {
+            if (!_disposed)
+            {
+                Changed?.Invoke();
+            }
+        });
+        return plugin;
     }
 
     // Re-reads the dev folder. A plugin whose folder is in changedFolders (or every plugin, when it is null) is
@@ -127,12 +244,16 @@ public sealed class CommunityPluginManager : IDisposable
         var folders = Directory.Exists(_paths.DevPluginsRoot)
             ? Directory.GetDirectories(_paths.DevPluginsRoot).OrderBy(folder => folder, StringComparer.OrdinalIgnoreCase).ToArray()
             : [];
-        var kept = _plugins
+        var kept = _dev
             .Where(plugin => folders.Contains(plugin.Manifest.Folder, StringComparer.OrdinalIgnoreCase) &&
                              changedFolders is not null &&
                              !changedFolders.Contains(Path.GetFileName(plugin.Manifest.Folder)))
             .ToList();
-        Unload(_plugins.Except(kept).ToArray());
+        foreach (var plugin in _dev.Except(kept).ToArray())
+        {
+            plugin.Dispose();
+        }
+
         _rejected.Clear();
         foreach (var folder in folders)
         {
@@ -155,92 +276,52 @@ public sealed class CommunityPluginManager : IDisposable
                 continue;
             }
 
-            WebPlugin webPlugin;
             try
             {
-                webPlugin = new WebPlugin(
-                    manifest, PluginTrust.Developer, _browser, _parkingHost, _host, _cards,
-                    new PluginStorage(Path.Combine(_paths.PluginDataRoot, manifest.Id + ".json")));
+                kept.Add(Create(manifest, PluginTrust.Developer));
             }
             catch (Exception)
             {
                 // One folder that can't be loaded must never take the others down.
                 _rejected.Add(new RejectedPlugin(folderName, "The plugin couldn't be loaded."));
-                continue;
             }
-
-            // A plugin stops or restarts by itself (a flood, a crash, its Reload button). That can happen inside a web
-            // view event or while SyncRunningAsync is mid-loop, and Changed re-renders the sidebar, so it is raised later.
-            webPlugin.RunningChanged += () => _dispatcher.BeginInvoke(() =>
-            {
-                if (!_disposed)
-                {
-                    Changed?.Invoke();
-                }
-            });
-            kept.Add(webPlugin);
         }
 
-        _plugins.Clear();
-        _plugins.AddRange(kept.OrderBy(plugin => plugin.Manifest.Folder, StringComparer.OrdinalIgnoreCase));
+        _dev.Clear();
+        _dev.AddRange(kept.OrderBy(plugin => plugin.Manifest.Folder, StringComparer.OrdinalIgnoreCase));
     }
 
-    private void Unload(IReadOnlyList<WebPlugin> plugins)
-    {
-        foreach (var plugin in plugins)
-        {
-            plugin.Dispose();
-            _plugins.Remove(plugin);
-        }
-    }
-
-    private void UnloadAll()
+    private void UnloadDev()
     {
         StopWatching();
-        Unload(_plugins.ToArray());
+        foreach (var plugin in _dev)
+        {
+            plugin.Dispose();
+        }
+
+        _dev.Clear();
         _rejected.Clear();
     }
 
-    // The dev folder can't be read or watched. Nothing stays half-loaded, and the next apply tries again.
+    // The dev folder can't be read or watched. No dev plugin stays half-loaded, and the next apply tries again.
     private void AbandonLoad()
     {
-        UnloadAll();
-        StartupError = "The dev plugins folder couldn't be read.";
+        UnloadDev();
+        _folderError = "The dev plugins folder couldn't be read.";
     }
 
     // Starts switched-on plugins and stops switched-off ones. Returns whether anything changed.
     private async Task<bool> SyncRunningAsync()
     {
-        var changed = StartupError is not null;
-        StartupError = null;
-        foreach (var plugin in _plugins.ToArray())
+        var changed = _startError is not null;
+        _startError = null;
+        var starts = new List<Task<bool>>();
+        foreach (var plugin in Plugins)
         {
-            // A reload or developer mode switching off during an earlier await disposed this one.
-            if (!_plugins.Contains(plugin))
-            {
-                continue;
-            }
-
             var shouldRun = PluginLayoutPolicy.IsEnabled(_settings, plugin.Descriptor.Id);
             if (shouldRun && !plugin.IsRunning)
             {
-                try
-                {
-                    await plugin.StartAsync();
-                    // The user may have switched it off while it was starting.
-                    if (plugin.IsRunning && !PluginLayoutPolicy.IsEnabled(_settings, plugin.Descriptor.Id))
-                    {
-                        plugin.Stop();
-                    }
-
-                    // A start that was abandoned (the plugin was stopped meanwhile) returns normally, so ask the plugin.
-                    changed |= plugin.IsRunning;
-                }
-                catch (Exception)
-                {
-                    StartupError = "Community plugins couldn't start.";
-                    changed = true;
-                }
+                starts.Add(StartAsync(plugin));
             }
             else if (!shouldRun && plugin.IsRunning)
             {
@@ -249,7 +330,35 @@ public sealed class CommunityPluginManager : IDisposable
             }
         }
 
+        // Side by side, so one plugin that hangs while starting can't hold up the rest.
+        foreach (var started in await Task.WhenAll(starts))
+        {
+            changed |= started;
+        }
+
         return changed;
+    }
+
+    // Starts one plugin. A plugin disposed meanwhile (a reload, an update, developer mode switching off) refuses to
+    // start, and one that was abandoned mid-start returns normally, so the answer is whether it is running now.
+    private async Task<bool> StartAsync(WebPlugin plugin)
+    {
+        try
+        {
+            await plugin.StartAsync();
+            // The user may have switched it off while it was starting.
+            if (plugin.IsRunning && !PluginLayoutPolicy.IsEnabled(_settings, plugin.Descriptor.Id))
+            {
+                plugin.Stop();
+            }
+
+            return plugin.IsRunning;
+        }
+        catch (Exception)
+        {
+            _startError = "Community plugins couldn't start.";
+            return true;
+        }
     }
 
     private void StartWatching()
@@ -334,10 +443,10 @@ public sealed class CommunityPluginManager : IDisposable
         {
             // A tick on the UI thread must never take the app down, whatever state the folder was left in.
             AbandonLoad();
-            Changed?.Invoke();
-            return;
         }
 
+        // A dev plugin that appeared or went away changes which hub plugins it stands in for.
+        ReconcileHub();
         // Before the plugins start, so the strip never shows the ones that were just disposed.
         Changed?.Invoke();
         await SyncRunningAsync();
