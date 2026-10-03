@@ -41,7 +41,7 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
         await _store.ApplyHeartbeatAsync(new ParticipationHeartbeat(first, true,
             [new LeaderboardProfile(2, "Bob New")], [2]), Now.AddMinutes(1), default);
 
-        var active = await _store.GetActiveProfilesAsync(Now, default);
+        var active = await _store.GetProfilesDueForSampleAsync(Now, Now.AddDays(1), default);
         Assert.Equal([2, 3], active.Select(x => x.PlayerId).ToArray());
         Assert.Equal("Bob New", active[0].Username);
         Assert.Equal(2, await _db.InstallationProfiles.CountAsync());
@@ -57,7 +57,7 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
         await SeedObservationAsync(Observation(1, "Alice", 25, Now));
         await _store.ApplyHeartbeatAsync(new ParticipationHeartbeat(first, false, [], []), Now.AddMinutes(1), default);
 
-        var activeIds = (await _store.GetActiveProfilesAsync(Now.AddMilliseconds(-1), default)).Select(x => x.PlayerId).ToArray();
+        var activeIds = (await _store.GetProfilesDueForSampleAsync(Now.AddMilliseconds(-1), Now.AddDays(1), default)).Select(x => x.PlayerId).ToArray();
         Assert.Equal([2], activeIds);
         Assert.NotNull(await _store.GetPlayerStateAsync(1, default));
         Assert.Equal(25, Assert.Single((await _store.GetPageAsync(LeaderboardPeriod.Daily, 1, 50, Now,
@@ -138,7 +138,7 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
             Now.AddMinutes(1), default);
 
         await _store.SaveObservationAsync(Observation(1, "Alice", 25, Now.AddMinutes(1)),
-            expected, TimeSpan.FromMinutes(3), default);
+            expected, default);
 
         Assert.True((await _store.GetPlayerStateAsync(1, default))!.NeedsBaseline);
         Assert.Empty(await _db.XpGainEvents.ToListAsync());

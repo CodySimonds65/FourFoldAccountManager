@@ -26,30 +26,30 @@ public sealed record PanelSettings
 
     public bool ShowOverlaysInTheatreMode { get; init; } = true;
 
-    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    [JsonConverter(typeof(LenientObjectJsonConverter<GlobalHotkeyChord>))]
     public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =
         GlobalHotkeyChord.DefaultRevealXpOverlayTab;
 
-    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    [JsonConverter(typeof(LenientObjectJsonConverter<GlobalHotkeyChord>))]
     public GlobalHotkeyChord ToggleDividerResizingShortcut { get; init; } =
         GlobalHotkeyChord.DefaultToggleDividerResizing;
 
-    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    [JsonConverter(typeof(LenientObjectJsonConverter<GlobalHotkeyChord>))]
     public GlobalHotkeyChord TimerSplitShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerSplit;
 
-    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    [JsonConverter(typeof(LenientObjectJsonConverter<GlobalHotkeyChord>))]
     public GlobalHotkeyChord TimerFinishShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerFinish;
 
-    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    [JsonConverter(typeof(LenientObjectJsonConverter<GlobalHotkeyChord>))]
     public GlobalHotkeyChord TimerResetShortcut { get; init; } = GlobalHotkeyChord.DefaultTimerReset;
 
-    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    [JsonConverter(typeof(LenientObjectJsonConverter<GlobalHotkeyChord>))]
     public GlobalHotkeyChord NextTabShortcut { get; init; } = GlobalHotkeyChord.DefaultNextTab;
 
-    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    [JsonConverter(typeof(LenientObjectJsonConverter<GlobalHotkeyChord>))]
     public GlobalHotkeyChord PreviousTabShortcut { get; init; } = GlobalHotkeyChord.DefaultPreviousTab;
 
-    [JsonConverter(typeof(LenientHotkeyChordJsonConverter))]
+    [JsonConverter(typeof(LenientObjectJsonConverter<GlobalHotkeyChord>))]
     public GlobalHotkeyChord ToggleTheatreModeShortcut { get; init; } = GlobalHotkeyChord.DefaultToggleTheatreMode;
 
     public double TwoByThreeTopRowFraction { get; init; } = 0.6;
@@ -70,7 +70,7 @@ public sealed record PanelSettings
 
     public int ActiveTab { get; init; }
 
-    [JsonConverter(typeof(LenientToolsWindowPlacementJsonConverter))]
+    [JsonConverter(typeof(LenientObjectJsonConverter<ToolsWindowPlacement>))]
     public ToolsWindowPlacement? ToolsWindow { get; init; }
 
     public SecondMonitorMode SecondMonitorMode { get; init; }

@@ -5,11 +5,6 @@ namespace FourFoldAccountManager.Core.Data;
 
 public sealed class AccountStore
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
-    {
-        WriteIndented = true
-    };
-
     private readonly LocalDataPaths _paths;
 
     public AccountStore(LocalDataPaths paths)
@@ -35,7 +30,7 @@ public sealed class AccountStore
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
             var accounts = await JsonSerializer.DeserializeAsync<List<AccountProfile>>(
                 stream,
-                JsonOptions,
+                AtomicJsonFile.Options,
                 cancellationToken);
 
             if (accounts is null)
@@ -58,48 +53,7 @@ public sealed class AccountStore
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(accounts);
-        var validatedAccounts = Validate(accounts);
-        Directory.CreateDirectory(_paths.DataRoot);
-
-        var temporaryPath = Path.Combine(
-            _paths.DataRoot,
-            $".accounts-{Guid.NewGuid():N}.tmp");
-
-        try
-        {
-            await using (var stream = new FileStream(
-                temporaryPath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 16 * 1024,
-                FileOptions.Asynchronous | FileOptions.WriteThrough))
-            {
-                await JsonSerializer.SerializeAsync(
-                    stream,
-                    validatedAccounts,
-                    JsonOptions,
-                    cancellationToken);
-                await stream.FlushAsync(cancellationToken);
-                stream.Flush(flushToDisk: true);
-            }
-
-            if (File.Exists(_paths.AccountsFilePath))
-            {
-                File.Replace(temporaryPath, _paths.AccountsFilePath, destinationBackupFileName: null);
-            }
-            else
-            {
-                File.Move(temporaryPath, _paths.AccountsFilePath);
-            }
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath))
-            {
-                File.Delete(temporaryPath);
-            }
-        }
+        await AtomicJsonFile.WriteAsync(_paths.AccountsFilePath, Validate(accounts), cancellationToken);
     }
 
     private static IReadOnlyList<AccountProfile> Validate(IEnumerable<AccountProfile> accounts)

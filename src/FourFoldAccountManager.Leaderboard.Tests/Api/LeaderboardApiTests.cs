@@ -212,14 +212,12 @@ public sealed class LeaderboardApiTests
                 page, pageSize, 0, nowUtc, []));
         }
 
-        public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([]);
         public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
             DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([]);
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) => Task.FromResult<PlayerSampleState?>(null);
         public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
-            TimeSpan activeLeaseDuration, CancellationToken ct) => Task.CompletedTask;
+            CancellationToken ct) => Task.CompletedTask;
         public Task MarkNeedsBaselineAsync(int playerId, CancellationToken ct) => Task.CompletedTask;
         public Task DeleteGainEventsBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken ct) => Task.CompletedTask;
         public Task DeleteInactiveInstallationsBeforeAsync(DateTimeOffset cutoffUtc, CancellationToken ct) => Task.CompletedTask;

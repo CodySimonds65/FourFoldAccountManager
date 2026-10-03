@@ -17,26 +17,8 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
 
     public async Task ApplyHeartbeatAsync(ParticipationHeartbeat heartbeat, DateTimeOffset receivedAtUtc, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(heartbeat);
-        if (heartbeat.InstallationId == Guid.Empty) throw new ArgumentException("Installation ID is required.", nameof(heartbeat));
-        if (heartbeat.LinkedProfiles is null || heartbeat.ActivePlayerIds is null)
-            throw new ArgumentException("Profile lists are required.", nameof(heartbeat));
-
-        var linked = new HashSet<int>();
-        foreach (var profile in heartbeat.LinkedProfiles)
-        {
-            if (profile is null || profile.PlayerId <= 0 || !linked.Add(profile.PlayerId) ||
-                string.IsNullOrWhiteSpace(profile.Username) || profile.Username.Length > 256)
-                throw new ArgumentException("Linked profiles must have unique positive IDs and valid public usernames.", nameof(heartbeat));
-        }
-
-        var active = new HashSet<int>();
-        foreach (var id in heartbeat.ActivePlayerIds)
-        {
-            if (!active.Add(id) || !linked.Contains(id))
-                throw new ArgumentException("Active IDs must be unique and linked.", nameof(heartbeat));
-        }
-
+        // The participation endpoint has already run LeaderboardRequestValidator on this heartbeat.
+        var active = heartbeat.ActivePlayerIds.ToHashSet();
         var now = receivedAtUtc.ToUniversalTime();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         // Global enrollment lock makes both capacity counts and cleanup atomic across instances.
@@ -73,11 +55,12 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
             .Concat(active).Distinct().ToArray();
         foreach (var playerId in affectedIds.OrderBy(x => x))
             await LockPlayerAsync(playerId, ct);
-        var activeCutoff = now - TimeSpan.FromMinutes(3);
-        var freshBefore = affectedIds.Length == 0 ? [] : await db.InstallationProfiles.AsNoTracking()
+        var activeCutoff = now - ILeaderboardStore.ActiveLeaseDuration;
+        Task<int[]> FreshPlayerIdsAsync() => db.InstallationProfiles.AsNoTracking()
             .Where(x => affectedIds.Contains(x.PlayerId) && x.Installation.SharingEnabled &&
                 x.IsActive && x.LastActiveAtUtc > activeCutoff)
             .Select(x => x.PlayerId).Distinct().ToArrayAsync(ct);
+        var freshBefore = affectedIds.Length == 0 ? [] : await FreshPlayerIdsAsync();
         db.InstallationProfiles.RemoveRange(previous);
         await db.SaveChangesAsync(ct);
 
@@ -95,12 +78,8 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
         }
         if (affectedIds.Length > 0)
         {
-            var freshAfter = await db.InstallationProfiles.AsNoTracking()
-                .Where(x => affectedIds.Contains(x.PlayerId) && x.Installation.SharingEnabled &&
-                    x.IsActive && x.LastActiveAtUtc > activeCutoff)
-                .Select(x => x.PlayerId).Distinct().ToArrayAsync(ct);
             var beforeSet = freshBefore.ToHashSet();
-            var afterSet = freshAfter.ToHashSet();
+            var afterSet = (await FreshPlayerIdsAsync()).ToHashSet();
             var rebaselineIds = affectedIds.Where(id =>
                 (active.Contains(id) && !beforeSet.Contains(id)) ||
                 (!afterSet.Contains(id) && beforeSet.Contains(id))).ToArray();
@@ -111,22 +90,6 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
             }
         }
         await transaction.CommitAsync(ct);
-    }
-
-    public async Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(
-        DateTimeOffset activeAfterUtc, CancellationToken ct)
-    {
-        var cutoff = activeAfterUtc.ToUniversalTime();
-        var active = await db.InstallationProfiles.AsNoTracking()
-            .Where(x => x.Installation.SharingEnabled && x.IsActive && x.LastActiveAtUtc > cutoff)
-            .Select(x => new { x.PlayerId, x.Username, x.LastActiveAtUtc })
-            .ToListAsync(ct);
-        return active.GroupBy(x => x.PlayerId)
-            .Select(group => group.OrderByDescending(x => x.LastActiveAtUtc)
-                .ThenBy(x => x.Username, StringComparer.OrdinalIgnoreCase).First())
-            .OrderBy(x => x.PlayerId)
-            .Select(x => new ActiveLeaderboardProfile(x.PlayerId, x.Username))
-            .ToArray();
     }
 
     public async Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
@@ -170,22 +133,22 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
     }
 
     public async Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
-        TimeSpan activeLeaseDuration, CancellationToken ct)
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(observation);
         if (observation.PlayerId <= 0) throw new ArgumentOutOfRangeException(nameof(observation));
         if (string.IsNullOrWhiteSpace(observation.Username) || observation.Username.Length > 256)
             throw new ArgumentException("Public username is required.", nameof(observation));
         if (observation.ValidGain < 0) throw new ArgumentOutOfRangeException(nameof(observation));
-        if (activeLeaseDuration <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(activeLeaseDuration));
 
         var minimalSnapshotJson = XpSnapshotJson.Normalize(observation.SnapshotJson);
         var observedAt = observation.ObservedAtUtc.ToUniversalTime();
+        var activeAfter = observedAt - ILeaderboardStore.ActiveLeaseDuration;
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await LockPlayerAsync(observation.PlayerId, ct);
         var active = await db.InstallationProfiles.AsNoTracking().AnyAsync(x =>
             x.PlayerId == observation.PlayerId && x.Installation.SharingEnabled &&
-            x.IsActive && x.LastActiveAtUtc > observedAt - activeLeaseDuration, ct);
+            x.IsActive && x.LastActiveAtUtc > activeAfter, ct);
         var state = await db.PlayerSampleStates.AsNoTracking()
             .SingleOrDefaultAsync(x => x.PlayerId == observation.PlayerId, ct);
         var unchanged = state is null

@@ -277,24 +277,23 @@ public sealed class LeaderboardSamplingServiceTests
         public void Activate(int id, string username, DateTimeOffset at) =>
             _active.Add((new ActiveLeaderboardProfile(id, username), at));
         public void Deactivate(int id) => _active.RemoveAll(x => x.Profile.PlayerId == id);
-        public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>(_active.Where(x => x.At > activeAfterUtc)
-                .Select(x => x.Profile).ToArray());
-        public async Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
+        public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
             DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct) =>
-            (await GetActiveProfilesAsync(activeAfterUtc, ct)).DistinctBy(profile => profile.PlayerId)
-                .Select(profile => (Profile: profile, State: States.GetValueOrDefault(profile.PlayerId)))
-                .Where(x => x.State is null || x.State.NeedsBaseline || x.State.LastSampledAtUtc <= sampledBeforeUtc)
-                .OrderByDescending(x => x.State is null || x.State.NeedsBaseline)
-                .ThenBy(x => x.State?.LastSampledAtUtc).ThenBy(x => x.Profile.PlayerId)
-                .Select(x => x.Profile).ToArray();
+            Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>(
+                _active.Where(x => x.At > activeAfterUtc).Select(x => x.Profile)
+                    .DistinctBy(profile => profile.PlayerId)
+                    .Select(profile => (Profile: profile, State: States.GetValueOrDefault(profile.PlayerId)))
+                    .Where(x => x.State is null || x.State.NeedsBaseline || x.State.LastSampledAtUtc <= sampledBeforeUtc)
+                    .OrderByDescending(x => x.State is null || x.State.NeedsBaseline)
+                    .ThenBy(x => x.State?.LastSampledAtUtc).ThenBy(x => x.Profile.PlayerId)
+                    .Select(x => x.Profile).ToArray());
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) =>
             Task.FromResult(States.GetValueOrDefault(playerId));
         public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
-            TimeSpan activeLeaseDuration, CancellationToken ct)
+            CancellationToken ct)
         {
             var active = _active.Any(x => x.Profile.PlayerId == observation.PlayerId &&
-                x.At > observation.ObservedAtUtc - activeLeaseDuration);
+                x.At > observation.ObservedAtUtc - ILeaderboardStore.ActiveLeaseDuration);
             var currentState = States.GetValueOrDefault(observation.PlayerId);
             if (!active || currentState != expectedState)
             {
