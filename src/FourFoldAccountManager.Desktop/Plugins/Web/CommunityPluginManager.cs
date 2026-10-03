@@ -158,7 +158,9 @@ public sealed class CommunityPluginManager : IDisposable
             WebPlugin webPlugin;
             try
             {
-                webPlugin = new WebPlugin(manifest, PluginTrust.Developer, _browser, _parkingHost, _host, _cards, _paths);
+                webPlugin = new WebPlugin(
+                    manifest, PluginTrust.Developer, _browser, _parkingHost, _host, _cards,
+                    new PluginStorage(Path.Combine(_paths.PluginDataRoot, manifest.Id + ".json")));
             }
             catch (Exception)
             {
