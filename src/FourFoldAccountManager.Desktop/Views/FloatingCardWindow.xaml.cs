@@ -119,34 +119,17 @@ public partial class FloatingCardWindow : Window
         BoundsCommitted?.Invoke(this, new FloatingCardBoundsCommittedEventArgs(
             Key, new FloatingCardBounds(Left, Top, ActualWidth, ActualHeight)));
 
-    private static long GetExtendedStyle(nint window) =>
-        nint.Size == 8
-            ? GetWindowLongPtr(window, ExtendedStyleIndex)
-            : GetWindowLong(window, ExtendedStyleIndex);
+    // The app ships x64 only, so the 64-bit pointer-sized calls are always the right ones.
+    private static long GetExtendedStyle(nint window) => GetWindowLongPtr(window, ExtendedStyleIndex);
 
-    private static void SetExtendedStyle(nint window, long style)
-    {
-        if (nint.Size == 8)
-        {
-            SetWindowLongPtr(window, ExtendedStyleIndex, (nint)style);
-        }
-        else
-        {
-            SetWindowLong(window, ExtendedStyleIndex, (int)style);
-        }
-    }
+    private static void SetExtendedStyle(nint window, long style) =>
+        SetWindowLongPtr(window, ExtendedStyleIndex, (nint)style);
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     private static extern nint GetWindowLongPtr(nint window, int index);
 
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     private static extern nint SetWindowLongPtr(nint window, int index, nint value);
-
-    [DllImport("user32.dll", EntryPoint = "GetWindowLongW")]
-    private static extern int GetWindowLong(nint window, int index);
-
-    [DllImport("user32.dll", EntryPoint = "SetWindowLongW")]
-    private static extern int SetWindowLong(nint window, int index, int value);
 
     [DllImport("user32.dll")]
     private static extern nint MonitorFromWindow(nint window, uint flags);
