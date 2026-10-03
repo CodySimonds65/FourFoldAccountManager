@@ -17,26 +17,8 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
 
     public async Task ApplyHeartbeatAsync(ParticipationHeartbeat heartbeat, DateTimeOffset receivedAtUtc, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(heartbeat);
-        if (heartbeat.InstallationId == Guid.Empty) throw new ArgumentException("Installation ID is required.", nameof(heartbeat));
-        if (heartbeat.LinkedProfiles is null || heartbeat.ActivePlayerIds is null)
-            throw new ArgumentException("Profile lists are required.", nameof(heartbeat));
-
-        var linked = new HashSet<int>();
-        foreach (var profile in heartbeat.LinkedProfiles)
-        {
-            if (profile is null || profile.PlayerId <= 0 || !linked.Add(profile.PlayerId) ||
-                string.IsNullOrWhiteSpace(profile.Username) || profile.Username.Length > 256)
-                throw new ArgumentException("Linked profiles must have unique positive IDs and valid public usernames.", nameof(heartbeat));
-        }
-
-        var active = new HashSet<int>();
-        foreach (var id in heartbeat.ActivePlayerIds)
-        {
-            if (!active.Add(id) || !linked.Contains(id))
-                throw new ArgumentException("Active IDs must be unique and linked.", nameof(heartbeat));
-        }
-
+        // The participation endpoint has already run LeaderboardRequestValidator on this heartbeat.
+        var active = heartbeat.ActivePlayerIds.ToHashSet();
         var now = receivedAtUtc.ToUniversalTime();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         // Global enrollment lock makes both capacity counts and cleanup atomic across instances.
@@ -74,10 +56,11 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
         foreach (var playerId in affectedIds.OrderBy(x => x))
             await LockPlayerAsync(playerId, ct);
         var activeCutoff = now - ILeaderboardStore.ActiveLeaseDuration;
-        var freshBefore = affectedIds.Length == 0 ? [] : await db.InstallationProfiles.AsNoTracking()
+        Task<int[]> FreshPlayerIdsAsync() => db.InstallationProfiles.AsNoTracking()
             .Where(x => affectedIds.Contains(x.PlayerId) && x.Installation.SharingEnabled &&
                 x.IsActive && x.LastActiveAtUtc > activeCutoff)
             .Select(x => x.PlayerId).Distinct().ToArrayAsync(ct);
+        var freshBefore = affectedIds.Length == 0 ? [] : await FreshPlayerIdsAsync();
         db.InstallationProfiles.RemoveRange(previous);
         await db.SaveChangesAsync(ct);
 
@@ -95,12 +78,8 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
         }
         if (affectedIds.Length > 0)
         {
-            var freshAfter = await db.InstallationProfiles.AsNoTracking()
-                .Where(x => affectedIds.Contains(x.PlayerId) && x.Installation.SharingEnabled &&
-                    x.IsActive && x.LastActiveAtUtc > activeCutoff)
-                .Select(x => x.PlayerId).Distinct().ToArrayAsync(ct);
             var beforeSet = freshBefore.ToHashSet();
-            var afterSet = freshAfter.ToHashSet();
+            var afterSet = (await FreshPlayerIdsAsync()).ToHashSet();
             var rebaselineIds = affectedIds.Where(id =>
                 (active.Contains(id) && !beforeSet.Contains(id)) ||
                 (!afterSet.Contains(id) && beforeSet.Contains(id))).ToArray();
