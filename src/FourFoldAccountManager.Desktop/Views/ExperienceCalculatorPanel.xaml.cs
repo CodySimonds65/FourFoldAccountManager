@@ -34,8 +34,6 @@ public partial class ExperienceCalculatorPanel : UserControl
     // Raised once typing pauses; a null level removes the account's saved target.
     public event Action<Guid, long?>? TargetLevelChanged;
 
-    internal TimeSpan TargetSaveDelay => _targetSaveTimer.Interval;
-
     public void SetAccounts(IEnumerable<AccountProfile> accounts) => AccountPicker.ItemsSource = accounts;
 
     public void SetSelectedAccount(AccountProfile? account)
