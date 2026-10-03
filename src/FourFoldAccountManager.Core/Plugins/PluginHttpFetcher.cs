@@ -69,6 +69,7 @@ public sealed class PluginHttpFetcher : IDisposable
         timeout.CancelAfter(_timeout);
         var body = request.Body;
         var originalHost = uri.IdnHost;
+        var forwardHeaders = true;
         try
         {
             for (var redirects = 0; ; redirects++)
@@ -79,11 +80,13 @@ public sealed class PluginHttpFetcher : IDisposable
                     message.Content = new StringContent(body ?? string.Empty, Encoding.UTF8);
                 }
 
-                // Don't forward plugin headers to a different host after redirects.
-                var headersToSend = uri.IdnHost.Equals(originalHost, StringComparison.OrdinalIgnoreCase)
-                    ? request.Headers
-                    : null;
-                ApplyHeaders(message, headersToSend);
+                // Don't forward plugin headers to a different host; once headers are dropped, keep them dropped.
+                if (!uri.IdnHost.Equals(originalHost, StringComparison.OrdinalIgnoreCase))
+                {
+                    forwardHeaders = false;
+                }
+
+                ApplyHeaders(message, forwardHeaders ? request.Headers : null);
                 using var response = await _http.SendAsync(
                     message, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
                 if ((int)response.StatusCode is 301 or 302 or 303 or 307 or 308 &&
@@ -120,7 +123,7 @@ public sealed class PluginHttpFetcher : IDisposable
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new PluginApiException("unavailable", "The request took longer than 15 seconds.");
+            throw new PluginApiException("unavailable", "The request took too long.");
         }
         catch (HttpRequestException exception) when (exception.InnerException is PluginApiException refused)
         {
@@ -280,7 +283,12 @@ public sealed class PluginHttpFetcher : IDisposable
                     await socket.ConnectAsync(new IPEndPoint(address, context.DnsEndPoint.Port), cancellationToken);
                     return new NetworkStream(socket, ownsSocket: true);
                 }
-                catch (Exception exception) when (exception is not OperationCanceledException)
+                catch (OperationCanceledException)
+                {
+                    socket.Dispose();
+                    throw;
+                }
+                catch (Exception exception)
                 {
                     lastException = exception;
                     socket.Dispose();
