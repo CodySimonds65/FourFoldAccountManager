@@ -33,6 +33,12 @@ public sealed class HubPolicyTests
         Assert.Equal("Sent data away.", HubPolicy.PulledReason(catalog, "pulled.plugin"));
         Assert.Equal(HubPolicy.RemovedReason, HubPolicy.PulledReason(catalog, "quiet.plugin"));
         Assert.Equal(HubPolicy.UnlistedReason, HubPolicy.PulledReason(catalog, "gone.plugin"));
+
+        // A pull wins even when a hand-built catalog also lists the plugin.
+        var both = new HubCatalog(
+            [Listed("both.plugin", CommitA, anySite: true)], [new HubRemoval("both.plugin", "Pulled after listing.")]);
+        Assert.Equal("Pulled after listing.", HubPolicy.PulledReason(both, "both.plugin"));
+        Assert.Empty(HubPolicy.Loads(both, [new HubInstalled("both.plugin", CommitA)], id => id));
     }
 
     [Fact]
@@ -104,6 +110,7 @@ public sealed class HubPolicyTests
         Assert.Equal(["xp-tracker", "other.plugin"], next.PluginOrder);
         Assert.Empty(next.DisabledPlugins);
         Assert.Null(next.OpenPlugin);
+        Assert.False(next.PluginsSidebarExpanded);
         Assert.Equal(
             [null, "cody.goal-tracker-two/goal"],
             next.OverlayCards.Select(card => card.PluginCard).OrderBy(card => card));

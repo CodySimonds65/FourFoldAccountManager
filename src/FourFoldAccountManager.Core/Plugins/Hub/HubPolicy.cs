@@ -15,18 +15,23 @@ public static class HubPolicy
 
     public const string RemovedReason = "This plugin was removed from the hub.";
 
-    // Why an installed plugin may not run, or null when it may. A plugin the catalog doesn't list at all counts as
-    // pulled, so a mistake on the hub's side stops a plugin and never leaves an unlisted one running. With no catalog
-    // yet, nothing is known to be pulled.
+    // Why an installed plugin may not run, or null when it may. A removal wins even when the catalog also lists the id,
+    // and a plugin the catalog doesn't list at all counts as pulled, so a mistake on the hub's side stops a plugin and
+    // never leaves an unlisted one running. With no catalog yet, nothing is known to be pulled.
     public static string? PulledReason(HubCatalog? catalog, string id)
     {
-        if (catalog is null || catalog.Plugins.Any(plugin => plugin.Id == id))
+        if (catalog is null)
         {
             return null;
         }
 
         var removal = catalog.Removed.FirstOrDefault(removed => removed.Id == id);
-        return removal is null ? UnlistedReason : removal.Reason.Length > 0 ? removal.Reason : RemovedReason;
+        if (removal is not null)
+        {
+            return removal.Reason.Length > 0 ? removal.Reason : RemovedReason;
+        }
+
+        return catalog.Plugins.Any(plugin => plugin.Id == id) ? null : UnlistedReason;
     }
 
     // The installed plugins that may run. A plugin gets any-website trust only when the catalog clears the exact
@@ -59,8 +64,9 @@ public static class HubPolicy
                 .Where(plugin => installed.Any(other => other.Id == plugin.Id && other.Commit != plugin.Commit))
                 .ToArray();
 
-    // Forgets an uninstalled plugin in saved settings: its cards, its place in the strip, and its switch. Returns the
-    // same instance when there was nothing to forget, so callers can skip the save.
+    // Forgets an uninstalled plugin in saved settings: its cards, its place in the strip, and its switch. When it was
+    // the open plugin the panel closes, as when it is switched off. Returns the same instance when there was nothing
+    // to forget, so callers can skip the save.
     public static PanelSettings WithUninstalled(PanelSettings settings, string id)
     {
         var cardPrefix = id + "/";
@@ -75,12 +81,14 @@ public static class HubPolicy
             return settings;
         }
 
+        var wasOpen = settings.OpenPlugin == id;
         return settings with
         {
             OverlayCards = Array.AsReadOnly(cards),
             PluginOrder = Array.AsReadOnly(order),
             DisabledPlugins = Array.AsReadOnly(disabled),
-            OpenPlugin = settings.OpenPlugin == id ? null : settings.OpenPlugin
+            OpenPlugin = wasOpen ? null : settings.OpenPlugin,
+            PluginsSidebarExpanded = !wasOpen && settings.PluginsSidebarExpanded
         };
     }
 
