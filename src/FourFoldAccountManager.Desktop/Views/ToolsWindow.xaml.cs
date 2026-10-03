@@ -22,7 +22,7 @@ public partial class ToolsWindow : Window
     }
 
     // Raised with the window's final placement when the user closes it, but not when FourFold closes it.
-    public event EventHandler<StatsWindowPlacement>? ClosedByUser;
+    public event EventHandler<ToolsWindowPlacement>? ClosedByUser;
 
     public void Host(FrameworkElement panel)
     {
@@ -38,7 +38,7 @@ public partial class ToolsWindow : Window
     }
 
     // Call before Show. A null placement opens the window at its default size, centred on the main monitor.
-    public void ApplyPlacement(StatsWindowPlacement? placement)
+    public void ApplyPlacement(ToolsWindowPlacement? placement)
     {
         if (placement is null)
         {
@@ -55,12 +55,12 @@ public partial class ToolsWindow : Window
     }
 
     // A minimized window reports its restored spot and reopens restored.
-    public StatsWindowPlacement CapturePlacement(bool isOpen)
+    public ToolsWindowPlacement CapturePlacement(bool isOpen)
     {
         var bounds = WindowState == WindowState.Normal
             ? new Rect(Left, Top, ActualWidth, ActualHeight)
             : RestoreBounds;
-        return new StatsWindowPlacement(isOpen, bounds.Left, bounds.Top, bounds.Width, bounds.Height,
+        return new ToolsWindowPlacement(isOpen, bounds.Left, bounds.Top, bounds.Width, bounds.Height,
             WindowState == WindowState.Maximized);
     }
 
@@ -100,8 +100,8 @@ public partial class ToolsWindow : Window
     {
         var area = SystemParameters.WorkArea;
         WindowStartupLocation = WindowStartupLocation.Manual;
-        Width = StatsWindowPlacement.DefaultWidth;
-        Height = StatsWindowPlacement.DefaultHeight;
+        Width = ToolsWindowPlacement.DefaultWidth;
+        Height = ToolsWindowPlacement.DefaultHeight;
         Left = area.Left + (area.Width - Width) / 2;
         Top = area.Top + (area.Height - Height) / 2;
     }

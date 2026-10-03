@@ -70,8 +70,10 @@ public sealed record PanelSettings
 
     public int ActiveTab { get; init; }
 
-    [JsonConverter(typeof(LenientStatsWindowPlacementJsonConverter))]
-    public StatsWindowPlacement? StatsWindow { get; init; }
+    [JsonConverter(typeof(LenientToolsWindowPlacementJsonConverter))]
+    public ToolsWindowPlacement? ToolsWindow { get; init; }
+
+    public SecondMonitorMode SecondMonitorMode { get; init; }
 
     // Migration input from settings written before overlay add-ons; validation converts it and never writes it back.
     [JsonPropertyName("xpOverlayBoundsByAccount")]

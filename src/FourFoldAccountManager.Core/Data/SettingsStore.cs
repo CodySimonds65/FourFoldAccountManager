@@ -155,7 +155,10 @@ public sealed class SettingsStore
             LegacyXpOverlayBoundsByAccount = null,
             Tabs = tabs,
             ActiveTab = PanelTabPolicy.ClampActive(settings.ActiveTab, tabs.Count),
-            StatsWindow = settings.StatsWindow is { IsUsable: true } ? settings.StatsWindow : null
+            ToolsWindow = settings.ToolsWindow is { IsUsable: true } ? settings.ToolsWindow : null,
+            SecondMonitorMode = Enum.IsDefined(settings.SecondMonitorMode)
+                ? settings.SecondMonitorMode
+                : SecondMonitorMode.AccountToolsWindow
         };
     }
 

@@ -31,7 +31,7 @@ public static class OverlayCardPolicy
             result.Add(card with
             {
                 Bounds = card.Bounds is { IsValid: true } ? card.Bounds : null,
-                StatsWindowBounds = card.StatsWindowBounds is { IsValid: true } ? card.StatsWindowBounds : null
+                FloatingBounds = card.FloatingBounds is { IsUsable: true } ? card.FloatingBounds : null
             });
         }
 
@@ -63,37 +63,47 @@ public static class OverlayCardPolicy
         return settings.OverlayCards.FirstOrDefault(card => card.Key == key);
     }
 
-    // Showing a card over the game takes it out of the stats window, so a card is only ever in one place.
+    // Showing a card over the game stops it floating, so a card is only ever in one place.
     public static PanelSettings WithEnabled(PanelSettings settings, OverlayCardKey key, bool enabled) =>
         Upsert(settings, key, existing =>
             (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, false, null)) with
             {
                 Enabled = enabled,
-                InStatsWindow = false
+                IsFloating = false
             });
 
-    // Ticking a card in the stats window shows it there and takes it off the game; unticking switches it off.
-    public static PanelSettings WithStatsWindow(PanelSettings settings, OverlayCardKey key, bool show) =>
+    // Ticking a card in the floating checklist floats it and takes it off the game; unticking switches it off.
+    public static PanelSettings WithFloating(PanelSettings settings, OverlayCardKey key, bool show) =>
         Upsert(settings, key, existing =>
             (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, false, null)) with
             {
                 Enabled = show,
-                InStatsWindow = show
+                IsFloating = show
             });
 
-    public static PanelSettings WithStatsWindowBounds(PanelSettings settings, OverlayCardKey key, OverlayBounds bounds)
+    public static PanelSettings WithFloatingBounds(PanelSettings settings, OverlayCardKey key, FloatingCardBounds bounds)
     {
         ArgumentNullException.ThrowIfNull(bounds);
-        if (!bounds.IsValid)
+        if (!bounds.IsUsable)
         {
-            throw new ArgumentException("Overlay bounds must be valid and within the normalized viewport.", nameof(bounds));
+            throw new ArgumentException("Floating card bounds must be finite with a positive size.", nameof(bounds));
         }
 
         return Upsert(settings, key, existing =>
-            (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, true, null) { InStatsWindow = true }) with
+            (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, true, null) { IsFloating = true }) with
             {
-                StatsWindowBounds = bounds
+                FloatingBounds = bounds
             });
+    }
+
+    // Leaving Floating cards mode puts every floating card back over the game, keeping both saved positions.
+    public static PanelSettings ReturnFloatingCardsToGame(PanelSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return settings with
+        {
+            OverlayCards = Array.AsReadOnly(settings.OverlayCards.Select(card => card with { IsFloating = false }).ToArray())
+        };
     }
 
     public static PanelSettings WithBounds(PanelSettings settings, OverlayCardKey key, OverlayBounds bounds)

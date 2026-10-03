@@ -320,7 +320,7 @@ public partial class MainWindow : Window
             AccountsListBox.SelectedIndex = _accounts.Count > 0 ? 0 : -1;
             UpdateAccountActions();
             await RebuildPanelAsync(closeExistingViews: false);
-            if (_panelSettings.StatsWindow is { IsOpen: true })
+            if (_panelSettings.ToolsWindow is { IsOpen: true })
             {
                 OpenToolsWindow(activate: false);
             }
@@ -1150,7 +1150,7 @@ public partial class MainWindow : Window
         }
 
         var window = new ToolsWindow { ShowActivated = activate };
-        window.ApplyPlacement(_panelSettings.StatsWindow);
+        window.ApplyPlacement(_panelSettings.ToolsWindow);
         MainContentGrid.Children.Remove(PluginSidebar);
         window.Host(PluginSidebar);
         window.ClosedByUser += ToolsWindow_ClosedByUser;
@@ -1165,7 +1165,7 @@ public partial class MainWindow : Window
         UpdatePluginSidebarVisibility();
     }
 
-    private async void ToolsWindow_ClosedByUser(object? sender, StatsWindowPlacement placement)
+    private async void ToolsWindow_ClosedByUser(object? sender, ToolsWindowPlacement placement)
     {
         if (sender is ToolsWindow window)
         {
@@ -1177,7 +1177,7 @@ public partial class MainWindow : Window
         UpdatePluginSidebarVisibility();
         try
         {
-            await UpdateSettingsAsync(settings => settings with { StatsWindow = placement });
+            await UpdateSettingsAsync(settings => settings with { ToolsWindow = placement });
         }
         catch
         {
@@ -3215,7 +3215,7 @@ public partial class MainWindow : Window
             // typed just before closing reaches disk instead of being lost.
             PluginSidebar.FlushPendingXpTarget();
             // Keep the tools window marked open, with its current spot, so it reopens there next launch.
-            StatsWindowPlacement? toolsPlacement = null;
+            ToolsWindowPlacement? toolsPlacement = null;
             if (_toolsWindow is { } toolsWindow)
             {
                 toolsPlacement = toolsWindow.CapturePlacement(isOpen: true);
@@ -3230,7 +3230,7 @@ public partial class MainWindow : Window
                 if (_isReady)
                 {
                     await UpdateSettingsAsync(settings =>
-                        toolsPlacement is null ? settings : settings with { StatsWindow = toolsPlacement });
+                        toolsPlacement is null ? settings : settings with { ToolsWindow = toolsPlacement });
                 }
             }
             catch

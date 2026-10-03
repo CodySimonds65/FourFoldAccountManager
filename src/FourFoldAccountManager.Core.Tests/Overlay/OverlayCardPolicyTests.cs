@@ -93,30 +93,42 @@ public sealed class OverlayCardPolicyTests
     }
 
     [Fact]
-    public void MovingACardBetweenTheGameAndTheStatsWindowKeepsOnePlaceAndBothPositions()
+    public void MovingACardBetweenTheGameAndFloatingKeepsOnePlaceAndBothPositions()
     {
+        var floatingSpot = new FloatingCardBounds(-1500, 120, 200, 52);
         var key = new OverlayCardKey(OverlayAddOnKind.Xp, Guid.NewGuid());
+        var timerKey = new OverlayCardKey(OverlayAddOnKind.Timer, null);
         var overGame = OverlayCardPolicy.WithBounds(PanelSettings.Default, key, First);
-        var inWindow = OverlayCardPolicy.WithStatsWindowBounds(
-            OverlayCardPolicy.WithStatsWindow(overGame, key, true), key, Second);
+        var floating = OverlayCardPolicy.WithFloating(
+            OverlayCardPolicy.WithFloatingBounds(OverlayCardPolicy.WithFloating(overGame, key, true), key, floatingSpot),
+            timerKey, true);
 
-        var windowCard = OverlayCardPolicy.Get(inWindow, key)!;
-        Assert.True(windowCard.Enabled);
-        Assert.True(windowCard.InStatsWindow);
-        Assert.Equal(First, windowCard.Bounds);
-        Assert.Equal(Second, windowCard.StatsWindowBounds);
+        var floatingCard = OverlayCardPolicy.Get(floating, key)!;
+        Assert.True(floatingCard.Enabled);
+        Assert.True(floatingCard.IsFloating);
+        Assert.Equal(First, floatingCard.Bounds);
+        Assert.Equal(floatingSpot, floatingCard.FloatingBounds);
 
         // Switching it on over the game moves it back, keeping both positions.
-        var backOverGame = OverlayCardPolicy.Get(OverlayCardPolicy.WithEnabled(inWindow, key, true), key)!;
+        var backOverGame = OverlayCardPolicy.Get(OverlayCardPolicy.WithEnabled(floating, key, true), key)!;
         Assert.True(backOverGame.Enabled);
-        Assert.False(backOverGame.InStatsWindow);
+        Assert.False(backOverGame.IsFloating);
         Assert.Equal(First, backOverGame.Bounds);
-        Assert.Equal(Second, backOverGame.StatsWindowBounds);
+        Assert.Equal(floatingSpot, backOverGame.FloatingBounds);
 
-        // Unticking it in the window switches it off everywhere.
-        var off = OverlayCardPolicy.Get(OverlayCardPolicy.WithStatsWindow(inWindow, key, false), key)!;
+        // Unticking it in the floating checklist switches it off everywhere.
+        var off = OverlayCardPolicy.Get(OverlayCardPolicy.WithFloating(floating, key, false), key)!;
         Assert.False(off.Enabled);
-        Assert.False(off.InStatsWindow);
-        Assert.Equal(Second, off.StatsWindowBounds);
+        Assert.False(off.IsFloating);
+        Assert.Equal(floatingSpot, off.FloatingBounds);
+
+        // Leaving Floating cards mode returns every floating card over the game, still switched on.
+        var returned = OverlayCardPolicy.ReturnFloatingCardsToGame(floating);
+        Assert.All(returned.OverlayCards, card => Assert.False(card.IsFloating));
+        var returnedCard = OverlayCardPolicy.Get(returned, key)!;
+        Assert.True(returnedCard.Enabled);
+        Assert.Equal(First, returnedCard.Bounds);
+        Assert.Equal(floatingSpot, returnedCard.FloatingBounds);
+        Assert.True(OverlayCardPolicy.Get(returned, timerKey)!.Enabled);
     }
 }
