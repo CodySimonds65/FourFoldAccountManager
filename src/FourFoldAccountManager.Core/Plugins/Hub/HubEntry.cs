@@ -12,6 +12,10 @@ public static partial class HubEntryReader
     [GeneratedRegex(@"^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\z")]
     private static partial Regex PathRegex();
 
+    // A property written twice would read as its last value while a reviewer of the raw file sees the first, so a
+    // duplicate makes the file invalid.
+    private static readonly JsonDocumentOptions Options = new() { AllowDuplicateProperties = false };
+
     // fileName is the entry's file name, "<plugin id>.json". Every rejection carries a reason an author can act on.
     public static (HubEntry? Entry, string? Error) Read(string fileName, string json)
     {
@@ -23,7 +27,7 @@ public static partial class HubEntryReader
 
         try
         {
-            using var document = JsonDocument.Parse(json);
+            using var document = JsonDocument.Parse(json, Options);
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object)
             {
@@ -41,10 +45,18 @@ public static partial class HubEntryReader
                 return (null, "\"commit\" must be a full 40-character commit in lowercase, not a branch or a tag.");
             }
 
+            const string PathError =
+                "\"path\" must be a folder inside the repository, written with forward slashes (at most 200 characters).";
             var path = PluginManifestReader.Text(root, "path") ?? string.Empty;
-            if (path.Length > 0 && (!PathRegex().IsMatch(path) || path.Split('/').Any(part => part is "." or "..")))
+            if (root.TryGetProperty("path", out var pathElement) && pathElement.ValueKind != JsonValueKind.String)
             {
-                return (null, "\"path\" must be a folder inside the repository, written with forward slashes.");
+                return (null, PathError);
+            }
+
+            if (path.Length > 0 &&
+                (path.Length > 200 || !PathRegex().IsMatch(path) || path.Split('/').Any(part => part is "." or "..")))
+            {
+                return (null, PathError);
             }
 
             var hasAnySite = root.TryGetProperty("anySite", out var anySite);
@@ -55,8 +67,9 @@ public static partial class HubEntryReader
 
             return (new HubEntry(id, repository, commit, path, hasAnySite && anySite.ValueKind == JsonValueKind.True), null);
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException)
         {
+            // InvalidOperationException: text with a lone surrogate escape (\ud800) is JSON the reader can't hand back.
             return (null, "The entry isn't valid JSON.");
         }
     }
@@ -65,7 +78,7 @@ public static partial class HubEntryReader
     {
         try
         {
-            using var document = JsonDocument.Parse(json);
+            using var document = JsonDocument.Parse(json, Options);
             if (document.RootElement.ValueKind != JsonValueKind.Array)
             {
                 return (null, "removed.json must be a list.");
@@ -88,7 +101,7 @@ public static partial class HubEntryReader
 
             return (result, null);
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException)
         {
             return (null, "removed.json isn't valid JSON.");
         }
