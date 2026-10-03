@@ -64,6 +64,18 @@ async function run() {
   stillRunning = true;
   report('window.close() does nothing', stillRunning);
 
+  // A sandboxed frame's window has a close() the injected library doesn't replace. FourFold itself must ignore it.
+  let stillRunningAfterFrame = false;
+  try {
+    const sandboxed = document.createElement('iframe');
+    sandboxed.sandbox = '';
+    sandboxed.hidden = true;
+    document.body.append(sandboxed);
+    sandboxed.contentWindow.close.call(window);
+  } catch { /* refused, which is fine too */ }
+  stillRunningAfterFrame = true;
+  report('window.close() through a sandboxed frame does nothing', stillRunningAfterFrame);
+
   report('New windows are blocked', popup === null || popup.closed);
 
   await rejects('FourFold-run fetch to an undeclared site is refused',

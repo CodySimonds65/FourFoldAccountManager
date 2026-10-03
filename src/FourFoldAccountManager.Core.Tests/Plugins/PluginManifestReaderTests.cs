@@ -162,6 +162,7 @@ public sealed class PluginManifestReaderTests : IDisposable
 
         Assert.Null(result.Manifest);
         Assert.Contains("icon", result.Error);
+        Assert.Null(ReadWithIcon(PngHeader(width: 100000, height: 1)).Manifest);
     }
 
     [Fact]

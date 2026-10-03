@@ -70,7 +70,7 @@ A `plugin.json` that breaks any rule below is rejected: the plugin doesn't load,
 | `description` | no | At most 200 characters. |
 | `apiVersion` | yes | A whole number. FourFold supports `1`. A higher number is rejected with "Update FourFold to use this plugin." |
 | `panel` | yes | Path to an existing `.html` file inside the plugin folder. Forward slashes only. |
-| `icon` | no | Path to a PNG inside the plugin folder, at most 256 by 256 pixels and 64 KB. Forward slashes only. Without one, the strip shows a default icon. |
+| `icon` | no | Path to a `.png` file inside the plugin folder, at most 256 by 256 pixels and 64 KB. Forward slashes only. Without one, the strip shows a default icon. |
 | `sites` | no | At most 10 websites the plugin may contact. Each is an origin: `https://host` or `https://host:port`, with no path, query or `user@`. The host must be a DNS name: no IP address, no trailing dot, and no name that only works on the local network. `localhost`, `.localhost`, `.local`, `.internal`, `.lan` and `.home.arpa` names are refused, and so is a single-label name such as `router`. A subdomain is its own site, so `https://example.com` doesn't cover `https://www.example.com`. |
 | `anySite` | no | `true` lets the plugin contact any `https` site. Default `false`. FourFold honors it for plugins in the dev folder. |
 | `cards` | no | At most 6 overlay cards. See [Cards](#cards). |
@@ -316,7 +316,7 @@ What that means for you:
 - **Fonts** come from your own files only.
 - **Images** come from your own files, `data:` URLs and your declared sites.
 - **`fetch`, XHR and WebSocket** from the page go only to your own address and your declared sites, over `https` and `wss`. Plain `http` never works. A site that doesn't allow cross-origin requests refuses them: use `fourfold.http.fetch` for that site.
-- **Blocked outright:** frames, `<object>` and `<embed>`, form submissions, `<base>`, audio and video files, and every kind of worker (Web Workers, shared workers, service workers). `RTCPeerConnection` and the other WebRTC classes are removed.
+- **Blocked outright:** loading anything in a frame, `<object>` and `<embed>`, form submissions, `<base>`, audio and video files, and every kind of worker (Web Workers, shared workers, service workers). `RTCPeerConnection` and the other WebRTC classes are removed.
 
 ### The local network
 
