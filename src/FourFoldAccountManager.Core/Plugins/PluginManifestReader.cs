@@ -15,10 +15,10 @@ public static partial class PluginManifestReader
 
     private const int MaximumIconBytes = 64 * 1024;
 
-    [GeneratedRegex("^" + IdPattern + "$")]
+    [GeneratedRegex("^" + IdPattern + @"\z")]
     private static partial Regex IdRegex();
 
-    [GeneratedRegex("^" + CardIdPattern + "$")]
+    [GeneratedRegex("^" + CardIdPattern + @"\z")]
     private static partial Regex CardIdRegex();
 
     [GeneratedRegex(@"^[0-9]+\.[0-9]+\.[0-9]+$")]

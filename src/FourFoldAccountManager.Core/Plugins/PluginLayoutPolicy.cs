@@ -32,6 +32,9 @@ public static class PluginLayoutPolicy
     public static bool IsShortcutSuppressed(PanelSettings settings, GlobalShortcutAction action) =>
         BuiltInPlugins.All.Any(plugin => plugin.Shortcuts.Contains(action) && !IsEnabled(settings, plugin.Id));
 
+    public static bool IsPluginCardSuppressed(PanelSettings settings, string pluginCard) =>
+        PluginCardId.PluginId(pluginCard) is not { } pluginId || !IsEnabled(settings, pluginId);
+
     // The saved open plugin when it is known and switched on; otherwise null.
     public static PluginDescriptor? OpenPlugin(PanelSettings settings, IReadOnlyList<PluginDescriptor> known) =>
         known.FirstOrDefault(plugin => plugin.Id == settings.OpenPlugin && IsEnabled(settings, plugin.Id));
@@ -53,26 +56,35 @@ public static class PluginLayoutPolicy
         return !enabled && settings.OpenPlugin == id ? next with { PluginsSidebarExpanded = false } : next;
     }
 
-    // Moves a plugin to index among the strip's icons (switched-on plugins, in order). Switched-off plugins keep their
-    // places, and unknown saved ids stay at the end.
+    // Moves a plugin to index among the strip's icons (known, switched-on plugins, in order). Every other saved id
+    // keeps its slot: switched-off plugins, and plugins that aren't loaded right now.
     public static PanelSettings WithMoved(
         PanelSettings settings, IReadOnlyList<PluginDescriptor> known, string id, int index)
     {
-        var full = Ordered(settings, known).Select(plugin => plugin.Id).ToList();
-        var strip = full.Where(other => IsEnabled(settings, other)).ToList();
+        var knownIds = known.Select(plugin => plugin.Id).ToHashSet(StringComparer.Ordinal);
+        var full = settings.PluginOrder
+            .Concat(known.Select(plugin => plugin.Id)
+                .Where(knownId => !settings.PluginOrder.Contains(knownId, StringComparer.Ordinal)))
+            .ToList();
+        bool OnStrip(string other) => knownIds.Contains(other) && IsEnabled(settings, other);
+
+        var strip = full.Where(OnStrip).ToList();
         if (!strip.Remove(id))
         {
             return settings;
         }
 
         strip.Insert(Math.Clamp(index, 0, strip.Count), id);
+        var order = new List<string>(full.Count);
         var nextStripId = 0;
-        var reordered = full.Select(other => IsEnabled(settings, other) ? strip[nextStripId++] : other);
-        var unknown = settings.PluginOrder.Where(saved => known.All(plugin => plugin.Id != saved));
-        var order = reordered.Concat(unknown).ToArray();
+        foreach (var other in full)
+        {
+            order.Add(OnStrip(other) ? strip[nextStripId++] : other);
+        }
+
         return order.SequenceEqual(settings.PluginOrder)
             ? settings
-            : settings with { PluginOrder = Array.AsReadOnly(order) };
+            : settings with { PluginOrder = Array.AsReadOnly(order.ToArray()) };
     }
 
     public static PanelSettings WithOpened(PanelSettings settings, string id) =>
