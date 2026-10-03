@@ -1142,7 +1142,24 @@ public partial class MainWindow : Window
 
     private void FullScreen_Click(object sender, RoutedEventArgs e)
     {
-        EnterFullScreen();
+        if (_isFullScreen)
+        {
+            return;
+        }
+
+        if (_showingLeaderboard) ShowWorkspaceView();
+
+        _previousWindowState = WindowState;
+        _previousWindowStyle = WindowStyle;
+        _previousResizeMode = ResizeMode;
+        _isFullScreen = true;
+        ApplyClutterVisibility();
+
+        WindowState = WindowState.Normal;
+        WindowStyle = WindowStyle.None;
+        ResizeMode = ResizeMode.NoResize;
+        WindowState = WindowState.Maximized;
+        RefreshTrackerRows();
     }
 
     private void FullScreenExit_Click(object sender, RoutedEventArgs e)
@@ -1376,28 +1393,6 @@ public partial class MainWindow : Window
 
     private void FullScreenExit_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e) =>
         FullScreenExitButton.Opacity = 0.78;
-
-    private void EnterFullScreen()
-    {
-        if (_isFullScreen)
-        {
-            return;
-        }
-
-        if (_showingLeaderboard) ShowWorkspaceView();
-
-        _previousWindowState = WindowState;
-        _previousWindowStyle = WindowStyle;
-        _previousResizeMode = ResizeMode;
-        _isFullScreen = true;
-        ApplyClutterVisibility();
-
-        WindowState = WindowState.Normal;
-        WindowStyle = WindowStyle.None;
-        ResizeMode = ResizeMode.NoResize;
-        WindowState = WindowState.Maximized;
-        RefreshTrackerRows();
-    }
 
     private void ExitFullScreen()
     {
@@ -2758,13 +2753,10 @@ public partial class MainWindow : Window
         Grid.SetColumn(resetViewButton, 1);
         adjustmentHeader.Children.Add(resetViewButton);
         adjustmentContent.Children.Add(adjustmentHeader);
-        adjustmentContent.Children.Add(CreateViewportAdjustmentRow(
-            "Width", "GameViewportWidth", viewportSize.WidthPercent, out var widthSlider, out var widthValue));
-        adjustmentContent.Children.Add(CreateViewportAdjustmentRow(
-            "Height", "GameViewportHeight", viewportSize.HeightPercent, out var heightSlider, out var heightValue));
+        adjustmentContent.Children.Add(CreateViewportAdjustmentRow("Width", viewportSize.WidthPercent, out var widthSlider));
+        adjustmentContent.Children.Add(CreateViewportAdjustmentRow("Height", viewportSize.HeightPercent, out var heightSlider));
         var adjustmentOverlay = new Border
         {
-            Tag = "GameViewportAdjustment",
             MaxWidth = 310,
             Padding = new Thickness(12),
             Margin = new Thickness(12),
@@ -2782,8 +2774,7 @@ public partial class MainWindow : Window
         Grid.SetRow(browserHost, 2);
         content.Children.Add(browserHost);
         var slot = new PanelSlotCard(slotIndex, root, header, relaunchButton, accountPicker, accountLabel, status, browserHost,
-            placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider,
-            widthValue, heightValue);
+            placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider);
         widthSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
         heightSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
         resetViewButton.Click += (_, _) => SetViewportSliderValues(slot, GameViewportSize.Default);
@@ -2796,12 +2787,7 @@ public partial class MainWindow : Window
         return slot;
     }
 
-    private Grid CreateViewportAdjustmentRow(
-        string label,
-        string tag,
-        double initialValue,
-        out Slider slider,
-        out TextBlock valueText)
+    private Grid CreateViewportAdjustmentRow(string label, double initialValue, out Slider slider)
     {
         var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
@@ -2815,7 +2801,6 @@ public partial class MainWindow : Window
         });
         slider = new Slider
         {
-            Tag = tag,
             Minimum = GameViewportSize.MinimumPercent,
             Maximum = GameViewportSize.MaximumPercent,
             TickFrequency = 5,
@@ -2828,13 +2813,14 @@ public partial class MainWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(slider, $"Game {label.ToLowerInvariant()} percentage");
         Grid.SetColumn(slider, 1);
         row.Children.Add(slider);
-        valueText = new TextBlock
+        var valueText = new TextBlock
         {
-            Text = $"{initialValue:0}%",
             Foreground = (Brush)FindResource("Brush.TextPrimary"),
             TextAlignment = TextAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center
         };
+        valueText.SetBinding(TextBlock.TextProperty,
+            new Binding(nameof(Slider.Value)) { Source = slider, StringFormat = "{0:0}%" });
         Grid.SetColumn(valueText, 2);
         row.Children.Add(valueText);
         return row;
@@ -2842,8 +2828,6 @@ public partial class MainWindow : Window
 
     private void ScheduleViewportSizeUpdate(PanelSlotCard slot)
     {
-        slot.WidthValue.Text = $"{slot.WidthSlider.Value:0}%";
-        slot.HeightValue.Text = $"{slot.HeightSlider.Value:0}%";
         if (!_isReady || slot.SuppressViewportEvents)
         {
             return;
@@ -2904,8 +2888,6 @@ public partial class MainWindow : Window
         {
             slot.WidthSlider.Value = size.WidthPercent;
             slot.HeightSlider.Value = size.HeightPercent;
-            slot.WidthValue.Text = $"{size.WidthPercent:0}%";
-            slot.HeightValue.Text = $"{size.HeightPercent:0}%";
         }
         finally
         {
@@ -3086,8 +3068,6 @@ public partial class MainWindow : Window
         await _accountStore.SaveAsync(_accounts.OrderBy(account => account.SortOrder).ToArray());
         _ = SyncLeaderboardParticipationAsync();
     }
-
-    internal LeaderboardCoordinator? Leaderboard => _leaderboard;
 
     internal async Task SetLeaderboardSharingAsync(bool enabled, CancellationToken ct = default)
     {
@@ -3424,40 +3404,22 @@ public partial class MainWindow : Window
         public override string ToString() => Label;
     }
 
-    private sealed class PanelSlotCard(
-        int slotIndex,
-        Border root,
-        Grid header,
-        Button relaunchButton,
-        ComboBox accountPicker,
-        TextBlock accountLabel,
-        TextBlock status,
-        Grid browserHost,
-        FrameworkElement placeholder,
-        TextBlock emptyTitle,
-        TextBlock emptyDescription,
-        Border viewAdjustmentOverlay,
-        Slider widthSlider,
-        Slider heightSlider,
-        TextBlock widthValue,
-        TextBlock heightValue)
+    private sealed record PanelSlotCard(
+        int SlotIndex,
+        Border Root,
+        Grid Header,
+        Button RelaunchButton,
+        ComboBox AccountPicker,
+        TextBlock AccountLabel,
+        TextBlock Status,
+        Grid BrowserHost,
+        FrameworkElement Placeholder,
+        TextBlock EmptyTitle,
+        TextBlock EmptyDescription,
+        Border ViewAdjustmentOverlay,
+        Slider WidthSlider,
+        Slider HeightSlider)
     {
-        public int SlotIndex { get; } = slotIndex;
-        public Border Root { get; } = root;
-        public Grid Header { get; } = header;
-        public Button RelaunchButton { get; } = relaunchButton;
-        public ComboBox AccountPicker { get; } = accountPicker;
-        public TextBlock AccountLabel { get; } = accountLabel;
-        public TextBlock Status { get; } = status;
-        public Grid BrowserHost { get; } = browserHost;
-        public FrameworkElement Placeholder { get; } = placeholder;
-        public TextBlock EmptyTitle { get; } = emptyTitle;
-        public TextBlock EmptyDescription { get; } = emptyDescription;
-        public Border ViewAdjustmentOverlay { get; } = viewAdjustmentOverlay;
-        public Slider WidthSlider { get; } = widthSlider;
-        public Slider HeightSlider { get; } = heightSlider;
-        public TextBlock WidthValue { get; } = widthValue;
-        public TextBlock HeightValue { get; } = heightValue;
         public DispatcherTimer ViewportUpdateTimer { get; } = new() { Interval = TimeSpan.FromMilliseconds(120) };
         public bool SuppressViewportEvents { get; set; }
         public StatusTone Tone { get; set; }
