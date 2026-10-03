@@ -413,10 +413,10 @@ The hub is a GitHub repository:
    }
    ```
 
-   `repository` must be exactly `https://github.com/owner/repo`, with no trailing slash or `/tree/...`. `commit` is
-   the full 40-character commit in lowercase. Add `"path"` when the plugin is in a folder. `path` is written with
-   forward slashes, uses only letters, digits, `.`, `_` and `-`, has no trailing slash, no `.` or `..` parts, and at
-   most 200 characters. The pull request changes only that one file.
+   `repository` must be exactly `https://github.com/owner/repo`, with no trailing slash, no `/tree/...` and no `.git`
+   at the end. `commit` is the full 40-character commit in lowercase. Add `"path"` when the plugin is in a folder.
+   `path` is written with forward slashes, uses only letters, digits, `.`, `_` and `-`, has no trailing slash, no `.`
+   or `..` parts, and at most 200 characters. The pull request changes only that one file.
 4. A check validates your `plugin.json` with the same rules FourFold uses, builds the package (the zip that users
    install), and scans the files in your repository at that commit for secrets. If the check fails, its summary page
    says why. Fix it in your plugin's repository (then put the new commit in your entry file), or in the entry file
@@ -443,6 +443,8 @@ with a dot. The files that go in must also unpack on Windows:
 
 - A file or folder name can't contain `< > " | ? *` or a control character, and can't end in a dot or a space. A
   file with a `\` or a `:` in its path is left out.
+- A file or folder can't be named like a Windows device: `con`, `prn`, `aux`, `nul`, `com0` to `com9` or `lpt0` to
+  `lpt9`, in any case, alone or before a dot. `aux.js` is refused, and `auxiliary.js` is fine.
 - Two files can't differ only by capital letters.
 
 A user can uninstall a plugin: FourFold asks first, and uninstalling deletes the plugin's saved data. If the
