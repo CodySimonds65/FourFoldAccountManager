@@ -50,41 +50,39 @@ public static partial class HubCatalogJson
 
         try
         {
-            using var document = JsonDocument.Parse(json);
+            // A byte order mark is no part of the JSON, and some editors add one.
+            using var document = JsonDocument.Parse(json.TrimStart('\uFEFF'));
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object ||
                 !root.TryGetProperty("version", out var version) || version.ValueKind != JsonValueKind.Number ||
-                !version.TryGetInt32(out var number) || number != Version)
+                !version.TryGetInt32(out var number) || number != Version ||
+                !TryGetList(root, "removed", out var removedElement) ||
+                !TryGetList(root, "plugins", out var pluginsElement))
             {
                 return null;
             }
 
+            // Sets, not lists: a catalog can hold tens of thousands of ids, and a list scan per id takes seconds.
             var removed = new List<HubRemoval>();
-            if (root.TryGetProperty("removed", out var removedElement) && removedElement.ValueKind == JsonValueKind.Array)
+            var removedIds = new HashSet<string>(StringComparer.Ordinal);
+            if (removedElement.ValueKind == JsonValueKind.Array)
             {
                 foreach (var item in removedElement.EnumerateArray())
                 {
-                    if (item.ValueKind != JsonValueKind.Object ||
-                        PluginManifestReader.Text(item, "id") is not { } id || !PluginManifestReader.IsValidId(id) ||
-                        removed.Any(other => other.Id == id))
+                    if (TryReadRemoval(item) is { } removal && removedIds.Add(removal.Id))
                     {
-                        continue;
+                        removed.Add(removal);
                     }
-
-                    // A pull must never be lost over its wording: a reason that can't be shown is dropped, not the pull.
-                    var reason = PluginManifestReader.Text(item, "reason") ?? string.Empty;
-                    removed.Add(new HubRemoval(
-                        id, reason.Length > 200 || PluginText.HasUnsafeCharacter(reason) ? string.Empty : reason));
                 }
             }
 
             var plugins = new List<HubPlugin>();
-            if (root.TryGetProperty("plugins", out var pluginsElement) && pluginsElement.ValueKind == JsonValueKind.Array)
+            var pluginIds = new HashSet<string>(StringComparer.Ordinal);
+            if (pluginsElement.ValueKind == JsonValueKind.Array)
             {
                 foreach (var item in pluginsElement.EnumerateArray().Take(HubLimits.MaximumCatalogPlugins))
                 {
-                    if (TryReadPlugin(item) is { } plugin && plugins.All(other => other.Id != plugin.Id) &&
-                        removed.All(other => other.Id != plugin.Id))
+                    if (TryReadPlugin(item) is { } plugin && !removedIds.Contains(plugin.Id) && pluginIds.Add(plugin.Id))
                     {
                         plugins.Add(plugin);
                     }
@@ -93,9 +91,48 @@ public static partial class HubCatalogJson
 
             return new HubCatalog(Array.AsReadOnly(plugins.ToArray()), Array.AsReadOnly(removed.ToArray()));
         }
-        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException or ArgumentException)
         {
             return null;
+        }
+    }
+
+    // A missing or null list reads as an empty one. Any other type makes the catalog unusable: reading it as empty
+    // would drop the pulls, and the app would replace a good cached copy that still carries them.
+    private static bool TryGetList(JsonElement root, string name, out JsonElement list)
+    {
+        list = default;
+        return !root.TryGetProperty(name, out list) || list.ValueKind is JsonValueKind.Null or JsonValueKind.Array;
+    }
+
+    private static HubRemoval? TryReadRemoval(JsonElement item)
+    {
+        string id;
+        try
+        {
+            if (item.ValueKind != JsonValueKind.Object ||
+                PluginManifestReader.Text(item, "id") is not { } text || !PluginManifestReader.IsValidId(text))
+            {
+                return null;
+            }
+
+            id = text;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            return null;
+        }
+
+        // A pull must never be lost over its wording: a reason that can't be read or shown is dropped, not the pull.
+        try
+        {
+            var reason = PluginManifestReader.Text(item, "reason") ?? string.Empty;
+            return new HubRemoval(
+                id, reason.Length > 200 || PluginText.HasUnsafeCharacter(reason) ? string.Empty : reason);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or ArgumentException)
+        {
+            return new HubRemoval(id, string.Empty);
         }
     }
 

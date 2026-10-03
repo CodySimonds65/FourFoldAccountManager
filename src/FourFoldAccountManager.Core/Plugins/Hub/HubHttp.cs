@@ -3,7 +3,8 @@ namespace FourFoldAccountManager.Core.Plugins.Hub;
 public static class HubHttp
 {
     // Downloads a file of at most maximumBytes over https. Null when the request fails, ends anywhere but https, or
-    // the file is larger. The bytes are counted as they arrive, since a response needn't say how long it is.
+    // the file is larger; a cancelled or corrupt download also gives null. The bytes are counted as they arrive, since
+    // a response needn't say how long it is.
     public static async Task<byte[]?> DownloadAsync(
         HttpClient http, Uri uri, long maximumBytes, CancellationToken cancellationToken)
     {
@@ -33,7 +34,8 @@ public static class HubHttp
 
             return buffer.ToArray();
         }
-        catch (Exception exception) when (exception is HttpRequestException or IOException or TaskCanceledException)
+        catch (Exception exception) when (
+            exception is HttpRequestException or IOException or InvalidDataException or OperationCanceledException)
         {
             return null;
         }
