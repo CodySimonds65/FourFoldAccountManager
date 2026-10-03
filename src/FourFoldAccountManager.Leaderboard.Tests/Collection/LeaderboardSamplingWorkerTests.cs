@@ -55,7 +55,7 @@ public sealed class LeaderboardSamplingWorkerTests
             Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([new(1, "Alice")]);
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) => Task.FromResult<PlayerSampleState?>(null);
         public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
-            TimeSpan activeLeaseDuration, CancellationToken ct) => Task.CompletedTask;
+            CancellationToken ct) => Task.CompletedTask;
         public Task MarkNeedsBaselineAsync(int playerId, CancellationToken ct) => Task.CompletedTask;
         public Task ApplyHeartbeatAsync(ParticipationHeartbeat heartbeat, DateTimeOffset receivedAtUtc, CancellationToken ct) => throw new NotImplementedException();
         public Task<LeaderboardPage> GetPageAsync(LeaderboardPeriod period, int page, int pageSize, DateTimeOffset nowUtc, TimeSpan staleAfter, CancellationToken ct) => throw new NotImplementedException();

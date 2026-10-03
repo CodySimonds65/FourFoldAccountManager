@@ -138,7 +138,7 @@ public sealed class LeaderboardStoreTests : IAsyncLifetime
             Now.AddMinutes(1), default);
 
         await _store.SaveObservationAsync(Observation(1, "Alice", 25, Now.AddMinutes(1)),
-            expected, TimeSpan.FromMinutes(3), default);
+            expected, default);
 
         Assert.True((await _store.GetPlayerStateAsync(1, default))!.NeedsBaseline);
         Assert.Empty(await _db.XpGainEvents.ToListAsync());

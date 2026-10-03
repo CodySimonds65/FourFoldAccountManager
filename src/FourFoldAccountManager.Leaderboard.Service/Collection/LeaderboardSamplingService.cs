@@ -31,7 +31,7 @@ public sealed class LeaderboardSamplingService(
                 // Re-read after every request so a profile that just started participating
                 // takes the next request slot ahead of routine samples.
                 var observedAt = now + _clock.GetElapsedTime(start);
-                var due = await store.GetProfilesDueForSampleAsync(observedAt - options.ActiveLeaseDuration,
+                var due = await store.GetProfilesDueForSampleAsync(observedAt - ILeaderboardStore.ActiveLeaseDuration,
                     observedAt - options.MinimumSampleInterval, ct);
                 var candidate = due.FirstOrDefault(x => !attemptedPlayerIds.Contains(x.PlayerId) &&
                     _schedule.CanSample(x.PlayerId, observedAt));
@@ -150,7 +150,7 @@ public sealed class LeaderboardSamplingService(
         {
             await store.SaveObservationAsync(
                 new PlayerObservation(playerId, current.Username.Trim(), XpSnapshotJson.Serialize(current),
-                    validGain, now, false), previous, options.ActiveLeaseDuration, ct);
+                    validGain, now, false), previous, ct);
             _schedule.Succeeded(playerId);
         }
 

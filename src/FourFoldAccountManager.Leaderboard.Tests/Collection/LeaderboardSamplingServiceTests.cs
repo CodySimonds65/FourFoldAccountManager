@@ -291,10 +291,10 @@ public sealed class LeaderboardSamplingServiceTests
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) =>
             Task.FromResult(States.GetValueOrDefault(playerId));
         public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
-            TimeSpan activeLeaseDuration, CancellationToken ct)
+            CancellationToken ct)
         {
             var active = _active.Any(x => x.Profile.PlayerId == observation.PlayerId &&
-                x.At > observation.ObservedAtUtc - activeLeaseDuration);
+                x.At > observation.ObservedAtUtc - ILeaderboardStore.ActiveLeaseDuration);
             var currentState = States.GetValueOrDefault(observation.PlayerId);
             if (!active || currentState != expectedState)
             {

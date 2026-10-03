@@ -73,7 +73,7 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
             .Concat(active).Distinct().ToArray();
         foreach (var playerId in affectedIds.OrderBy(x => x))
             await LockPlayerAsync(playerId, ct);
-        var activeCutoff = now - TimeSpan.FromMinutes(3);
+        var activeCutoff = now - ILeaderboardStore.ActiveLeaseDuration;
         var freshBefore = affectedIds.Length == 0 ? [] : await db.InstallationProfiles.AsNoTracking()
             .Where(x => affectedIds.Contains(x.PlayerId) && x.Installation.SharingEnabled &&
                 x.IsActive && x.LastActiveAtUtc > activeCutoff)
@@ -170,22 +170,22 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
     }
 
     public async Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
-        TimeSpan activeLeaseDuration, CancellationToken ct)
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(observation);
         if (observation.PlayerId <= 0) throw new ArgumentOutOfRangeException(nameof(observation));
         if (string.IsNullOrWhiteSpace(observation.Username) || observation.Username.Length > 256)
             throw new ArgumentException("Public username is required.", nameof(observation));
         if (observation.ValidGain < 0) throw new ArgumentOutOfRangeException(nameof(observation));
-        if (activeLeaseDuration <= TimeSpan.Zero) throw new ArgumentOutOfRangeException(nameof(activeLeaseDuration));
 
         var minimalSnapshotJson = XpSnapshotJson.Normalize(observation.SnapshotJson);
         var observedAt = observation.ObservedAtUtc.ToUniversalTime();
+        var activeAfter = observedAt - ILeaderboardStore.ActiveLeaseDuration;
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await LockPlayerAsync(observation.PlayerId, ct);
         var active = await db.InstallationProfiles.AsNoTracking().AnyAsync(x =>
             x.PlayerId == observation.PlayerId && x.Installation.SharingEnabled &&
-            x.IsActive && x.LastActiveAtUtc > observedAt - activeLeaseDuration, ct);
+            x.IsActive && x.LastActiveAtUtc > activeAfter, ct);
         var state = await db.PlayerSampleStates.AsNoTracking()
             .SingleOrDefaultAsync(x => x.PlayerId == observation.PlayerId, ct);
         var unchanged = state is null

@@ -69,7 +69,7 @@ public sealed class LeaderboardRetentionWorkerTests
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) =>
             throw new NotImplementedException();
         public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
-            TimeSpan activeLeaseDuration, CancellationToken ct) =>
+            CancellationToken ct) =>
             throw new NotImplementedException();
         public Task MarkNeedsBaselineAsync(int playerId, CancellationToken ct) =>
             throw new NotImplementedException();
