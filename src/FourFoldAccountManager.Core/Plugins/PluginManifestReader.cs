@@ -21,7 +21,7 @@ public static partial class PluginManifestReader
     [GeneratedRegex("^" + CardIdPattern + "$")]
     private static partial Regex CardIdRegex();
 
-    [GeneratedRegex(@"^\d+\.\d+\.\d+$")]
+    [GeneratedRegex(@"^[0-9]+\.[0-9]+\.[0-9]+$")]
     private static partial Regex VersionRegex();
 
     // Reads and validates <folder>/plugin.json. Every rejection carries a reason an author can act on.
@@ -36,97 +36,104 @@ public static partial class PluginManifestReader
         JsonDocument document;
         try
         {
-            document = JsonDocument.Parse(File.ReadAllBytes(path));
+            document = JsonDocument.Parse(File.ReadAllText(path));
         }
         catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
         {
             return Reject("plugin.json isn't valid JSON.");
         }
 
-        using (document)
+        try
         {
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object)
+            using (document)
             {
-                return Reject("plugin.json isn't valid JSON.");
-            }
+                var root = document.RootElement;
+                if (root.ValueKind != JsonValueKind.Object)
+                {
+                    return Reject("plugin.json isn't valid JSON.");
+                }
 
-            var id = Text(root, "id");
-            if (id is null || id.Length > 64 || !IdRegex().IsMatch(id))
-            {
-                return Reject("The id must look like author.plugin-name (lowercase letters, digits, dots and dashes).");
-            }
+                var id = Text(root, "id");
+                if (id is null || id.Length > 64 || !IdRegex().IsMatch(id))
+                {
+                    return Reject("The id must look like author.plugin-name (lowercase letters, digits, dots and dashes).");
+                }
 
-            if (!InRange(Text(root, "name"), 1, 40, out var name))
-            {
-                return Reject("The name must be 1 to 40 characters.");
-            }
+                if (!InRange(Text(root, "name"), 1, 40, out var name))
+                {
+                    return Reject("The name must be 1 to 40 characters.");
+                }
 
-            if (!InRange(Text(root, "shortLabel"), 1, 8, out var shortLabel))
-            {
-                return Reject("The shortLabel must be 1 to 8 characters.");
-            }
+                if (!InRange(Text(root, "shortLabel"), 1, 8, out var shortLabel))
+                {
+                    return Reject("The shortLabel must be 1 to 8 characters.");
+                }
 
-            var version = Text(root, "version");
-            if (version is null || !VersionRegex().IsMatch(version))
-            {
-                return Reject("The version must look like 1.0.0.");
-            }
+                var version = Text(root, "version");
+                if (version is null || !VersionRegex().IsMatch(version))
+                {
+                    return Reject("The version must look like 1.0.0.");
+                }
 
-            if (!InRange(Text(root, "author"), 1, 40, out var author))
-            {
-                return Reject("The author must be 1 to 40 characters.");
-            }
+                if (!InRange(Text(root, "author"), 1, 40, out var author))
+                {
+                    return Reject("The author must be 1 to 40 characters.");
+                }
 
-            var description = Text(root, "description") ?? string.Empty;
-            if (description.Length > 200)
-            {
-                return Reject("The description must be at most 200 characters.");
-            }
+                var description = Text(root, "description") ?? string.Empty;
+                if (description.Length > 200)
+                {
+                    return Reject("The description must be at most 200 characters.");
+                }
 
-            if (!root.TryGetProperty("apiVersion", out var apiElement) || !apiElement.TryGetInt32(out var apiVersion) ||
-                apiVersion < 1)
-            {
-                return Reject("The apiVersion must be a whole number.");
-            }
+                if (!root.TryGetProperty("apiVersion", out var apiElement) || apiElement.ValueKind != JsonValueKind.Number ||
+                    !apiElement.TryGetInt32(out var apiVersion) || apiVersion < 1)
+                {
+                    return Reject("The apiVersion must be a whole number.");
+                }
 
-            if (apiVersion > SupportedApiVersion)
-            {
-                return Reject("Update FourFold to use this plugin.");
-            }
+                if (apiVersion > SupportedApiVersion)
+                {
+                    return Reject("Update FourFold to use this plugin.");
+                }
 
-            var panel = Text(root, "panel");
-            if (panel is null || !panel.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ||
-                !PluginPaths.TryResolveInside(folder, panel, out var panelPath) || !File.Exists(panelPath))
-            {
-                return Reject("The panel must be an .html file inside the plugin folder.");
-            }
+                var panel = Text(root, "panel");
+                if (panel is null || !panel.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ||
+                    !PluginPaths.TryResolveInside(folder, panel, out var panelPath) || !File.Exists(panelPath))
+                {
+                    return Reject("The panel must be an .html file inside the plugin folder.");
+                }
 
-            var icon = Text(root, "icon");
-            if (icon is not null &&
-                (!icon.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
-                 !PluginPaths.TryResolveInside(folder, icon, out var iconPath) || !File.Exists(iconPath) ||
-                 new FileInfo(iconPath).Length > MaximumIconBytes))
-            {
-                return Reject("The icon must be a .png inside the plugin folder, at most 64 KB.");
-            }
+                var icon = Text(root, "icon");
+                if (icon is not null &&
+                    (!icon.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                     !PluginPaths.TryResolveInside(folder, icon, out var iconPath) || !File.Exists(iconPath) ||
+                     new FileInfo(iconPath).Length > MaximumIconBytes))
+                {
+                    return Reject("The icon must be a .png inside the plugin folder, at most 64 KB.");
+                }
 
-            if (!TryReadSites(root, out var sites, out var siteError))
-            {
-                return Reject(siteError);
-            }
+                if (!TryReadSites(root, out var sites, out var siteError))
+                {
+                    return Reject(siteError);
+                }
 
-            var anySite = root.TryGetProperty("anySite", out var anySiteElement) &&
-                          anySiteElement.ValueKind == JsonValueKind.True;
-            if (!TryReadCards(root, out var cards, out var cardError))
-            {
-                return Reject(cardError);
-            }
+                var anySite = root.TryGetProperty("anySite", out var anySiteElement) &&
+                              anySiteElement.ValueKind == JsonValueKind.True;
+                if (!TryReadCards(root, out var cards, out var cardError))
+                {
+                    return Reject(cardError);
+                }
 
-            return new PluginManifestResult(
-                new PluginManifest(id, name, shortLabel, version, author, description, apiVersion, panel, icon,
-                    sites, anySite, cards) { Folder = folder },
-                null);
+                return new PluginManifestResult(
+                    new PluginManifest(id, name, shortLabel, version, author, description, apiVersion, panel, icon,
+                        sites, anySite, cards) { Folder = folder },
+                    null);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            return Reject("plugin.json isn't valid JSON.");
         }
     }
 
@@ -164,7 +171,8 @@ public static partial class PluginManifestReader
                 !Uri.TryCreate(item.GetString(), UriKind.Absolute, out var uri) ||
                 uri.Scheme != Uri.UriSchemeHttps || uri.AbsolutePath != "/" || uri.Query.Length > 0 ||
                 uri.Fragment.Length > 0 || uri.UserInfo.Length > 0 || uri.HostNameType != UriHostNameType.Dns ||
-                PluginNetworkHosts.IsLocalName(uri.IdnHost))
+                PluginNetworkHosts.IsLocalName(uri.IdnHost) || uri.IdnHost.EndsWith('.') ||
+                IsIpLikeHost(uri.IdnHost))
             {
                 return false;
             }
@@ -180,6 +188,12 @@ public static partial class PluginManifestReader
 
         sites = Array.AsReadOnly(result.Distinct().ToArray());
         return true;
+    }
+
+    private static bool IsIpLikeHost(string host)
+    {
+        var lastLabel = host.Split('.').LastOrDefault() ?? string.Empty;
+        return lastLabel.Length > 0 && lastLabel.All(c => c >= '0' && c <= '9');
     }
 
     private static bool TryReadCards(JsonElement root, out IReadOnlyList<PluginCardManifest> cards, out string error)
@@ -231,7 +245,10 @@ public static partial class PluginManifestReader
 // Host-name checks shared by the manifest reader and the network policy.
 public static class PluginNetworkHosts
 {
-    public static bool IsLocalName(string host) =>
-        host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
-        host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
+    public static bool IsLocalName(string host)
+    {
+        var trimmed = host.TrimEnd('.');
+        return trimmed.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
+    }
 }

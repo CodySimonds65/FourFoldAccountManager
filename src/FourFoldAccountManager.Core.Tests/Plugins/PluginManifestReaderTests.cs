@@ -7,14 +7,36 @@ namespace FourFoldAccountManager.Core.Tests.Plugins;
 public sealed class PluginManifestReaderTests : IDisposable
 {
     private readonly string _folder = Path.Combine(Path.GetTempPath(), $"fourfold-plugin-{Guid.NewGuid():N}");
+    private readonly string _outsideFile;
+    private readonly string _evilFolder;
 
     public PluginManifestReaderTests()
     {
         Directory.CreateDirectory(_folder);
         File.WriteAllText(Path.Combine(_folder, "index.html"), "<!doctype html>");
+
+        var parentFolder = Path.GetDirectoryName(_folder)!;
+        var pluginFolderName = Path.GetFileName(_folder);
+        _outsideFile = Path.Combine(parentFolder, $"outside-{Guid.NewGuid():N}.html");
+        _evilFolder = Path.Combine(parentFolder, $"{pluginFolderName}-evil");
+
+        File.WriteAllText(_outsideFile, "<!doctype html>");
+        Directory.CreateDirectory(_evilFolder);
+        File.WriteAllText(Path.Combine(_evilFolder, "index.html"), "<!doctype html>");
     }
 
-    public void Dispose() => Directory.Delete(_folder, recursive: true);
+    public void Dispose()
+    {
+        Directory.Delete(_folder, recursive: true);
+        if (File.Exists(_outsideFile))
+        {
+            File.Delete(_outsideFile);
+        }
+        if (Directory.Exists(_evilFolder))
+        {
+            Directory.Delete(_evilFolder, recursive: true);
+        }
+    }
 
     private PluginManifestResult Read(string json)
     {
@@ -52,7 +74,7 @@ public sealed class PluginManifestReaderTests : IDisposable
     [InlineData("\"id\": \"cody..goal\"")]
     [InlineData("\"id\": \"timer\"")]
     [InlineData("\"apiVersion\": 2")]
-    [InlineData("\"panel\": \"../outside.html\"")]
+    [InlineData("\"apiVersion\": \"1\"")]
     [InlineData("\"panel\": \"missing.html\"")]
     [InlineData("\"panel\": \"plugin.json\"")]
     [InlineData("\"shortLabel\": \"Far too long\"")]
@@ -62,6 +84,9 @@ public sealed class PluginManifestReaderTests : IDisposable
     [InlineData("\"sites\": [\"https://192.168.1.10\"]")]
     [InlineData("\"sites\": [\"https://localhost\"]")]
     [InlineData("\"sites\": [\"https://app.localhost\"]")]
+    [InlineData("\"sites\": [\"https://localhost.\"]")]
+    [InlineData("\"sites\": [\"https://127.0.0.1.\"]")]
+    [InlineData("\"sites\": [\"https://app.localhost.\"]")]
     [InlineData("\"cards\": [{ \"id\": \"Goal\", \"name\": \"Goal\", \"scope\": \"account\" }]")]
     [InlineData("\"cards\": [{ \"id\": \"goal\", \"name\": \"Goal\", \"scope\": \"panel\" }]")]
     [InlineData("\"cards\": [{ \"id\": \"a\", \"name\": \"A\", \"scope\": \"global\" }, { \"id\": \"a\", \"name\": \"B\", \"scope\": \"global\" }]")]
@@ -79,5 +104,25 @@ public sealed class PluginManifestReaderTests : IDisposable
     {
         Assert.Equal("plugin.json is missing.", PluginManifestReader.Read(_folder).Error);
         Assert.Equal("plugin.json isn't valid JSON.", Read("{ not json").Error);
+    }
+
+    [Fact]
+    public void AManifestReferencingAnOutsideFileIsRejected()
+    {
+        var relativePath = Path.Combine("..", Path.GetFileName(_outsideFile));
+        var result = Read(Manifest($", \"panel\": \"{relativePath.Replace("\\", "/")}\""));
+
+        Assert.Null(result.Manifest);
+        Assert.False(string.IsNullOrWhiteSpace(result.Error));
+    }
+
+    [Fact]
+    public void AManifestReferencingASiblingFolderIsRejected()
+    {
+        var folderName = Path.GetFileName(_evilFolder);
+        var result = Read(Manifest($", \"panel\": \"../{folderName}/index.html\""));
+
+        Assert.Null(result.Manifest);
+        Assert.False(string.IsNullOrWhiteSpace(result.Error));
     }
 }
