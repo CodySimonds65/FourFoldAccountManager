@@ -186,74 +186,25 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="MenuItem">
-                    <Grid>
-                        <Border x:Name="ItemChrome"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="5"
-                                Padding="{TemplateBinding Padding}"
-                                SnapsToDevicePixels="True">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <ContentPresenter ContentSource="Header"
-                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
-                                                  RecognizesAccessKey="True" />
-                                <Path x:Name="SubmenuArrow"
-                                      Grid.Column="1"
-                                      Data="M0,0 L4,4 L0,8"
-                                      Stroke="{DynamicResource Brush.TextMuted}"
-                                      StrokeThickness="1.4"
-                                      Margin="14,0,2,0"
-                                      VerticalAlignment="Center"
-                                      Visibility="Collapsed" />
-                            </Grid>
-                        </Border>
-                        <Popup x:Name="PART_Popup"
-                               Placement="Right"
-                               HorizontalOffset="-2"
-                               VerticalOffset="-4"
-                               AllowsTransparency="True"
-                               Focusable="False"
-                               IsOpen="{Binding IsSubmenuOpen, RelativeSource={RelativeSource TemplatedParent}}"
-                               PopupAnimation="Fade">
-                            <Border Background="{DynamicResource Brush.SurfaceRaised}"
-                                    BorderBrush="{DynamicResource Brush.BorderStrong}"
-                                    BorderThickness="1"
-                                    CornerRadius="8"
-                                    Padding="4">
-                                <ScrollViewer CanContentScroll="True"
-                                              HorizontalScrollBarVisibility="Disabled"
-                                              VerticalScrollBarVisibility="Auto">
-                                    <ItemsPresenter Grid.IsSharedSizeScope="True"
-                                                    KeyboardNavigation.DirectionalNavigation="Cycle"
-                                                    KeyboardNavigation.TabNavigation="Cycle" />
-                                </ScrollViewer>
-                            </Border>
-                        </Popup>
-                    </Grid>
+                    <Border x:Name="ItemChrome"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="5"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter ContentSource="Header"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                          RecognizesAccessKey="True" />
+                    </Border>
                     <ControlTemplate.Triggers>
-                        <Trigger Property="Role" Value="TopLevelHeader">
-                            <Setter TargetName="SubmenuArrow" Property="Visibility" Value="Visible" />
-                        </Trigger>
-                        <Trigger Property="Role" Value="SubmenuHeader">
-                            <Setter TargetName="SubmenuArrow" Property="Visibility" Value="Visible" />
-                        </Trigger>
                         <Trigger Property="IsHighlighted" Value="True">
                             <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
                             <Setter Property="Foreground" Value="{DynamicResource Brush.AccentGold}" />
                         </Trigger>
                         <Trigger Property="IsKeyboardFocused" Value="True">
                             <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource Brush.AccentGold}" />
-                        </Trigger>
-                        <Trigger Property="IsSubmenuOpen" Value="True">
-                            <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource Brush.SurfaceHover}" />
-                            <Setter TargetName="ItemChrome" Property="BorderBrush" Value="{DynamicResource Brush.AccentGold}" />
-                            <Setter Property="Foreground" Value="{DynamicResource Brush.AccentGold}" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="ItemChrome" Property="Background" Value="{DynamicResource Brush.AccentSoft}" />
