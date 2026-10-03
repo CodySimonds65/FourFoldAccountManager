@@ -15,9 +15,11 @@ The page runs in its own sandboxed browser. It talks to FourFold only through `w
 
 The page keeps running while its panel is closed, so its cards stay up to date. It stops when the user switches the plugin off or closes FourFold. It runs whenever the plugin is switched on: when FourFold starts, on **Reload**, and on every file save in the dev folder. Keep start-up work light.
 
-The panel is narrow: about 250 px wide in the main window, and as wide as the window allows in the pop-out tools window. Design a single narrow column.
+The panel is narrow: about 250 px wide in the main window, and as wide as the window allows in the pop-out tools window. Design a single narrow column. FourFold draws a 24-pixel bar at the top of the panel, above your page. It shows the plugin's name, its author and a COMMUNITY tag (DEV for a plugin in the dev folder), and a long name or author is shortened with an ellipsis. Your page gets the rest of the panel.
 
 ## Quick start
+
+Users get plugins from the plugin hub: they open the plugin list (the wrench in the plugin strip) and choose **Plugin hub**. The dev folder is for authors, to try a plugin before it is submitted. To submit one, see [Getting on the hub](#getting-on-the-hub).
 
 1. Open the plugin list (the wrench in the plugin strip).
 2. Switch on **Developer mode**, at the bottom of the list.
@@ -37,7 +39,7 @@ Every folder directly inside `dev-plugins` is one plugin.
 - **F5** reloads the plugin's page.
 - **Developer mode off** stops every dev plugin and removes it from the strip. Order and on/off state are kept.
 
-Dev plugins are not reviewed, and FourFold honors their `plugin.json` as written. Right now the dev folder is the only place a community plugin can run.
+Dev plugins are not reviewed, and FourFold honors their `plugin.json` as written. While developer mode is on, a dev plugin runs instead of an installed hub plugin with the same id.
 
 ## plugin.json
 
@@ -71,8 +73,8 @@ A `plugin.json` that breaks any rule below is rejected: the plugin doesn't load,
 | `apiVersion` | yes | A whole number. FourFold supports `1`. A higher number is rejected with "Update FourFold to use this plugin." |
 | `panel` | yes | Path to an existing `.html` file inside the plugin folder. Forward slashes only. |
 | `icon` | no | Path to a `.png` file inside the plugin folder, at most 256 by 256 pixels and 64 KB. Forward slashes only. Without one, the strip shows a default icon. |
-| `sites` | no | At most 10 websites the plugin may contact. Each is an origin: `https://host` or `https://host:port`, with no path, query or `user@`. The host must be a DNS name: no IP address, no trailing dot, and no name that only works on the local network. `localhost`, `.localhost`, `.local`, `.internal`, `.lan` and `.home.arpa` names are refused, and so is a single-label name such as `router`. A subdomain is its own site, so `https://example.com` doesn't cover `https://www.example.com`. |
-| `anySite` | no | `true` lets the plugin contact any `https` site. Default `false`. FourFold honors it for plugins in the dev folder. |
+| `sites` | no | At most 10 websites the plugin may contact. Each is an origin: `https://host` or `https://host:port`, with no path, query or `user@`. The host must be a DNS name: no IP address, no trailing dot, and no name that only works on the local network. `localhost`, `.localhost`, `.local`, `.internal`, `.lan` and `.home.arpa` names are refused, and so is a single-label name such as `router`. A subdomain is its own site, so `https://example.com` doesn't cover `https://www.example.com`. An international host name is fine: FourFold converts it to its `xn--` form, and that form is what it shows users. After the conversion the host can contain only letters, digits, dots and dashes, so a name with an underscore or any other punctuation is refused. |
+| `anySite` | no | `true` lets the plugin contact any `https` site. Default `false`. FourFold honors it for plugins in the dev folder. A plugin from the plugin hub gets it only when the maintainers also clear it there. See [Getting on the hub](#getting-on-the-hub). |
 | `cards` | no | At most 6 overlay cards. See [Cards](#cards). |
 
 Each entry in `cards`:
@@ -177,7 +179,7 @@ console.log(response.status, response.text.length);
 
 `fourfold.http.fetch(url, { method, headers, body })` returns `{ status, headers, text }`. FourFold makes the request, not your page, so it isn't subject to CORS. Only `url` is required.
 
-- **Where:** a site in your `sites`, or any `https` site if the plugin has `anySite`. The host name must match exactly. Plain `http` never works. A site on the local network never works, and FourFold also checks the addresses the host name resolves to.
+- **Where:** a site in your `sites`, or any `https` site if the plugin has `anySite` and FourFold honors it. The host name must match exactly. Plain `http` never works. A site on the local network never works, and FourFold also checks the addresses the host name resolves to.
 - **Method:** `GET` (default) or `POST`.
 - **`body`:** must be a string, so `JSON.stringify` an object yourself. A body that isn't a string is sent empty, and `body` is ignored for `GET`. It is sent as UTF-8 with a `text/plain` content type unless you set `Content-Type` in `headers`.
 - **`headers`:** an object of strings. A name must be a valid header name, and a value must be printable ASCII, or the call fails with `invalid-argument`. `Cookie`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Proxy-*` and `Sec-*` are dropped. FourFold sends `User-Agent: FourFold-Plugin/1` unless you set your own.
@@ -194,9 +196,10 @@ button.addEventListener('click', () => {
 });
 ```
 
-`fourfold.openExternal(url)` opens an `https` link in the user's default browser.
+`fourfold.openExternal(url)` opens an `https` link in the user's default browser. The example works because the `plugin.json` above declares `https://wiki.example.com`.
 
-- The URL must be `https`, with no `user@`, and not `localhost`, a `.localhost`, `.local`, `.internal`, `.lan` or `.home.arpa` name, a single-label name such as `router`, or a local network address (`invalid-argument`).
+- The URL must be `https`, with no `user@`, and not `localhost`, a `.localhost`, `.local`, `.internal`, `.lan` or `.home.arpa` name, a single-label name such as `router`, or a local network address. A host name that can't be converted to a real host name fails too (`invalid-argument`).
+- The link must be on one of the plugin's `sites`, with the same host and port, or on any public host if the plugin has `anySite` and FourFold honors it. The path and query can be anything. A link to any other site fails with `site-not-allowed`.
 - It works only while the plugin's panel is showing, and only in response to a click (`unavailable`).
 - At most one link every 2 seconds (`limit-exceeded`).
 
@@ -259,7 +262,7 @@ body { background: var(--ff-surface); color: var(--ff-text); }
 |---|---|
 | `invalid-argument` | A parameter is missing or wrong: an unknown account id, a missing or bad key, URL, header or method, control characters or a `progress` outside 0 to 1 in a card, a method FourFold doesn't have. |
 | `not-declared` | `cards.set` or `cards.clear` for a card id that isn't in `plugin.json`. |
-| `site-not-allowed` | `http.fetch` to a site that isn't allowed: not in `sites`, not `https`, or on the local network. This includes a redirect to such a site. |
+| `site-not-allowed` | `http.fetch` to a site that isn't allowed: not in `sites`, not `https`, or on the local network. This includes a redirect to such a site. `openExternal` to a site the plugin didn't declare also gets this code. |
 | `limit-exceeded` | A size, rate or count limit. See the table below. |
 | `unavailable` | FourFold couldn't do it right now: storage can't be read, a web request failed or took longer than 15 seconds, `openExternal` with no click or no panel showing, or an unexpected failure. |
 
@@ -307,7 +310,7 @@ Every response carries a content security policy. For a plugin that declares `ht
 default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://example.com; connect-src 'self' https://example.com wss://example.com; frame-src 'none'; worker-src 'none'; webrtc 'block'; object-src 'none'; base-uri 'none'; form-action 'none'
 ```
 
-With `anySite`, `img-src` and `connect-src` accept `https:` in place of the declared sites. WebSockets still need a declared site. The developer tools console may warn about an unknown `webrtc` directive in this policy. It is harmless.
+When FourFold honors `anySite`, `img-src` and `connect-src` accept `https:` in place of the declared sites. WebSockets still need a declared site. The developer tools console may warn about an unknown `webrtc` directive in this policy. It is harmless.
 
 What that means for you:
 
@@ -393,4 +396,51 @@ If the user switches the plugin off in the plugin list, its cards are hidden eve
 
 ## Getting on the hub
 
-Publishing to the plugin hub, and review by FourFold's maintainers, is coming.
+FourFold installs plugins only from its plugin hub, and its maintainers review every plugin before it is listed.
+The hub is a GitHub repository:
+[FourFoldAccountManager-plugin-hub](https://github.com/CodySimonds65/FourFoldAccountManager-plugin-hub).
+
+1. Put your plugin in a public GitHub repository, at the root or in a folder.
+2. Test the exact commit you want listed, with developer mode on.
+3. Open a pull request on the hub that adds `plugins/<your plugin id>.json`:
+
+   ```json
+   {
+     "repository": "https://github.com/you/your-plugin",
+     "commit": "0123456789abcdef0123456789abcdef01234567"
+   }
+   ```
+
+   `commit` is the full 40-character commit in lowercase. Add `"path"` when the plugin is in a folder.
+4. A check validates your `plugin.json` with the same rules FourFold uses, builds the package, and scans your
+   repository for secrets. Then a maintainer reads the code. When they merge, the plugin is on the hub.
+
+To update, raise `version` in `plugin.json` and open a pull request that changes `commit`. Users get the new
+version automatically once it is merged: FourFold checks the hub when it starts and every 6 hours.
+
+A `version` is three numbers joined by dots, such as `1.4.0`, and each number can be at most 2147483647. The check
+refuses a version it can't compare, and an update must raise it, comparing number by number (`1.10.0` is higher than
+`1.9.0`).
+
+What goes into the package: `plugin.json` and the file types FourFold serves (see
+[Where your page runs](#where-your-page-runs)), at most 500 files and 5 MB. Every other file in your repository is
+left out, such as `README.md` and `LICENSE`, and so is any file or folder whose name starts with a dot. Your panel
+page, and everything it loads, must be in the package, so none of them can start with a dot. The files that go in
+must also unpack on Windows:
+
+- A file or folder name can't contain `< > " | ? *` or a control character, and can't end in a dot or a space. A
+  file with a `\` or a `:` in its path is left out.
+- Two files can't differ only by capital letters.
+- A path can have at most 64 parts, counting the file's name.
+
+A user can uninstall a plugin, and that deletes the plugin's saved data. If the maintainers remove a plugin from the
+hub, FourFold stops it for everyone who has it and shows them why. Its saved data is kept until they uninstall it.
+
+**Never put a secret key in a plugin.** Everything in a plugin is public and runs on users' machines. A plugin that
+needs a secret key can't be listed.
+
+A plugin gets access to any website only when it asks for it in `plugin.json` **and** a maintainer clears it on the
+hub. Ask in your pull request and say why. Users see "Can contact any website" next to a cleared plugin in the hub
+before they install it. For every other plugin, the hub's **Details** list the sites it declares.
+
+The hub's [README](https://github.com/CodySimonds65/FourFoldAccountManager-plugin-hub#readme) has the full rules.
