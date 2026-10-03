@@ -4,7 +4,8 @@ namespace FourFoldAccountManager.Core.Plugins;
 
 public static class PluginLayoutPolicy
 {
-    public const int MaximumIds = 64;
+    // Room for the built-in plugins plus every hub plugin a user is likely to install.
+    public const int MaximumIds = 256;
 
     // Known plugins in saved order; a known plugin missing from the saved order goes last, in the order given.
     public static IReadOnlyList<PluginDescriptor> Ordered(PanelSettings settings, IReadOnlyList<PluginDescriptor> known)
@@ -53,26 +54,35 @@ public static class PluginLayoutPolicy
         return !enabled && settings.OpenPlugin == id ? next with { PluginsSidebarExpanded = false } : next;
     }
 
-    // Moves a plugin to index among the strip's icons (switched-on plugins, in order). Switched-off plugins keep their
-    // places, and unknown saved ids stay at the end.
+    // Moves a plugin to index among the strip's icons (known, switched-on plugins, in order). Every other saved id
+    // keeps its slot: switched-off plugins, and plugins that aren't loaded right now.
     public static PanelSettings WithMoved(
         PanelSettings settings, IReadOnlyList<PluginDescriptor> known, string id, int index)
     {
-        var full = Ordered(settings, known).Select(plugin => plugin.Id).ToList();
-        var strip = full.Where(other => IsEnabled(settings, other)).ToList();
+        var knownIds = known.Select(plugin => plugin.Id).ToHashSet(StringComparer.Ordinal);
+        var full = settings.PluginOrder
+            .Concat(known.Select(plugin => plugin.Id)
+                .Where(knownId => !settings.PluginOrder.Contains(knownId, StringComparer.Ordinal)))
+            .ToList();
+        bool OnStrip(string other) => knownIds.Contains(other) && IsEnabled(settings, other);
+
+        var strip = full.Where(OnStrip).ToList();
         if (!strip.Remove(id))
         {
             return settings;
         }
 
         strip.Insert(Math.Clamp(index, 0, strip.Count), id);
+        var order = new List<string>(full.Count);
         var nextStripId = 0;
-        var reordered = full.Select(other => IsEnabled(settings, other) ? strip[nextStripId++] : other);
-        var unknown = settings.PluginOrder.Where(saved => known.All(plugin => plugin.Id != saved));
-        var order = reordered.Concat(unknown).ToArray();
+        foreach (var other in full)
+        {
+            order.Add(OnStrip(other) ? strip[nextStripId++] : other);
+        }
+
         return order.SequenceEqual(settings.PluginOrder)
             ? settings
-            : settings with { PluginOrder = Array.AsReadOnly(order) };
+            : settings with { PluginOrder = Array.AsReadOnly(order.ToArray()) };
     }
 
     public static PanelSettings WithOpened(PanelSettings settings, string id) =>
@@ -83,7 +93,7 @@ public static class PluginLayoutPolicy
     public static PanelSettings WithClosed(PanelSettings settings) =>
         settings.PluginsSidebarExpanded ? settings with { PluginsSidebarExpanded = false } : settings;
 
-    // Load-time cleanup: blank ids and repeats go (the first wins), and at most 64 ids stay.
+    // Load-time cleanup: blank ids and repeats go (the first wins), and at most 256 ids stay.
     public static IReadOnlyList<string> CleanIds(IReadOnlyList<string>? ids) =>
         Array.AsReadOnly((ids ?? Array.Empty<string>())
             .Where(id => !string.IsNullOrWhiteSpace(id))

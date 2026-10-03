@@ -90,4 +90,56 @@
             </Grid>
         </Viewbox>
     </DataTemplate>
+    <DataTemplate DataType="{x:Type views:PluginCardData}">
+        <Viewbox Stretch="Uniform" StretchDirection="DownOnly" HorizontalAlignment="Left" VerticalAlignment="Top">
+            <StackPanel x:Name="CardBody" Width="204">
+                <TextBlock x:Name="AccountText" Text="{Binding AccountLabel}" FontSize="10" FontWeight="SemiBold"
+                           Foreground="{DynamicResource Brush.TextSecondary}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding Title}" FontSize="12" FontWeight="Bold" Margin="0,0,0,4"
+                           Foreground="{DynamicResource Brush.AccentGold}" TextTrimming="CharacterEllipsis" />
+                <TextBlock x:Name="EmptyText" Text="No data yet" FontSize="11" Visibility="Collapsed"
+                           Foreground="{DynamicResource Brush.TextMuted}" />
+                <ItemsControl ItemsSource="{Binding Rows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,1,0,0">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Label}" FontSize="11" TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource Brush.TextMuted}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="11" Margin="8,0,0,0"
+                                               Typography.NumeralAlignment="Tabular"
+                                               TextTrimming="CharacterEllipsis" MaxWidth="120"
+                                               Foreground="{DynamicResource Brush.TextPrimary}" />
+                                </Grid>
+                                <ProgressBar x:Name="Bar" Minimum="0" Maximum="1" Value="{Binding Progress, Mode=OneWay, TargetNullValue=0}"
+                                             Height="3" Margin="0,2,0,2" BorderThickness="0" Visibility="Collapsed"
+                                             Foreground="{DynamicResource Brush.AccentGold}"
+                                             Background="{DynamicResource Brush.BorderStrong}" />
+                            </StackPanel>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding HasProgress}" Value="True">
+                                    <Setter TargetName="Bar" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Viewbox>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding HasAccountLabel}" Value="False">
+                <Setter TargetName="AccountText" Property="Visibility" Value="Collapsed" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsEmpty}" Value="True">
+                <Setter TargetName="EmptyText" Property="Visibility" Value="Visible" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding IsStale}" Value="True">
+                <Setter TargetName="CardBody" Property="Opacity" Value="0.55" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
 </ResourceDictionary>

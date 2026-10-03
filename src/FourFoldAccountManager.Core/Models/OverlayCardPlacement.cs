@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace FourFoldAccountManager.Core.Models;
 
-public readonly record struct OverlayCardKey(OverlayAddOnKind Kind, Guid? AccountId);
+public readonly record struct OverlayCardKey(OverlayAddOnKind Kind, Guid? AccountId, string? PluginCard = null);
 
 public sealed record OverlayCardPlacement(
     OverlayAddOnKind Kind,
@@ -11,7 +11,11 @@ public sealed record OverlayCardPlacement(
     OverlayBounds? Bounds)
 {
     [JsonIgnore]
-    public OverlayCardKey Key => new(Kind, AccountId);
+    public OverlayCardKey Key => new(Kind, AccountId, PluginCard);
+
+    // "<pluginId>/<cardId>" when Kind is Plugin; null for FourFold's own cards.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? PluginCard { get; init; }
 
     // Shown as its own floating window instead of over the game. Only meaningful while Enabled.
     public bool IsFloating { get; init; }
