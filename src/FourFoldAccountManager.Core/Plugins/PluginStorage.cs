@@ -3,8 +3,8 @@ using FourFoldAccountManager.Core.Data;
 
 namespace FourFoldAccountManager.Core.Plugins;
 
-// One plugin's private key-value store: a small JSON file, saved atomically. A file that can't be read loads as
-// empty, so a damaged store never stops the plugin or the app.
+// One plugin's private key-value store: a small JSON file, saved atomically. A missing or corrupt file loads as
+// empty; a file that is locked or unreadable at the moment rejects the call and is never overwritten.
 public sealed class PluginStorage(string filePath)
 {
     public const int MaximumBytes = 256 * 1024;
