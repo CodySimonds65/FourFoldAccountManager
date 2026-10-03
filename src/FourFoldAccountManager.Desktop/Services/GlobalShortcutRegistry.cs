@@ -1,4 +1,5 @@
 using FourFoldAccountManager.Core.Models;
+using FourFoldAccountManager.Core.Plugins;
 
 namespace FourFoldAccountManager.Desktop.Services;
 
@@ -13,7 +14,7 @@ internal sealed record ShortcutApplyResult(bool Saved, IReadOnlyList<GlobalShort
 
 // Registers every app shortcut action with Windows, maps WM_HOTKEY ids back to actions, and tracks which
 // actions are live. The coordinator it wraps identifies registrations by chord, so this class decides which
-// action owns a chord.
+// action owns a chord. Actions owned by a switched-off plugin are treated as unbound: never registered, resolved, or reported as live.
 internal sealed class GlobalShortcutRegistry : IDisposable
 {
     private readonly GlobalHotkeyRegistrationCoordinator _coordinator;
@@ -78,7 +79,9 @@ internal sealed class GlobalShortcutRegistry : IDisposable
         var changed = GlobalShortcutActions.All
             .Where(action => GlobalShortcutActions.GetChord(current, action) != GlobalShortcutActions.GetChord(next, action))
             .ToArray();
+        // A switched-off plugin's action saves its new keys without registering them.
         var atomic = changed
+            .Where(action => !PluginLayoutPolicy.IsShortcutSuppressed(next, action))
             .Where(action => _available.Contains(action) || !IsChordOwnedByAnAvailableAction(current, action))
             .ToArray();
         var replacements = atomic
@@ -97,8 +100,25 @@ internal sealed class GlobalShortcutRegistry : IDisposable
         }
 
         RegisterUnavailable(next);
-        var stillUnavailable = changed.Where(action => !_available.Contains(action)).ToArray();
+        var stillUnavailable = changed
+            .Where(action => !_available.Contains(action) && !PluginLayoutPolicy.IsShortcutSuppressed(next, action))
+            .ToArray();
         return new ShortcutApplyResult(true, stillUnavailable);
+    }
+
+    // After a plugin is switched on or off: unregisters the keys of switched-off plugins and registers the rest.
+    public void ApplyPluginStates(PanelSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        foreach (var action in _available
+                     .Where(action => PluginLayoutPolicy.IsShortcutSuppressed(settings, action))
+                     .ToArray())
+        {
+            _coordinator.Release(GlobalShortcutActions.GetChord(settings, action));
+            _available.Remove(action);
+        }
+
+        RegisterUnavailable(settings);
     }
 
     private bool IsChordOwnedByAnAvailableAction(PanelSettings settings, GlobalShortcutAction action)
@@ -114,7 +134,10 @@ internal sealed class GlobalShortcutRegistry : IDisposable
     // whenever their keys are not already owned by an available action.
     private void RegisterUnavailable(PanelSettings settings)
     {
-        foreach (var action in GlobalShortcutActions.All.Where(action => !_available.Contains(action)).ToArray())
+        foreach (var action in GlobalShortcutActions.All
+                     .Where(action => !_available.Contains(action) &&
+                                      !PluginLayoutPolicy.IsShortcutSuppressed(settings, action))
+                     .ToArray())
         {
             var chord = GlobalShortcutActions.GetChord(settings, action);
             var claimed = GlobalShortcutActions.All.Any(other =>
