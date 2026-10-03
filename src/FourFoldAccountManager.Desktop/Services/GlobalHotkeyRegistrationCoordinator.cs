@@ -82,6 +82,23 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
         }
     }
 
+    // Unregisters the live registration for chord, if there is one, so its keys go back to the game.
+    public void Release(GlobalHotkeyChord chord)
+    {
+        ArgumentNullException.ThrowIfNull(chord);
+        lock (_sync)
+        {
+            if (_disposed || FindActiveId(chord) is not int id)
+            {
+                return;
+            }
+
+            _activeRegistrations.Remove(id);
+            _registeredIds.Remove(id);
+            _registrar.Unregister(id);
+        }
+    }
+
     public async Task<bool> TryReplaceAsync(
         IReadOnlyCollection<GlobalHotkeyShortcutChange> changes,
         Func<Task> persist)
