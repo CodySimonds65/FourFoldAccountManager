@@ -326,6 +326,96 @@ public sealed class PluginHttpFetcherTests
         Assert.Equal(60, requestCount);
     }
 
+    [Fact]
+    public async Task PluginHeadersAreNotSentAgainAfterReturningToTheOriginalHost()
+    {
+        var capturedHeaders = new List<(Uri, bool hasAuth)>();
+        var handler = new FakeHandler(request =>
+        {
+            var hasAuth = request.Headers.Contains("Authorization");
+            capturedHeaders.Add((request.RequestUri!, hasAuth));
+
+            if (request.RequestUri!.Host == "wiki.example.com" && request.RequestUri.AbsolutePath == "/start")
+            {
+                return Redirect("https://cdn.example.net/x");
+            }
+
+            if (request.RequestUri!.Host == "cdn.example.net")
+            {
+                return Redirect("https://wiki.example.com/back");
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") };
+        });
+        using var fetcher = new PluginHttpFetcher(MultiSiteManifest, PluginTrust.Developer, handler);
+
+        await fetcher.FetchAsync(new PluginHttpRequest("https://wiki.example.com/start", "GET",
+            new Dictionary<string, string> { ["Authorization"] = "Bearer t" }, null));
+
+        Assert.Equal(3, capturedHeaders.Count);
+        Assert.True(capturedHeaders[0].hasAuth, "First request (wiki) should have Authorization");
+        Assert.False(capturedHeaders[1].hasAuth, "Second request (cdn) should not have Authorization");
+        Assert.False(capturedHeaders[2].hasAuth, "Third request (back to wiki) should not have Authorization");
+    }
+
+    [Fact]
+    public async Task FramingHeadersFromThePluginAreIgnoredOnAPost()
+    {
+        HttpRequestMessage? sent = null;
+        long? contentLength = null;
+        var handler = new FakeHandler(request =>
+        {
+            sent = request;
+            contentLength = sent.Content?.Headers.ContentLength;
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        using var fetcher = new PluginHttpFetcher(Manifest, PluginTrust.Developer, handler);
+
+        await fetcher.FetchAsync(new PluginHttpRequest("https://wiki.example.com/", "POST",
+            new Dictionary<string, string>
+            {
+                ["Content-Length"] = "999",
+                ["Transfer-Encoding"] = "chunked",
+                ["Connection"] = "close",
+                ["X-Keep"] = "1"
+            }, "hello"));
+
+        Assert.NotNull(sent);
+        Assert.Equal(5, contentLength);
+        Assert.True(sent.Headers.TransferEncodingChunked != true);
+        Assert.False(sent.Headers.Contains("Transfer-Encoding"));
+        Assert.False(sent.Headers.Contains("Connection"));
+        Assert.Equal("1", sent.Headers.GetValues("X-Keep").Single());
+    }
+
+    [Fact]
+    public async Task AnInvalidRequestDoesNotUseTheRateLimit()
+    {
+        var clock = new FakeClock();
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        using var fetcher = new PluginHttpFetcher(Manifest, PluginTrust.Developer, handler, clock);
+
+        // Make 60 invalid requests (invalid header values) — none should consume rate slots
+        for (var i = 0; i < 60; i++)
+        {
+            await Assert.ThrowsAsync<PluginApiException>(
+                () => fetcher.FetchAsync(new PluginHttpRequest("https://wiki.example.com/", "GET",
+                    new Dictionary<string, string> { ["X-Test"] = "v\r\nCookie: x" }, null)));
+        }
+
+        // Now make 60 valid requests — all should succeed
+        for (var i = 0; i < 60; i++)
+        {
+            await fetcher.FetchAsync(Get("https://wiki.example.com/"));
+        }
+
+        // The 61st valid request should hit the rate limit
+        var error = await Assert.ThrowsAsync<PluginApiException>(
+            () => fetcher.FetchAsync(Get("https://wiki.example.com/")));
+
+        Assert.Equal("limit-exceeded", error.Code);
+    }
+
     private static HttpResponseMessage Redirect(string location) =>
         new(HttpStatusCode.Found) { Headers = { Location = new Uri(location, UriKind.RelativeOrAbsolute) } };
 
@@ -369,7 +459,7 @@ public sealed class PluginHttpFetcherTests
     {
         protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
         {
-            throw new IOException("broken");
+            throw new InvalidDataException("broken");
         }
 
         protected override bool TryComputeLength(out long length)
