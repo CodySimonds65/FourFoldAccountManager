@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using FourFoldAccountManager.Core.Data;
 
@@ -7,13 +8,30 @@ namespace FourFoldAccountManager.Core.Plugins.Hub;
 // catalog. Nothing here talks to the network or to a running plugin.
 public sealed class HubStore(LocalDataPaths paths)
 {
-    public string FolderOf(string id) => Path.Combine(paths.HubPluginsRoot, id);
+    // Git's null id. A record rebuilt from the folders on disk can't know which commit they hold, so it names this
+    // one: it passes the commit check, never equals a commit the catalog lists (so it never earns any-website trust),
+    // and the next hub check sees a different commit and installs the plugin again, cleanly.
+    public static readonly string UnknownCommit = new('0', 40);
 
-    // False when a crash mid-install left the record without its files; the next hub check installs it again.
-    public bool IsIntact(string id) => File.Exists(Path.Combine(FolderOf(id), "plugin.json"));
+    private const string OldPrefix = ".old-";
 
-    // No file means nothing is installed, and a file that isn't JSON reads the same way. A file that exists but can't
-    // be opened throws, so a locked record is never mistaken for "nothing installed" and then written over.
+    // Commit and uninstall each read the record, wait, then write it, so two at once would lose one of the writes.
+    private readonly SemaphoreSlim _gate = new(1, 1);
+
+    // Throws for anything but a plugin id, so no caller can point this (or the recursive delete in UninstallAsync) at
+    // a folder outside the plugins folder.
+    public string FolderOf(string id) => PluginManifestReader.IsValidId(id)
+        ? Path.Combine(paths.HubPluginsRoot, id)
+        : throw new ArgumentException("That isn't a plugin id.", nameof(id));
+
+    // False when the folder is missing or broken: a crash mid-install left the record without its files, or a file the
+    // plugin needs is gone. The next hub check installs it again.
+    public bool IsIntact(string id) => PluginManifestReader.Read(FolderOf(id)).Manifest is not null;
+
+    // No file means nothing is installed. A file that can't be read as a record (not JSON, empty, one wrong entry) is
+    // rebuilt from the plugin folders on disk, so a damaged record never makes the next install forget the others. A
+    // file that exists but can't be opened throws (IOException, or UnauthorizedAccessException when access is denied),
+    // so a locked record is never mistaken for "nothing installed" and then written over.
     public IReadOnlyList<HubInstalled> LoadInstalled()
     {
         if (!File.Exists(paths.HubInstalledFilePath))
@@ -29,15 +47,17 @@ public sealed class HubStore(LocalDataPaths paths)
         }
         catch (JsonException)
         {
-            return [];
+            records = null;
         }
 
-        return (records ?? [])
-            .Where(record => record is not null && PluginManifestReader.IsValidId(record.Id) &&
-                             HubCatalogJson.IsCommit(record.Commit))
-            .Select(record => record!)
-            .DistinctBy(record => record.Id)
-            .ToArray();
+        return records is null
+            ? RebuildFromFolders()
+            : records
+                .Where(record => record is not null && PluginManifestReader.IsValidId(record.Id) &&
+                                 HubCatalogJson.IsCommit(record.Commit))
+                .Select(record => record!)
+                .DistinctBy(record => record.Id)
+                .ToArray();
     }
 
     public HubCatalog? LoadCatalog()
@@ -54,11 +74,20 @@ public sealed class HubStore(LocalDataPaths paths)
         }
     }
 
+    // Written through to disk before it takes the final name, so a power cut can't leave a short file there.
     public async Task SaveCatalogAsync(string json, CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(paths.HubCatalogFilePath)!);
         var temporary = paths.HubCatalogFilePath + ".tmp";
-        await File.WriteAllTextAsync(temporary, json, cancellationToken);
+        await using (var stream = new FileStream(
+            temporary, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 16 * 1024,
+            FileOptions.Asynchronous | FileOptions.WriteThrough))
+        {
+            await stream.WriteAsync(Encoding.UTF8.GetBytes(json), cancellationToken);
+            await stream.FlushAsync(cancellationToken);
+            stream.Flush(flushToDisk: true);
+        }
+
         File.Move(temporary, paths.HubCatalogFilePath, overwrite: true);
     }
 
@@ -82,9 +111,11 @@ public sealed class HubStore(LocalDataPaths paths)
             return "The package isn't valid.";
         }
 
-        // The hash matched, but it must also be the plugin the user asked for.
+        // The hash matched, but it must also be the plugin the user asked for, asking for the websites the hub page
+        // showed: the catalog's sites are what the user saw, and the plugin.json is what the sandbox enforces.
         var manifest = PluginManifestReader.Read(stagingFolder).Manifest;
-        if (manifest is null || manifest.Id != plugin.Id || manifest.Version != plugin.Version)
+        if (manifest is null || manifest.Id != plugin.Id || manifest.Version != plugin.Version ||
+            !manifest.Sites.ToHashSet().SetEquals(plugin.Sites) || (plugin.AnySite && !manifest.AnySite))
         {
             TryDeleteFolder(stagingFolder);
             return "The package isn't the plugin the hub listed.";
@@ -94,78 +125,150 @@ public sealed class HubStore(LocalDataPaths paths)
     }
 
     // Puts a staged plugin in place and records it. If the swap or the record fails, the version that was installed
-    // before is back in place when this throws.
+    // before is back in place when this throws, and the staging folder is gone.
     public async Task CommitAsync(HubPlugin plugin, string stagingFolder, CancellationToken cancellationToken)
     {
-        // Read before anything moves: a record that can't be read stops the install here.
-        var records = LoadInstalled();
         var target = FolderOf(plugin.Id);
-        var previous = Path.Combine(paths.HubPluginsRoot, ".old-" + Guid.NewGuid().ToString("N"));
-        var hadPrevious = Directory.Exists(target);
-        if (hadPrevious)
-        {
-            Directory.Move(target, previous);
-        }
-
+        await _gate.WaitAsync(cancellationToken);
         try
         {
-            Directory.Move(stagingFolder, target);
+            // Read before anything moves: a record that can't be read stops the install here.
+            var records = LoadInstalled();
+            // The id is in the name so CleanUp can put the folder back if a crash comes between the two moves.
+            var previous = Path.Combine(paths.HubPluginsRoot, $"{OldPrefix}{plugin.Id}-{Guid.NewGuid():N}");
+            var hadPrevious = Directory.Exists(target);
+            if (hadPrevious)
+            {
+                Directory.Move(target, previous);
+            }
+
             try
             {
-                await SaveInstalledAsync(
-                    records.Where(record => record.Id != plugin.Id)
-                        .Append(new HubInstalled(plugin.Id, plugin.Commit))
-                        .ToArray(),
-                    cancellationToken);
+                Directory.Move(stagingFolder, target);
+                try
+                {
+                    await SaveInstalledAsync(
+                        records.Where(record => record.Id != plugin.Id)
+                            .Append(new HubInstalled(plugin.Id, plugin.Commit))
+                            .ToArray(),
+                        cancellationToken);
+                }
+                catch
+                {
+                    Directory.Move(target, stagingFolder);
+                    throw;
+                }
             }
             catch
             {
-                Directory.Move(target, stagingFolder);
+                // If putting the old version back fails, nothing below runs and the staged files stay.
+                if (hadPrevious)
+                {
+                    Directory.Move(previous, target);
+                }
+
+                TryDeleteFolder(stagingFolder);
                 throw;
             }
+
+            TryDeleteFolder(previous);
         }
-        catch
+        finally
         {
-            if (hadPrevious)
-            {
-                Directory.Move(previous, target);
-            }
-
-            throw;
+            _gate.Release();
         }
-
-        TryDeleteFolder(previous);
     }
 
-    // The record goes first, so a crash partway leaves files nothing points at, never a record without its files.
+    // The record goes first, so a crash partway leaves files nothing points at, never a record without its files. The
+    // folder is renamed before it is deleted: a delete that fails partway then leaves a leftover CleanUp finishes at
+    // the next start, never a half-deleted plugin folder that could be loaded.
     public async Task UninstallAsync(string id, CancellationToken cancellationToken)
     {
-        await SaveInstalledAsync(LoadInstalled().Where(record => record.Id != id).ToArray(), cancellationToken);
-        if (Directory.Exists(FolderOf(id)))
+        var folder = FolderOf(id);
+        await _gate.WaitAsync(cancellationToken);
+        try
         {
-            Directory.Delete(FolderOf(id), recursive: true);
-        }
+            await SaveInstalledAsync(LoadInstalled().Where(record => record.Id != id).ToArray(), cancellationToken);
+            var saved = Path.Combine(paths.PluginDataRoot, id + ".json");
+            if (File.Exists(saved))
+            {
+                File.Delete(saved);
+            }
 
-        var saved = Path.Combine(paths.PluginDataRoot, id + ".json");
-        if (File.Exists(saved))
+            if (Directory.Exists(folder))
+            {
+                var trash = Path.Combine(paths.HubPluginsRoot, ".trash-" + Guid.NewGuid().ToString("N"));
+                Directory.Move(folder, trash);
+                TryDeleteFolder(trash);
+            }
+        }
+        finally
         {
-            File.Delete(saved);
+            _gate.Release();
         }
     }
 
-    // Removes folders a crash left behind mid-install. An installed plugin's folder never starts with a dot.
+    // Clears what a crash or a failed delete left behind. An installed plugin's folder never starts with a dot. A
+    // folder CommitAsync set aside is put back when the swap never finished and the plugin has no folder; otherwise it
+    // is deleted with the rest. Never throws: a plugins folder that can't be listed must not stop the hub starting.
     public void CleanUp()
     {
-        if (!Directory.Exists(paths.HubPluginsRoot))
+        try
         {
-            return;
-        }
+            if (!Directory.Exists(paths.HubPluginsRoot))
+            {
+                return;
+            }
 
-        foreach (var folder in Directory.GetDirectories(paths.HubPluginsRoot, ".*"))
+            foreach (var folder in Directory.GetDirectories(paths.HubPluginsRoot, ".*"))
+            {
+                if (SetAsideId(Path.GetFileName(folder)) is { } id && !Directory.Exists(FolderOf(id)))
+                {
+                    try
+                    {
+                        Directory.Move(folder, FolderOf(id));
+                    }
+                    catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                    {
+                        // Kept, never deleted: it may be the only copy. The next start tries again.
+                    }
+
+                    continue;
+                }
+
+                TryDeleteFolder(folder);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            TryDeleteFolder(folder);
+            // The next start tries again.
         }
     }
+
+    // The plugin id in ".old-<id>-<32 hex digits>", or null for any other name.
+    private static string? SetAsideId(string name)
+    {
+        if (!name.StartsWith(OldPrefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var rest = name[OldPrefix.Length..];
+        return rest.Length > 33 && rest[^33] == '-' && Guid.TryParseExact(rest[^32..], "N", out _) &&
+               PluginManifestReader.IsValidId(rest[..^33])
+            ? rest[..^33]
+            : null;
+    }
+
+    private IReadOnlyList<HubInstalled> RebuildFromFolders() =>
+        !Directory.Exists(paths.HubPluginsRoot)
+            ? []
+            : Directory.GetDirectories(paths.HubPluginsRoot)
+                .Select(folder => Path.GetFileName(folder))
+                .Where(name => !name.StartsWith('.') && PluginManifestReader.IsValidId(name) && IsIntact(name))
+                .Order(StringComparer.Ordinal)
+                .Select(name => new HubInstalled(name, UnknownCommit))
+                .ToArray();
 
     private Task SaveInstalledAsync(IReadOnlyList<HubInstalled> records, CancellationToken cancellationToken) =>
         AtomicJsonFile.WriteAsync(paths.HubInstalledFilePath, records, cancellationToken);
