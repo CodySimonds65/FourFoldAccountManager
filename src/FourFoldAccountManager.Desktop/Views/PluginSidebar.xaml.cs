@@ -41,6 +41,7 @@ public partial class PluginSidebar : UserControl
     private string? _hubExpandedId;
     private Grid? _hubPage;
     private TextBox? _hubSearch;
+    private Button? _hubRefresh;
     private StackPanel? _hubRows;
 
     public PluginSidebar()
@@ -450,9 +451,24 @@ public partial class PluginSidebar : UserControl
                 hint.Visibility = string.IsNullOrWhiteSpace(_hubSearch.Text) ? Visibility.Visible : Visibility.Collapsed;
                 RebuildHubRows();
             };
+            // The same request as "Try again": check the hub now. It is never disabled, so it keeps the keyboard
+            // focus; a click while a check is under way is answered by that check.
+            _hubRefresh = new Button
+            {
+                Padding = new Thickness(10, 0, 10, 0),
+                Margin = new Thickness(6, 0, 0, 0),
+                MinWidth = 82,
+                Style = (Style)FindResource("AppButtonStyle")
+            };
+            AutomationProperties.SetName(_hubRefresh, "Refresh the plugin hub");
+            _hubRefresh.Click += (_, _) => HubRetryRequested?.Invoke();
+            Grid.SetColumn(_hubRefresh, 1);
             var searchArea = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+            searchArea.ColumnDefinitions.Add(new ColumnDefinition());
+            searchArea.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             searchArea.Children.Add(_hubSearch);
             searchArea.Children.Add(hint);
+            searchArea.Children.Add(_hubRefresh);
 
             _hubRows = new StackPanel();
             var scroll = new ScrollViewer
@@ -477,11 +493,12 @@ public partial class PluginSidebar : UserControl
     // somewhere else (the search box while typing) is left alone.
     private void RebuildHubRows()
     {
-        if (_hubRows is null || _hubSearch is null)
+        if (_hubRows is null || _hubSearch is null || _hubRefresh is null)
         {
             return;
         }
 
+        _hubRefresh.Content = _hub.Loading ? "Checking…" : "Refresh";
         string? focusedName = null;
         string? focusedRowId = null;
         if (_hubRows.IsKeyboardFocusWithin && Keyboard.FocusedElement is DependencyObject focused)
