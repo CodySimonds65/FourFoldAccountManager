@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace FourFoldAccountManager.Desktop.Updates;
 
-public sealed class GitHubReleaseClient : IUpdateReleaseClient
+public sealed class GitHubReleaseClient
 {
     public const string Repository = "CodySimonds65/FourFoldAccountManager";
     public static readonly Uri LatestReleaseUri = new($"https://api.github.com/repos/{Repository}/releases/latest");

@@ -18,21 +18,6 @@ public enum UpdateInstallResult
     Failed
 }
 
-public interface IUpdateReleaseClient
-{
-    Task<UpdateRelease?> GetLatestAsync(CancellationToken cancellationToken);
-}
-
-public interface IUpdateDownloader
-{
-    Task<string?> DownloadAndVerifyAsync(UpdateRelease release, CancellationToken cancellationToken);
-}
-
-public interface IUpdateInstaller
-{
-    UpdateInstallResult TryStart(string verifiedUpdatePath, string currentExecutablePath, int parentProcessId);
-}
-
 internal static class UpdateFiles
 {
     // File.Delete is already a no-op when the file is missing.

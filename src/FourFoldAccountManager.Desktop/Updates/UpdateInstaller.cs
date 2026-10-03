@@ -4,7 +4,7 @@ using System.IO;
 
 namespace FourFoldAccountManager.Desktop.Updates;
 
-public sealed class UpdateInstaller : IUpdateInstaller
+public sealed class UpdateInstaller
 {
     private const string ApplyUpdateArgument = "--apply-update";
 

@@ -5,9 +5,9 @@ public sealed class UpdateCoordinator
     private readonly Version _currentVersion;
     private readonly string _currentExecutablePath;
     private readonly int _currentProcessId;
-    private readonly IUpdateReleaseClient _releaseClient;
-    private readonly IUpdateDownloader _downloader;
-    private readonly IUpdateInstaller _installer;
+    private readonly GitHubReleaseClient _releaseClient;
+    private readonly UpdateDownloader _downloader;
+    private readonly UpdateInstaller _installer;
     private readonly Func<UpdateRelease, Task<bool>> _prompt;
     private readonly Action<string>? _failureNotice;
     private readonly Action? _shutdown;
@@ -17,9 +17,9 @@ public sealed class UpdateCoordinator
         Version currentVersion,
         string currentExecutablePath,
         int currentProcessId,
-        IUpdateReleaseClient releaseClient,
-        IUpdateDownloader downloader,
-        IUpdateInstaller installer,
+        GitHubReleaseClient releaseClient,
+        UpdateDownloader downloader,
+        UpdateInstaller installer,
         Func<UpdateRelease, Task<bool>> prompt,
         Action<string>? failureNotice = null,
         Action? shutdown = null)

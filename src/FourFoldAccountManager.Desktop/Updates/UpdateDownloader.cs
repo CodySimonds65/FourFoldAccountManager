@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace FourFoldAccountManager.Desktop.Updates;
 
-public sealed class UpdateDownloader : IUpdateDownloader
+public sealed class UpdateDownloader
 {
     private const long ChecksumMaximumBytes = 32 * 1024;
     private readonly HttpClient _httpClient;
