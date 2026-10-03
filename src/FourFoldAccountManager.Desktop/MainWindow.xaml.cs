@@ -12,7 +12,6 @@ using System.Windows.Threading;
 using FourFoldAccountManager.Core.Calculation;
 using FourFoldAccountManager.Core.Data;
 using FourFoldAccountManager.Core.Input;
-using FourFoldAccountManager.Core.Launch;
 using FourFoldAccountManager.Core.Leaderboard;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Overlay;
@@ -134,11 +133,7 @@ public partial class MainWindow : Window
         _browserSessions.NavigationBlocked += BrowserSessions_NavigationBlocked;
 
         AccountsListBox.ItemsSource = _accounts;
-        AddAccountButton.IsEnabled = false;
-        SettingsButton.IsEnabled = false;
-        SecondMonitorButton.IsEnabled = false;
-        LayoutPicker.IsEnabled = false;
-        LaunchVisibleButton.IsEnabled = false;
+        SetManagerEnabled(false);
         LayoutPicker.ItemsSource = new[]
         {
             new LayoutChoice(PanelLayout.OneByTwo, "1 × 2 · Side by side"),
@@ -283,11 +278,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            foreach (var account in await _accountStore.LoadAsync())
-            {
-                _accounts.Add(account);
-            }
-
+            ReplaceAccounts(await _accountStore.LoadAsync());
             _panelSettings = await _settingsStore.LoadAsync();
             try
             {
@@ -318,12 +309,7 @@ public partial class MainWindow : Window
             }
             await _browserSessions.SetGameScalingAsync(_panelSettings.FillGameToPanel);
             _isReady = true;
-            AddAccountButton.IsEnabled = true;
-            SettingsButton.IsEnabled = true;
-            SecondMonitorButton.IsEnabled = true;
-            LayoutPicker.IsEnabled = true;
-            LaunchVisibleButton.IsEnabled = true;
-            TogglePluginsButton.IsEnabled = true;
+            SetManagerEnabled(true);
             LayoutPicker.SelectedValue = _panelSettings.Layout;
             AccountsListBox.SelectedIndex = _accounts.Count > 0 ? 0 : -1;
             UpdateAccountActions();
@@ -340,28 +326,27 @@ public partial class MainWindow : Window
         }
         catch (InvalidDataException exception)
         {
-            AddAccountButton.IsEnabled = false;
-            SettingsButton.IsEnabled = false;
-            SecondMonitorButton.IsEnabled = false;
-            LayoutPicker.IsEnabled = false;
-            LaunchVisibleButton.IsEnabled = false;
-            TogglePluginsButton.IsEnabled = false;
+            SetManagerEnabled(false);
             GlobalStatusText.Text = "Account data could not be loaded. The original local files were left unchanged.";
-            MessageBox.Show(this, exception.Message, "FourFold profile data",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError(exception.Message, "FourFold profile data");
         }
         catch
         {
-            AddAccountButton.IsEnabled = false;
-            SettingsButton.IsEnabled = false;
-            SecondMonitorButton.IsEnabled = false;
-            LayoutPicker.IsEnabled = false;
-            LaunchVisibleButton.IsEnabled = false;
-            TogglePluginsButton.IsEnabled = false;
+            SetManagerEnabled(false);
             GlobalStatusText.Text = "The manager could not load local profile data.";
-            MessageBox.Show(this, "The local account or panel settings could not be loaded.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The local account or panel settings could not be loaded.");
         }
+    }
+
+    // The manager controls stay off until local data has loaded, and after it fails to.
+    private void SetManagerEnabled(bool enabled)
+    {
+        AddAccountButton.IsEnabled = enabled;
+        SettingsButton.IsEnabled = enabled;
+        SecondMonitorButton.IsEnabled = enabled;
+        LayoutPicker.IsEnabled = enabled;
+        LaunchVisibleButton.IsEnabled = enabled;
+        TogglePluginsButton.IsEnabled = enabled;
     }
 
     private async Task CheckForUpdatesAsync()
@@ -476,8 +461,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The saved login could not be stored in Windows Credential Manager.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The saved login could not be stored in Windows Credential Manager.");
             return;
         }
 
@@ -499,8 +483,7 @@ public partial class MainWindow : Window
             }
 
             UpdateAccountActions();
-            MessageBox.Show(this, "The account profile could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The account profile could not be saved.");
             return;
         }
 
@@ -547,8 +530,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The saved login could not be read from Windows Credential Manager.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The saved login could not be read from Windows Credential Manager.");
             return;
         }
 
@@ -584,8 +566,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The saved login could not be updated in Windows Credential Manager.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The saved login could not be updated in Windows Credential Manager.");
             return;
         }
 
@@ -608,8 +589,7 @@ public partial class MainWindow : Window
                 // The original local account metadata remains visible if a storage rollback fails.
             }
 
-            MessageBox.Show(this, "The account profile could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The account profile could not be saved.");
             return;
         }
 
@@ -640,8 +620,7 @@ public partial class MainWindow : Window
         {
             ReplaceAccount(account);
             AccountsListBox.SelectedItem = account;
-            MessageBox.Show(this, "The account profile could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The account profile could not be saved.");
         }
     }
 
@@ -674,10 +653,9 @@ public partial class MainWindow : Window
         }
         catch
         {
-            RestoreAccountOrder(previous);
+            ReplaceAccounts(previous);
             AccountsListBox.SelectedItem = _accounts.FirstOrDefault(item => item.Id == account.Id);
-            MessageBox.Show(this, "The account order could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The account order could not be saved.");
         }
     }
 
@@ -707,8 +685,8 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The profile's saved login could not be removed from Windows Credential Manager.",
-                "Profile removal failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The profile's saved login could not be removed from Windows Credential Manager.",
+                "Profile removal failed");
             return;
         }
 
@@ -738,9 +716,8 @@ public partial class MainWindow : Window
             }
 
             await ReloadLocalDataAfterFailureAsync();
-            MessageBox.Show(this,
-                "The profile could not be fully cleared or saved. Review the account list and try again.",
-                "Profile removal failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The profile could not be fully cleared or saved. Review the account list and try again.",
+                "Profile removal failed");
         }
     }
 
@@ -839,7 +816,8 @@ public partial class MainWindow : Window
 
     private async void LayoutPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!_isReady || LayoutPicker.SelectedValue is not PanelLayout layout || layout == _panelSettings.Layout)
+        if (!_isReady || LayoutPicker.SelectedItem is not LayoutChoice(var layout, var label) ||
+            layout == _panelSettings.Layout)
         {
             return;
         }
@@ -850,13 +828,12 @@ public partial class MainWindow : Window
                 PanelLayoutPolicy.WithLayout(currentSettings, layout));
             await RebuildPanelAsync(closeExistingViews: false);
             FullscreenOverlayTray.RevealEdgeTab();
-            GlobalStatusText.Text = $"Layout changed to {FormatLayout(layout)}. Slot assignments were preserved.";
+            GlobalStatusText.Text = $"Layout changed to {label}. Slot assignments were preserved.";
         }
         catch
         {
             LayoutPicker.SelectedValue = _panelSettings.Layout;
-            MessageBox.Show(this, "The selected layout could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The selected layout could not be saved.");
         }
     }
 
@@ -1144,8 +1121,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The settings could not be applied.",
-                "FourFold settings", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The settings could not be applied.", "FourFold settings");
         }
         finally
         {
@@ -1155,7 +1131,24 @@ public partial class MainWindow : Window
 
     private void FullScreen_Click(object sender, RoutedEventArgs e)
     {
-        EnterFullScreen();
+        if (_isFullScreen)
+        {
+            return;
+        }
+
+        if (_showingLeaderboard) ShowWorkspaceView();
+
+        _previousWindowState = WindowState;
+        _previousWindowStyle = WindowStyle;
+        _previousResizeMode = ResizeMode;
+        _isFullScreen = true;
+        ApplyClutterVisibility();
+
+        WindowState = WindowState.Normal;
+        WindowStyle = WindowStyle.None;
+        ResizeMode = ResizeMode.NoResize;
+        WindowState = WindowState.Maximized;
+        RefreshTrackerRows();
     }
 
     private void FullScreenExit_Click(object sender, RoutedEventArgs e)
@@ -1245,8 +1238,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The card setting could not be saved.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The card setting could not be saved.");
         }
         finally
         {
@@ -1270,9 +1262,7 @@ public partial class MainWindow : Window
         catch
         {
             _floatingCards.Restore(args.Key, OverlayCardPolicy.Get(_panelSettings, args.Key)?.FloatingBounds);
-            MessageBox.Show(this,
-                "The overlay placement could not be saved. Its previous position was restored.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The overlay placement could not be saved. Its previous position was restored.");
         }
     }
 
@@ -1392,28 +1382,6 @@ public partial class MainWindow : Window
 
     private void FullScreenExit_MouseLeave(object sender, System.Windows.Input.MouseEventArgs e) =>
         FullScreenExitButton.Opacity = 0.78;
-
-    private void EnterFullScreen()
-    {
-        if (_isFullScreen)
-        {
-            return;
-        }
-
-        if (_showingLeaderboard) ShowWorkspaceView();
-
-        _previousWindowState = WindowState;
-        _previousWindowStyle = WindowStyle;
-        _previousResizeMode = ResizeMode;
-        _isFullScreen = true;
-        ApplyClutterVisibility();
-
-        WindowState = WindowState.Normal;
-        WindowStyle = WindowStyle.None;
-        ResizeMode = ResizeMode.NoResize;
-        WindowState = WindowState.Maximized;
-        RefreshTrackerRows();
-    }
 
     private void ExitFullScreen()
     {
@@ -1664,9 +1632,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this,
-                "The overlay card setting could not be saved. Its previous setting was restored.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The overlay card setting could not be saved. Its previous setting was restored.");
         }
         finally
         {
@@ -1691,9 +1657,7 @@ public partial class MainWindow : Window
         catch
         {
             layer.RestoreSavedBounds();
-            MessageBox.Show(this,
-                "The overlay placement could not be saved. Its previous position was restored.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The overlay placement could not be saved. Its previous position was restored.");
         }
     }
 
@@ -1710,9 +1674,7 @@ public partial class MainWindow : Window
     private Guid? AccountIdFor(int slotIndex) =>
         _panelSettings.Layout == PanelLayout.Tabs
             ? PanelTabPolicy.AccountIdAt(_panelSettings, slotIndex)
-            : slotIndex >= 0 && slotIndex < _panelSettings.SlotAccountIds.Count
-                ? _panelSettings.SlotAccountIds[slotIndex]
-                : null;
+            : _panelSettings.SlotAccountIds.ElementAtOrDefault(slotIndex);
 
     private void UpdateAllSlotPresentations()
     {
@@ -1726,12 +1688,8 @@ public partial class MainWindow : Window
     {
         var assignedAccountId = AccountIdFor(slot.SlotIndex);
         var isOpen = assignedAccountId is { } accountId && _openAccountIds.Contains(accountId);
-        var hasAssignedAccount = assignedAccountId is not null;
         var account = assignedAccountId is { } id ? _accounts.FirstOrDefault(item => item.Id == id) : null;
-        slot.RelaunchButton.Visibility = AssignedAccountLaunchPolicy.ShouldShowRelaunch(
-            hasAssignedAccount, isOpen)
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        slot.RelaunchButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         slot.RelaunchButton.IsEnabled = _isReady && !_batchLaunchInProgress;
         slot.AccountLabel.Text = account?.Label ?? "Account view";
         slot.EmptyTitle.Text = account is null ? "An open spot in your party" : $"{account.Label} is ready";
@@ -1794,9 +1752,7 @@ public partial class MainWindow : Window
                     continue;
                 }
 
-                if (!AssignedAccountLaunchPolicy.ShouldStart(
-                        _openAccountIds.Contains(accountId),
-                        _failedAccountIds.Contains(accountId)))
+                if (_openAccountIds.Contains(accountId) && !_failedAccountIds.Contains(accountId))
                 {
                     outcomes.Add(AssignedAccountStartResult.AlreadyRunning);
                     continue;
@@ -1930,11 +1886,7 @@ public partial class MainWindow : Window
         SettingsButton.IsEnabled = !isActive && _isReady;
         AdjustViewsButton.IsEnabled = !isActive && _isReady;
         AccountsListBox.IsEnabled = !isActive;
-        RenameAccountButton.IsEnabled = !isActive && SelectedAccount is not null;
-        FavoriteAccountButton.IsEnabled = !isActive && SelectedAccount is not null;
-        MoveUpButton.IsEnabled = !isActive && SelectedAccount is not null && AccountsListBox.SelectedIndex > 0;
-        MoveDownButton.IsEnabled = !isActive && SelectedAccount is not null && AccountsListBox.SelectedIndex < _accounts.Count - 1;
-        RemoveAccountButton.IsEnabled = !isActive && SelectedAccount is not null;
+        UpdateAccountActions();
 
         foreach (var slot in _slotCards)
         {
@@ -2031,8 +1983,7 @@ public partial class MainWindow : Window
                     .FirstOrDefault(item => item.AccountId == _panelSettings.SlotAccountIds[slotIndex]);
             }
 
-            MessageBox.Show(this, "The slot assignment could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The slot assignment could not be saved.");
         }
     }
 
@@ -2186,14 +2137,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var changed = false;
-            await UpdateSettingsAsync(settings =>
-            {
-                var next = PanelTabPolicy.Add(settings, accountId);
-                changed = !ReferenceEquals(next, settings);
-                return next;
-            });
-            if (!changed)
+            if (!await UpdateSettingsIfChangedAsync(settings => PanelTabPolicy.Add(settings, accountId)))
             {
                 // The account already has a tab.
                 return;
@@ -2204,8 +2148,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The tab could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The tab could not be saved.");
         }
     }
 
@@ -2218,14 +2161,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var changed = false;
-            await UpdateSettingsAsync(settings =>
-            {
-                var next = PanelTabPolicy.RemoveAccount(settings, accountId);
-                changed = !ReferenceEquals(next, settings);
-                return next;
-            });
-            if (!changed)
+            if (!await UpdateSettingsIfChangedAsync(settings => PanelTabPolicy.RemoveAccount(settings, accountId)))
             {
                 // A stale click on a tab that is already gone.
                 return;
@@ -2237,8 +2173,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The tab could not be closed.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The tab could not be closed.");
         }
     }
 
@@ -2301,43 +2236,12 @@ public partial class MainWindow : Window
         RefreshTrackerRows();
     }
 
-    private FrameworkElement BuildLayoutNode(PanelLayoutNode node) =>
-        BuildLayoutNode(
-            node,
-            _panelSettings,
-            BuildSlotElement,
-            async state =>
-            {
-                await UpdateSettingsAsync(currentSettings =>
-                    PanelLayoutPolicy.WithSplitState(currentSettings, state));
-                GlobalStatusText.Text = "The layout sizes were saved.";
-            },
-            () => MessageBox.Show(this, "The row heights could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error),
-            _layoutDividerResizeController);
-
-    internal static FrameworkElement BuildLayoutNode(
-        PanelLayoutNode node,
-        PanelSettings settings,
-        Func<int, FrameworkElement> buildSlot,
-        Func<PanelSplitState, Task> persistSplitState,
-        Action reportSaveFailure,
-        LayoutDividerResizeController? dividerResizeController = null)
+    private FrameworkElement BuildLayoutNode(PanelLayoutNode node) => node switch
     {
-        ArgumentNullException.ThrowIfNull(node);
-        ArgumentNullException.ThrowIfNull(settings);
-        ArgumentNullException.ThrowIfNull(buildSlot);
-        ArgumentNullException.ThrowIfNull(persistSplitState);
-        ArgumentNullException.ThrowIfNull(reportSaveFailure);
-
-        return node switch
-        {
-            PanelSlotNode slot => buildSlot(slot.SlotIndex),
-            PanelSplitNode split => BuildSplitElement(
-                split, settings, buildSlot, persistSplitState, reportSaveFailure, dividerResizeController),
-            _ => throw new ArgumentOutOfRangeException(nameof(node))
-        };
-    }
+        PanelSlotNode slot => BuildSlotElement(slot.SlotIndex),
+        PanelSplitNode split => BuildSplitElement(split),
+        _ => throw new ArgumentOutOfRangeException(nameof(node))
+    };
 
     private FrameworkElement BuildSlotElement(int slotIndex)
     {
@@ -2346,28 +2250,24 @@ public partial class MainWindow : Window
         return card.Root;
     }
 
-    private static Grid BuildSplitElement(
-        PanelSplitNode split,
-        PanelSettings settings,
-        Func<int, FrameworkElement> buildSlot,
-        Func<PanelSplitState, Task> persistSplitState,
-        Action reportSaveFailure,
-        LayoutDividerResizeController? dividerResizeController)
+    private Grid BuildSplitElement(PanelSplitNode split)
     {
         const double minimumWeight = 0.30;
         var group = new Grid();
         var weights = PanelSplitMath.ClampToMinimum(
-            PanelLayoutPolicy.GetSplitState(settings, split.Id).Weights,
+            PanelLayoutPolicy.GetSplitState(_panelSettings, split.Id).Weights,
             minimumWeight).ToArray();
 
         for (var index = 0; index < split.Children.Count; index++)
         {
+            var child = BuildLayoutNode(split.Children[index]);
             if (split.Orientation == PanelSplitOrientation.Horizontal)
             {
                 group.ColumnDefinitions.Add(new ColumnDefinition
                 {
                     Width = new GridLength(weights[index], GridUnitType.Star)
                 });
+                Grid.SetColumn(child, index);
             }
             else
             {
@@ -2375,17 +2275,6 @@ public partial class MainWindow : Window
                 {
                     Height = new GridLength(weights[index], GridUnitType.Star)
                 });
-            }
-
-            var child = BuildLayoutNode(
-                split.Children[index], settings, buildSlot, persistSplitState, reportSaveFailure,
-                dividerResizeController);
-            if (split.Orientation == PanelSplitOrientation.Horizontal)
-            {
-                Grid.SetColumn(child, index);
-            }
-            else
-            {
                 Grid.SetRow(child, index);
             }
 
@@ -2396,7 +2285,7 @@ public partial class MainWindow : Window
         for (var boundaryIndex = 0; boundaryIndex < split.Children.Count - 1; boundaryIndex++)
         {
             var splitter = CreateGridSplitter(split.Orientation, boundaryIndex);
-            dividerResizeController?.Track(splitter);
+            _layoutDividerResizeController.Track(splitter);
             splitters.Add(splitter);
             group.Children.Add(splitter);
         }
@@ -2484,41 +2373,28 @@ public partial class MainWindow : Window
 
                 foreach (var groupSplitter in splitters)
                 {
-                    if (dividerResizeController is not null)
-                    {
-                        dividerResizeController.SetTemporarilyDisabled(groupSplitter, true);
-                    }
-                    else
-                    {
-                        groupSplitter.IsEnabled = false;
-                    }
+                    _layoutDividerResizeController.SetTemporarilyDisabled(groupSplitter, true);
                 }
 
                 try
                 {
-                    await persistSplitState(new PanelSplitState(
-                        split.Id,
-                        Array.AsReadOnly(weights.ToArray())));
+                    var state = new PanelSplitState(split.Id, Array.AsReadOnly(weights.ToArray()));
+                    await UpdateSettingsAsync(currentSettings =>
+                        PanelLayoutPolicy.WithSplitState(currentSettings, state));
+                    GlobalStatusText.Text = "The layout sizes were saved.";
                 }
                 catch
                 {
                     weights = previousWeights.ToArray();
                     ApplyTrackWeights(group, split.Orientation, weights);
                     group.UpdateLayout();
-                    reportSaveFailure();
+                    ShowError("The row heights could not be saved.");
                 }
                 finally
                 {
                     foreach (var groupSplitter in splitters)
                     {
-                        if (dividerResizeController is not null)
-                        {
-                            dividerResizeController.SetTemporarilyDisabled(groupSplitter, false);
-                        }
-                        else
-                        {
-                            groupSplitter.IsEnabled = true;
-                        }
+                        _layoutDividerResizeController.SetTemporarilyDisabled(groupSplitter, false);
                     }
                 }
             };
@@ -2846,13 +2722,10 @@ public partial class MainWindow : Window
         Grid.SetColumn(resetViewButton, 1);
         adjustmentHeader.Children.Add(resetViewButton);
         adjustmentContent.Children.Add(adjustmentHeader);
-        adjustmentContent.Children.Add(CreateViewportAdjustmentRow(
-            "Width", "GameViewportWidth", viewportSize.WidthPercent, out var widthSlider, out var widthValue));
-        adjustmentContent.Children.Add(CreateViewportAdjustmentRow(
-            "Height", "GameViewportHeight", viewportSize.HeightPercent, out var heightSlider, out var heightValue));
+        adjustmentContent.Children.Add(CreateViewportAdjustmentRow("Width", viewportSize.WidthPercent, out var widthSlider));
+        adjustmentContent.Children.Add(CreateViewportAdjustmentRow("Height", viewportSize.HeightPercent, out var heightSlider));
         var adjustmentOverlay = new Border
         {
-            Tag = "GameViewportAdjustment",
             MaxWidth = 310,
             Padding = new Thickness(12),
             Margin = new Thickness(12),
@@ -2870,8 +2743,7 @@ public partial class MainWindow : Window
         Grid.SetRow(browserHost, 2);
         content.Children.Add(browserHost);
         var slot = new PanelSlotCard(slotIndex, root, header, relaunchButton, accountPicker, accountLabel, status, browserHost,
-            placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider,
-            widthValue, heightValue);
+            placeholder, emptyTitle, emptyDescription, adjustmentOverlay, widthSlider, heightSlider);
         widthSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
         heightSlider.ValueChanged += (_, _) => ScheduleViewportSizeUpdate(slot);
         resetViewButton.Click += (_, _) => SetViewportSliderValues(slot, GameViewportSize.Default);
@@ -2884,12 +2756,7 @@ public partial class MainWindow : Window
         return slot;
     }
 
-    private Grid CreateViewportAdjustmentRow(
-        string label,
-        string tag,
-        double initialValue,
-        out Slider slider,
-        out TextBlock valueText)
+    private Grid CreateViewportAdjustmentRow(string label, double initialValue, out Slider slider)
     {
         var row = new Grid { Margin = new Thickness(0, 3, 0, 3) };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
@@ -2903,7 +2770,6 @@ public partial class MainWindow : Window
         });
         slider = new Slider
         {
-            Tag = tag,
             Minimum = GameViewportSize.MinimumPercent,
             Maximum = GameViewportSize.MaximumPercent,
             TickFrequency = 5,
@@ -2916,13 +2782,14 @@ public partial class MainWindow : Window
         System.Windows.Automation.AutomationProperties.SetName(slider, $"Game {label.ToLowerInvariant()} percentage");
         Grid.SetColumn(slider, 1);
         row.Children.Add(slider);
-        valueText = new TextBlock
+        var valueText = new TextBlock
         {
-            Text = $"{initialValue:0}%",
             Foreground = (Brush)FindResource("Brush.TextPrimary"),
             TextAlignment = TextAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center
         };
+        valueText.SetBinding(TextBlock.TextProperty,
+            new Binding(nameof(Slider.Value)) { Source = slider, StringFormat = "{0:0}%" });
         Grid.SetColumn(valueText, 2);
         row.Children.Add(valueText);
         return row;
@@ -2930,8 +2797,6 @@ public partial class MainWindow : Window
 
     private void ScheduleViewportSizeUpdate(PanelSlotCard slot)
     {
-        slot.WidthValue.Text = $"{slot.WidthSlider.Value:0}%";
-        slot.HeightValue.Text = $"{slot.HeightSlider.Value:0}%";
         if (!_isReady || slot.SuppressViewportEvents)
         {
             return;
@@ -2992,8 +2857,6 @@ public partial class MainWindow : Window
         {
             slot.WidthSlider.Value = size.WidthPercent;
             slot.HeightSlider.Value = size.HeightPercent;
-            slot.WidthValue.Text = $"{size.WidthPercent:0}%";
-            slot.HeightValue.Text = $"{size.HeightPercent:0}%";
         }
         finally
         {
@@ -3007,12 +2870,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private IReadOnlyList<SlotAccountChoice> CreateSlotChoices()
-    {
-        var choices = new List<SlotAccountChoice> { new(null, "Choose account") };
-        choices.AddRange(_accounts.Select(account => new SlotAccountChoice(account.Id, account.Label)));
-        return choices;
-    }
+    private IReadOnlyList<SlotAccountChoice> CreateSlotChoices() =>
+        [new(null, "Choose account"), .. _accounts.Select(account => new SlotAccountChoice(account.Id, account.Label))];
 
     private async Task RefreshSlotPickersAsync()
     {
@@ -3038,12 +2897,6 @@ public partial class MainWindow : Window
 
     private void AttachBrowserView(PanelSlotCard slot, Guid accountId, WebView2CompositionControl view)
     {
-        if (!ReferenceEquals(view.Parent, slot.BrowserHost))
-        {
-            DetachBrowserView(view);
-            slot.BrowserHost.Children.Add(view);
-        }
-
         Panel.SetZIndex(view, 0);
 
         slot.View = view;
@@ -3060,7 +2913,7 @@ public partial class MainWindow : Window
             var batchLaunchWasActive = _batchLaunchInProgress;
             Dispatcher.BeginInvoke(() =>
             {
-                if (!AssignedAccountLaunchPolicy.IsCurrentView(slot.View, view))
+                if (!ReferenceEquals(slot.View, view))
                 {
                     return;
                 }
@@ -3090,7 +2943,7 @@ public partial class MainWindow : Window
 
         slot.ProcessFailedHandler = (_, _) => Dispatcher.BeginInvoke(() =>
         {
-            if (!AssignedAccountLaunchPolicy.IsCurrentView(slot.View, view))
+            if (!ReferenceEquals(slot.View, view))
             {
                 return;
             }
@@ -3101,22 +2954,6 @@ public partial class MainWindow : Window
         }, DispatcherPriority.Background);
         view.CoreWebView2.ProcessFailed += slot.ProcessFailedHandler;
         RefreshTrackerRows();
-    }
-
-    private static void DetachBrowserView(WebView2CompositionControl view)
-    {
-        switch (view.Parent)
-        {
-            case Panel panel:
-                panel.Children.Remove(view);
-                break;
-            case ContentControl contentControl when ReferenceEquals(contentControl.Content, view):
-                contentControl.Content = null;
-                break;
-            case Decorator decorator when ReferenceEquals(decorator.Child, view):
-                decorator.Child = null;
-                break;
-        }
     }
 
     private async Task CloseAccountViewAsync(Guid accountId, bool preserveFailure = false)
@@ -3197,8 +3034,6 @@ public partial class MainWindow : Window
         _ = SyncLeaderboardParticipationAsync();
     }
 
-    internal LeaderboardCoordinator? Leaderboard => _leaderboard;
-
     internal async Task SetLeaderboardSharingAsync(bool enabled, CancellationToken ct = default)
     {
         if (_leaderboard is not { } leaderboard) return;
@@ -3222,8 +3057,7 @@ public partial class MainWindow : Window
                 return new LeaderboardProfile(account.RankingPlayerId ?? 0,
                     account.RankingUsername?.Trim() ?? string.Empty);
             }).Where(profile => profile.PlayerId > 0 && !string.IsNullOrWhiteSpace(profile.Username))
-                .GroupBy(profile => profile.PlayerId)
-                .Select(group => group.First()).ToArray();
+                .DistinctBy(profile => profile.PlayerId).ToArray();
             var linkedIds = profiles.Select(profile => profile.PlayerId).ToHashSet();
             var activeIds = activeProfiles.Values.Select(profile => profile.PlayerId)
                 .Where(linkedIds.Contains).Distinct().ToArray();
@@ -3237,6 +3071,19 @@ public partial class MainWindow : Window
 
     private Task<PanelSettings> UpdateSettingsAsync(Func<PanelSettings, PanelSettings> update) =>
         UpdateSettingsAsync(currentSettings => Task.FromResult(update(currentSettings)));
+
+    // A policy returns the settings it was given when there is nothing to change.
+    private async Task<bool> UpdateSettingsIfChangedAsync(Func<PanelSettings, PanelSettings> update)
+    {
+        var changed = false;
+        await UpdateSettingsAsync(settings =>
+        {
+            var next = update(settings);
+            changed = !ReferenceEquals(next, settings);
+            return next;
+        });
+        return changed;
+    }
 
     private async Task<PanelSettings> UpdateSettingsAsync(
         Func<PanelSettings, Task<PanelSettings>> update,
@@ -3281,12 +3128,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            _accounts.Clear();
-            foreach (var account in await _accountStore.LoadAsync())
-            {
-                _accounts.Add(account);
-            }
-
+            ReplaceAccounts(await _accountStore.LoadAsync());
             await _settingsMutationGate.WaitAsync();
             try
             {
@@ -3315,7 +3157,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void RestoreAccountOrder(IReadOnlyList<AccountProfile> accounts)
+    private void ReplaceAccounts(IEnumerable<AccountProfile> accounts)
     {
         _accounts.Clear();
         foreach (var account in accounts)
@@ -3335,12 +3177,12 @@ public partial class MainWindow : Window
     private void UpdateAccountActions()
     {
         var selected = SelectedAccount;
-        var hasSelection = selected is not null;
-        RenameAccountButton.IsEnabled = hasSelection;
-        FavoriteAccountButton.IsEnabled = hasSelection;
-        RemoveAccountButton.IsEnabled = hasSelection;
-        MoveUpButton.IsEnabled = hasSelection && AccountsListBox.SelectedIndex > 0;
-        MoveDownButton.IsEnabled = hasSelection && AccountsListBox.SelectedIndex < _accounts.Count - 1;
+        var canEdit = selected is not null && !_batchLaunchInProgress;
+        RenameAccountButton.IsEnabled = canEdit;
+        FavoriteAccountButton.IsEnabled = canEdit;
+        RemoveAccountButton.IsEnabled = canEdit;
+        MoveUpButton.IsEnabled = canEdit && AccountsListBox.SelectedIndex > 0;
+        MoveDownButton.IsEnabled = canEdit && AccountsListBox.SelectedIndex < _accounts.Count - 1;
         FavoriteAccountButton.Content = selected?.IsFavorite == true ? "Unfavorite" : "Favorite";
         AccountCountText.Text = _accounts.Count == 1 ? "1 profile" : $"{_accounts.Count} profiles";
     }
@@ -3360,6 +3202,9 @@ public partial class MainWindow : Window
         UpdateSlotPresentation(slot);
     }
 
+    private void ShowError(string message, string title = "FourFold Account Manager") =>
+        MessageBox.Show(this, message, title, MessageBoxButton.OK, MessageBoxImage.Error);
+
     private static string SafeBrowserError(Exception exception) => exception switch
     {
         WebView2RuntimeNotFoundException => "Microsoft Edge WebView2 Runtime is not installed.",
@@ -3367,9 +3212,9 @@ public partial class MainWindow : Window
         _ => "This account view could not be opened. Other slots remain available."
     };
 
-    private void BrowserSessions_NavigationBlocked(object? sender, NavigationBlockedEventArgs e)
+    private void BrowserSessions_NavigationBlocked(Guid accountId)
     {
-        var slot = _slotCards.FirstOrDefault(item => AccountIdFor(item.SlotIndex) == e.AccountId);
+        var slot = _slotCards.FirstOrDefault(item => AccountIdFor(item.SlotIndex) == accountId);
         if (slot is not null)
         {
             SetSlotStatus(slot, "Blocked navigation outside FourFold Online.", StatusTone.Warning);
@@ -3498,19 +3343,6 @@ public partial class MainWindow : Window
         Close();
     }
 
-    private static string FormatLayout(PanelLayout layout) => layout switch
-    {
-        PanelLayout.OneByTwo => "1 × 2",
-        PanelLayout.TwoByOne => "2 × 1",
-        PanelLayout.TwoByTwo => "2 × 2",
-        PanelLayout.TwoByThree => "2 × 3",
-        PanelLayout.OneByThree => "1 × 3 · One above three",
-        PanelLayout.OneByTwoVertical => "1 × 2 vertical",
-        PanelLayout.OneByOne => "1 × 1",
-        PanelLayout.Tabs => "Tabs",
-        _ => "Unknown"
-    };
-
     private enum StatusTone { Neutral, Info, Success, Warning, Error }
 
     private enum AssignedAccountStartResult
@@ -3531,40 +3363,22 @@ public partial class MainWindow : Window
         public override string ToString() => Label;
     }
 
-    private sealed class PanelSlotCard(
-        int slotIndex,
-        Border root,
-        Grid header,
-        Button relaunchButton,
-        ComboBox accountPicker,
-        TextBlock accountLabel,
-        TextBlock status,
-        Grid browserHost,
-        FrameworkElement placeholder,
-        TextBlock emptyTitle,
-        TextBlock emptyDescription,
-        Border viewAdjustmentOverlay,
-        Slider widthSlider,
-        Slider heightSlider,
-        TextBlock widthValue,
-        TextBlock heightValue)
+    private sealed record PanelSlotCard(
+        int SlotIndex,
+        Border Root,
+        Grid Header,
+        Button RelaunchButton,
+        ComboBox AccountPicker,
+        TextBlock AccountLabel,
+        TextBlock Status,
+        Grid BrowserHost,
+        FrameworkElement Placeholder,
+        TextBlock EmptyTitle,
+        TextBlock EmptyDescription,
+        Border ViewAdjustmentOverlay,
+        Slider WidthSlider,
+        Slider HeightSlider)
     {
-        public int SlotIndex { get; } = slotIndex;
-        public Border Root { get; } = root;
-        public Grid Header { get; } = header;
-        public Button RelaunchButton { get; } = relaunchButton;
-        public ComboBox AccountPicker { get; } = accountPicker;
-        public TextBlock AccountLabel { get; } = accountLabel;
-        public TextBlock Status { get; } = status;
-        public Grid BrowserHost { get; } = browserHost;
-        public FrameworkElement Placeholder { get; } = placeholder;
-        public TextBlock EmptyTitle { get; } = emptyTitle;
-        public TextBlock EmptyDescription { get; } = emptyDescription;
-        public Border ViewAdjustmentOverlay { get; } = viewAdjustmentOverlay;
-        public Slider WidthSlider { get; } = widthSlider;
-        public Slider HeightSlider { get; } = heightSlider;
-        public TextBlock WidthValue { get; } = widthValue;
-        public TextBlock HeightValue { get; } = heightValue;
         public DispatcherTimer ViewportUpdateTimer { get; } = new() { Interval = TimeSpan.FromMilliseconds(120) };
         public bool SuppressViewportEvents { get; set; }
         public StatusTone Tone { get; set; }

@@ -11,7 +11,7 @@
     <Window.Resources>
         <local:ProfileInitialConverter x:Key="ProfileInitial" />
     </Window.Resources>
-    <Grid x:Name="RootLayoutGrid">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition x:Name="AppHeaderRow" Height="60" />
             <RowDefinition Height="*" />
@@ -43,7 +43,7 @@
                     <Button x:Name="TheatreButton" Content="Theatre" Click="Theatre_Click"
                             Style="{StaticResource AppButtonStyle}" Height="34" Padding="14,0" Margin="0,0,8,0"
                             ToolTip="Hide the side panels and toolbars without leaving the window. Press Esc to return." />
-                    <Button x:Name="FullScreenButton" Content="Full screen" Click="FullScreen_Click"
+                    <Button Content="Full screen" Click="FullScreen_Click"
                             Style="{StaticResource AppButtonStyle}" Height="34" Padding="14,0"
                             ToolTip="Expand the client layout. Press Esc to return." />
                 </StackPanel>
@@ -200,8 +200,7 @@
                         </Button>
                     </StackPanel>
                 </Grid>
-                <Border x:Name="PanelBorder" Grid.Row="1" Padding="0" CornerRadius="0" BorderThickness="0"
-                        Background="{DynamicResource Brush.AppBackground}">
+                <Border Grid.Row="1" Background="{DynamicResource Brush.AppBackground}">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
