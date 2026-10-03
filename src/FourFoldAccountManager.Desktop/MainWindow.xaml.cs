@@ -1129,8 +1129,9 @@ public partial class MainWindow : Window
     // Opens the stats window, or brings an open one to the front.
     private void OpenStatsWindow(bool activate)
     {
-        // A window opened while FourFold is shutting down would never be closed and would keep the app running.
-        if (_shutdownStarted)
+        // A window opened while FourFold is shutting down would never be closed and would keep the app running,
+        // and one opened before settings have loaded would save defaults over them.
+        if (_shutdownStarted || !_isReady)
         {
             return;
         }
@@ -1153,6 +1154,12 @@ public partial class MainWindow : Window
         window.ClosedByUser += StatsWindow_ClosedByUser;
         _statsWindow = window;
         window.Show();
+        if (!activate)
+        {
+            // WPF ignores ShowActivated for a window shown maximized, so hand focus back to the main window.
+            Activate();
+        }
+
         RefreshTrackerRows();
     }
 
@@ -3243,9 +3250,13 @@ public partial class MainWindow : Window
             try
             {
                 // Through the settings gate, so a save still in flight (such as the XP target just flushed)
-                // can't overwrite the stats window placement.
-                await UpdateSettingsAsync(settings =>
-                    statsPlacement is null ? settings : settings with { StatsWindow = statsPlacement });
+                // can't overwrite the stats window placement. Skipped after a failed load, which would save
+                // defaults over the user's settings.
+                if (_isReady)
+                {
+                    await UpdateSettingsAsync(settings =>
+                        statsPlacement is null ? settings : settings with { StatsWindow = statsPlacement });
+                }
             }
             catch
             {
