@@ -33,6 +33,7 @@ internal sealed class GlobalShortcutRegistry : IDisposable
         ArgumentNullException.ThrowIfNull(settings);
         return GlobalShortcutActions.All
             .Where(_available.Contains)
+            .Where(action => !PluginLayoutPolicy.IsShortcutSuppressed(settings, action))
             .ToDictionary(action => action, action => GlobalShortcutActions.GetChord(settings, action));
     }
 
@@ -54,7 +55,8 @@ internal sealed class GlobalShortcutRegistry : IDisposable
 
         foreach (var candidate in GlobalShortcutActions.All)
         {
-            if (_available.Contains(candidate) && GlobalShortcutActions.GetChord(settings, candidate) == chord)
+            // A switched-off plugin's keys never resolve, even if a release raced a key change.
+            if (_available.Contains(candidate) && !PluginLayoutPolicy.IsShortcutSuppressed(settings, candidate) && GlobalShortcutActions.GetChord(settings, candidate) == chord)
             {
                 action = candidate;
                 return true;
