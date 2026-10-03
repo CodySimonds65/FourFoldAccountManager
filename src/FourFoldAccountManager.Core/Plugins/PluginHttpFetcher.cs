@@ -69,6 +69,7 @@ public sealed class PluginHttpFetcher : IDisposable
         timeout.CancelAfter(_timeout);
         var body = request.Body;
         var originalHost = uri.IdnHost;
+        var originalPort = uri.Port;
         var forwardHeaders = true;
         try
         {
@@ -80,8 +81,9 @@ public sealed class PluginHttpFetcher : IDisposable
                     message.Content = new StringContent(body ?? string.Empty, Encoding.UTF8);
                 }
 
-                // Don't forward plugin headers to a different host; once headers are dropped, keep them dropped.
-                if (!uri.IdnHost.Equals(originalHost, StringComparison.OrdinalIgnoreCase))
+                // Don't forward plugin headers to a different host or port; once headers are dropped, keep them dropped.
+                if (uri.Port != originalPort ||
+                    !uri.IdnHost.Equals(originalHost, StringComparison.OrdinalIgnoreCase))
                 {
                     forwardHeaders = false;
                 }
@@ -116,7 +118,7 @@ public sealed class PluginHttpFetcher : IDisposable
                 }
 
                 var text = await ReadTextAsync(response, timeout.Token);
-                text = text.TrimStart('﻿');
+                text = text.TrimStart('\uFEFF');
                 return new PluginHttpResponse(
                     (int)response.StatusCode, FlattenHeaders(response), text);
             }

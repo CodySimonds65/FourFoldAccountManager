@@ -359,6 +359,29 @@ public sealed class PluginHttpFetcherTests
     }
 
     [Fact]
+    public async Task PluginHeadersAreNotSentToAnotherPortOnTheSameHost()
+    {
+        var manifest = MultiSiteManifest with
+        {
+            Sites = [new Uri("https://wiki.example.com"), new Uri("https://wiki.example.com:8443")]
+        };
+        var sawAuth = new List<bool>();
+        var handler = new FakeHandler(request =>
+        {
+            sawAuth.Add(request.Headers.Contains("Authorization"));
+            return request.RequestUri!.Port == 443
+                ? Redirect("https://wiki.example.com:8443/x")
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") };
+        });
+        using var fetcher = new PluginHttpFetcher(manifest, PluginTrust.Developer, handler);
+
+        await fetcher.FetchAsync(new PluginHttpRequest("https://wiki.example.com/start", "GET",
+            new Dictionary<string, string> { ["Authorization"] = "Bearer t" }, null));
+
+        Assert.Equal([true, false], sawAuth);
+    }
+
+    [Fact]
     public async Task FramingHeadersFromThePluginAreIgnoredOnAPost()
     {
         HttpRequestMessage? sent = null;
