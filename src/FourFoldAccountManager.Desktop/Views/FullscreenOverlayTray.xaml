@@ -9,13 +9,16 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <CheckBox Content="{Binding Label}" IsChecked="{Binding IsEnabled, Mode=OneWay}"
+                <!-- The label is a TextBlock so an underscore in a plugin card's name is not read as an access key. -->
+                <CheckBox IsChecked="{Binding IsEnabled, Mode=OneWay}"
                           Click="Switch_Click" VerticalAlignment="Center" FontSize="11"
                           Foreground="{DynamicResource Brush.TextPrimary}"
-                          AutomationProperties.Name="{Binding AccessibleName}" />
+                          AutomationProperties.Name="{Binding AccessibleName}">
+                    <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                </CheckBox>
                 <TextBlock Grid.Column="1" Text="{Binding Detail}" FontSize="10" FontWeight="SemiBold"
                            Foreground="{DynamicResource Brush.AccentGold}" Margin="8,0,0,0"
-                           VerticalAlignment="Center" />
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="120" />
             </Grid>
         </DataTemplate>
     </UserControl.Resources>

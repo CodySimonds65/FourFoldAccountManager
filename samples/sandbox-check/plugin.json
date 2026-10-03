@@ -1,0 +1,11 @@
+{
+  "id": "fourfold.sandbox-check",
+  "name": "Sandbox check",
+  "shortLabel": "Sandbox",
+  "version": "1.0.0",
+  "author": "FourFold",
+  "description": "Tries everything a plugin must not be able to do, and reports PASS or FAIL.",
+  "apiVersion": 1,
+  "panel": "index.html",
+  "sites": ["https://example.com"]
+}

@@ -1,4 +1,5 @@
 using FourFoldAccountManager.Core.Models;
+using FourFoldAccountManager.Core.Plugins;
 
 namespace FourFoldAccountManager.Core.Overlay;
 
@@ -9,10 +10,17 @@ public static class OverlayCardPolicy
     public const double CascadeStep = 16;
 
     public static bool IsValidKey(OverlayCardKey key) =>
-        OverlayAddOnCatalog.TryGet(key.Kind, out var definition) &&
-        (definition.Scope == OverlayAddOnScope.Account
-            ? key.AccountId is { } accountId && accountId != Guid.Empty
-            : key.AccountId is null);
+        key.Kind == OverlayAddOnKind.Plugin
+            // A plugin card's scope is only known while its plugin is loaded, so either scope is valid here.
+            ? PluginCardId.IsValid(key.PluginCard) && key.AccountId != Guid.Empty
+            : key.PluginCard is null &&
+              OverlayAddOnCatalog.TryGet(key.Kind, out var definition) &&
+              (definition.Scope == OverlayAddOnScope.Account
+                  ? key.AccountId is { } accountId && accountId != Guid.Empty
+                  : key.AccountId is null);
+
+    private static OverlayCardPlacement NewPlacement(OverlayCardKey key, bool enabled) =>
+        new(key.Kind, key.AccountId, enabled, null) { PluginCard = key.PluginCard };
 
     // Settings files may be old or hand-edited; normalize instead of rejecting them.
     public static IReadOnlyList<OverlayCardPlacement> Normalize(
@@ -66,7 +74,7 @@ public static class OverlayCardPolicy
     // Showing a card over the game stops it floating, so a card is only ever in one place.
     public static PanelSettings WithEnabled(PanelSettings settings, OverlayCardKey key, bool enabled) =>
         Upsert(settings, key, existing =>
-            (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, false, null)) with
+            (existing ?? NewPlacement(key, false)) with
             {
                 Enabled = enabled,
                 IsFloating = false
@@ -75,7 +83,7 @@ public static class OverlayCardPolicy
     // Ticking a card in the floating checklist floats it and takes it off the game; unticking switches it off.
     public static PanelSettings WithFloating(PanelSettings settings, OverlayCardKey key, bool show) =>
         Upsert(settings, key, existing =>
-            (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, false, null)) with
+            (existing ?? NewPlacement(key, false)) with
             {
                 Enabled = show,
                 IsFloating = show
@@ -90,7 +98,7 @@ public static class OverlayCardPolicy
         }
 
         return Upsert(settings, key, existing =>
-            (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, true, null) { IsFloating = true }) with
+            (existing ?? NewPlacement(key, true) with { IsFloating = true }) with
             {
                 FloatingBounds = bounds
             });
@@ -115,7 +123,7 @@ public static class OverlayCardPolicy
         }
 
         return Upsert(settings, key, existing =>
-            (existing ?? new OverlayCardPlacement(key.Kind, key.AccountId, true, null)) with { Bounds = bounds });
+            (existing ?? NewPlacement(key, true)) with { Bounds = bounds });
     }
 
     private static PanelSettings Upsert(

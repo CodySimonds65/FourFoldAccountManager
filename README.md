@@ -18,7 +18,8 @@ A Windows client for running several FourFold accounts side by side, each in its
 - **Accounts**: saved logins (stored in Windows Credential Manager), favorites and custom order.
 - **Layouts**: run up to five games in a grid, or give each account its own tab.
 - **Theatre mode and full screen**: hide everything but the games.
-- **Plugins**: XP tracker, class comparison, XP calculator and a speedrun timer.
+- **Plugins**: XP tracker, stats, XP calculator and a speedrun timer in a RuneLite-style strip. Click an icon to open its panel, drag icons to reorder them, and use the wrench to switch plugins off or change the Timer's keys. The button at the right of the toolbar hides or shows the strip.
+- **Community plugins**: open the plugin list (the wrench) and choose **Plugin hub** to search and install plugins made by the community. Every plugin is reviewed before it is listed, runs in a sandbox, and updates itself. To make one, see [PLUGIN_AUTHORS.md](PLUGIN_AUTHORS.md).
 - **Overlays**: drag XP/hr, stats, XP calc and timer cards anywhere over the game.
 - **Second monitor**: pop the tools panel into its own window, or float individual cards on any screen.
 - **Shared XP leaderboard**: daily, weekly and monthly XP gains across opted-in players.
@@ -26,7 +27,7 @@ A Windows client for running several FourFold accounts side by side, each in its
 
 ## Shortcuts
 
-All shortcuts can be changed on the **Shortcuts** tab in Settings.
+App shortcuts can be changed on the **Shortcuts** tab in Settings; the Timer's keys are in its plugin settings (wrench → Timer cog).
 
 | Action | Default |
 |---|---|
