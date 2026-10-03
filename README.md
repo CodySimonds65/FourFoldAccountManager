@@ -19,6 +19,7 @@ A Windows desktop client for managing FourFold accounts, saved logins, multi-cli
 - **Flexible layouts** — Run 1×1, 1×2, 2×1, 2×2, 2×3, or vertical split client layouts together, or give each client its own tab.
 - **Plugins** — Use XP Tracker, Class Comparison, and XP Calculator from the right-side Plugins sidebar.
 - **Game controls** — Fit or fill each game panel, adjust viewport sizes, use full screen or theatre mode, and configure keyboard shortcuts.
+- **Store blocking** — Turn on **Block the in-game store and gold buttons** in **Settings → Display** and those buttons do nothing in your panels. Without it, the store or gold page replaces the game in that panel.
 - **Updates** — Stable Windows releases are published through [GitHub Releases](https://github.com/CodySimonds65/FourFoldAccountManager/releases).
 
 ## Profile tools

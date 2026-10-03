@@ -85,7 +85,7 @@ public partial class MainWindow : Window
         _accountStore = new AccountStore(paths);
         _settingsStore = new SettingsStore(paths);
         _credentialStore = new WindowsCredentialStore();
-        _browserSessions = new AccountBrowserSessionService(paths);
+        _browserSessions = new AccountBrowserSessionService(paths, () => _panelSettings.BlockStorePages);
         _xpTracker = new XpTrackerCoordinator(paths);
         _playerProfileService = _xpTracker.ProfileService;
         _xpTracker.Changed += (_, _) =>
@@ -131,6 +131,7 @@ public partial class MainWindow : Window
             }
         };
         _browserSessions.NavigationBlocked += BrowserSessions_NavigationBlocked;
+        _browserSessions.StorePageBlocked += BrowserSessions_StorePageBlocked;
 
         AccountsListBox.ItemsSource = _accounts;
         SetManagerEnabled(false);
@@ -952,7 +953,8 @@ public partial class MainWindow : Window
                 action => GlobalShortcutActions.GetChord(_panelSettings, action)),
             GlobalShortcutActions.All.Where(action => _shortcuts?.IsAvailable(action) != true).ToHashSet(),
             showOverlaysInTheatreMode: _panelSettings.ShowOverlaysInTheatreMode,
-            secondMonitorMode: _panelSettings.SecondMonitorMode)
+            secondMonitorMode: _panelSettings.SecondMonitorMode,
+            blockStorePages: _panelSettings.BlockStorePages)
         {
             Owner = this
         };
@@ -977,6 +979,7 @@ public partial class MainWindow : Window
             .ToArray();
         var theatreOverlaysChanged = dialog.ShowOverlaysInTheatreMode != _panelSettings.ShowOverlaysInTheatreMode;
         var secondMonitorModeChanged = dialog.SecondMonitorMode != _panelSettings.SecondMonitorMode;
+        var storeBlockChanged = dialog.BlockStorePages != _panelSettings.BlockStorePages;
         // Leaving Account tools mode closes the tools window; its spot is saved with the mode change.
         var closingToolsPlacement = secondMonitorModeChanged &&
             dialog.SecondMonitorMode != SecondMonitorMode.AccountToolsWindow
@@ -986,6 +989,7 @@ public partial class MainWindow : Window
             dialog.ShowFullScreenExitButton == _panelSettings.ShowFullScreenExitButton &&
             !theatreOverlaysChanged &&
             !secondMonitorModeChanged &&
+            !storeBlockChanged &&
             changedShortcuts.Length == 0 &&
             !dialog.ResetLayoutSizes)
         {
@@ -1013,7 +1017,8 @@ public partial class MainWindow : Window
                         FillGameToPanel = dialog.FillGameToPanel,
                         ShowFullScreenExitButton = dialog.ShowFullScreenExitButton,
                         ShowOverlaysInTheatreMode = dialog.ShowOverlaysInTheatreMode,
-                        SecondMonitorMode = dialog.SecondMonitorMode
+                        SecondMonitorMode = dialog.SecondMonitorMode,
+                        BlockStorePages = dialog.BlockStorePages
                     });
                     if (secondMonitorModeChanged && dialog.SecondMonitorMode == SecondMonitorMode.AccountToolsWindow)
                     {
@@ -1110,6 +1115,10 @@ public partial class MainWindow : Window
                     ? nextSettings.SecondMonitorMode == SecondMonitorMode.FloatingCards
                         ? "Second monitor set to Floating cards."
                         : "Second monitor set to Account tools window."
+                    : storeBlockChanged
+                    ? nextSettings.BlockStorePages
+                        ? "The in-game store and gold buttons are now blocked."
+                        : "The in-game store and gold buttons work again."
                     : theatreOverlaysChanged
                     ? nextSettings.ShowOverlaysInTheatreMode
                         ? "Overlays now show in theatre mode."
@@ -3212,12 +3221,18 @@ public partial class MainWindow : Window
         _ => "This account view could not be opened. Other slots remain available."
     };
 
-    private void BrowserSessions_NavigationBlocked(Guid accountId)
+    private void BrowserSessions_NavigationBlocked(Guid accountId) =>
+        ShowSlotWarning(accountId, "Blocked navigation outside FourFold Online.");
+
+    private void BrowserSessions_StorePageBlocked(Guid accountId) =>
+        ShowSlotWarning(accountId, "Store and gold pages are blocked (Settings → Display).");
+
+    private void ShowSlotWarning(Guid accountId, string message)
     {
         var slot = _slotCards.FirstOrDefault(item => AccountIdFor(item.SlotIndex) == accountId);
         if (slot is not null)
         {
-            SetSlotStatus(slot, "Blocked navigation outside FourFold Online.", StatusTone.Warning);
+            SetSlotStatus(slot, message, StatusTone.Warning);
         }
     }
 

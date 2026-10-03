@@ -111,6 +111,19 @@
                             </StackPanel>
                         </CheckBox>
                     </Border>
+                    <TextBlock Text="IN-GAME STORE" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}"
+                               Margin="0,20,0,9" />
+                    <Border Padding="14" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}"
+                            Background="{DynamicResource Brush.Surface}">
+                        <CheckBox x:Name="BlockStorePagesOption" VerticalContentAlignment="Top"
+                                  Foreground="{DynamicResource Brush.TextPrimary}">
+                            <StackPanel Margin="8,-2,0,0">
+                                <TextBlock Text="Block the in-game store and gold buttons" FontWeight="SemiBold" />
+                                <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
+                                           Text="The store and gold pages won't open in your panels, so the game keeps running." />
+                            </StackPanel>
+                        </CheckBox>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 

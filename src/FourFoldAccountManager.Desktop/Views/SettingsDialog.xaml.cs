@@ -24,7 +24,8 @@ public partial class SettingsDialog : Window
         IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> shortcuts,
         IReadOnlySet<GlobalShortcutAction> unavailableShortcuts,
         bool showOverlaysInTheatreMode,
-        SecondMonitorMode secondMonitorMode)
+        SecondMonitorMode secondMonitorMode,
+        bool blockStorePages)
     {
         ArgumentNullException.ThrowIfNull(shortcuts);
         ArgumentNullException.ThrowIfNull(unavailableShortcuts);
@@ -44,6 +45,7 @@ public partial class SettingsDialog : Window
         ShowOverlaysInTheatreModeOption.IsChecked = showOverlaysInTheatreMode;
         AccountToolsModeOption.IsChecked = secondMonitorMode == SecondMonitorMode.AccountToolsWindow;
         FloatingCardsModeOption.IsChecked = secondMonitorMode == SecondMonitorMode.FloatingCards;
+        BlockStorePagesOption.IsChecked = blockStorePages;
         _rows = new[]
         {
             RevealShortcutRow, DividerShortcutRow, TimerSplitShortcutRow, TimerFinishShortcutRow, TimerResetShortcutRow,
@@ -66,6 +68,8 @@ public partial class SettingsDialog : Window
     public bool ShowOverlaysInTheatreMode { get; private set; }
 
     public SecondMonitorMode SecondMonitorMode { get; private set; }
+
+    public bool BlockStorePages { get; private set; }
 
     public IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> Shortcuts => _shortcuts;
 
@@ -217,6 +221,7 @@ public partial class SettingsDialog : Window
         SecondMonitorMode = FloatingCardsModeOption.IsChecked == true
             ? SecondMonitorMode.FloatingCards
             : SecondMonitorMode.AccountToolsWindow;
+        BlockStorePages = BlockStorePagesOption.IsChecked == true;
         DialogResult = true;
     }
 

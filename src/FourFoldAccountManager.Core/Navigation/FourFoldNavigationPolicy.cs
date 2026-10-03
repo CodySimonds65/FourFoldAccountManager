@@ -11,4 +11,10 @@ public static class FourFoldNavigationPolicy
         string.IsNullOrEmpty(candidate.UserInfo) &&
         candidate.HostNameType == UriHostNameType.Dns &&
         string.Equals(candidate.IdnHost.TrimEnd('.'), AllowedHost, StringComparison.OrdinalIgnoreCase);
+
+    // The pages the in-game store and gold buttons open.
+    private static readonly string[] StorePaths = ["/shop.php", "/buy_gold.php"];
+
+    public static bool IsStorePage(Uri candidate) =>
+        IsAllowed(candidate) && StorePaths.Contains(candidate.AbsolutePath, StringComparer.OrdinalIgnoreCase);
 }
