@@ -22,6 +22,9 @@ public partial class PluginSidebar : UserControl
     private const string IconFont = "Segoe Fluent Icons, Segoe MDL2 Assets";
     // A private drag format, so only a strip icon can be dropped on the strip.
     private const string DragFormat = "FourFold.PluginId";
+    // The hub page builds every row it shows each time it refreshes, so it shows only this many matches. Installed
+    // plugins sort first, so they are always among them. A virtualising list is the upgrade if the hub outgrows this.
+    private const int HubRowLimit = 50;
     private IReadOnlyList<IFourFoldPlugin> _plugins = [];
     private PanelSettings _settings = PanelSettings.Default;
     private bool _showingList;
@@ -321,7 +324,6 @@ public partial class PluginSidebar : UserControl
             var uninstall = new Button
             {
                 Content = "Uninstall",
-                Height = 26,
                 Padding = new Thickness(8, 0, 8, 0),
                 Margin = new Thickness(6, 0, 0, 0),
                 VerticalAlignment = VerticalAlignment.Center,
@@ -333,8 +335,21 @@ public partial class PluginSidebar : UserControl
             var row = new Grid();
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            row.Children.Add(CreateNameBlock(
-                name, null, "Removed from the hub. " + pulled.Reason, detailBrush: "Brush.Danger"));
+            // The hub's stock reasons already say it; only a maintainer's own reason needs the lead-in.
+            var block = CreateNameBlock(
+                name,
+                null,
+                pulled.Reason is HubPolicy.RemovedReason or HubPolicy.UnlistedReason
+                    ? pulled.Reason
+                    : "Removed from the hub. " + pulled.Reason,
+                detailBrush: "Brush.Danger");
+            // A failed removal shows why, on its own line under the reason.
+            if (_hub.Errors.TryGetValue(pulled.Id, out var removalError))
+            {
+                block.Children.Add(HubNote(removalError, "Brush.Danger"));
+            }
+
+            row.Children.Add(block);
             Grid.SetColumn(uninstall, 1);
             row.Children.Add(uninstall);
             var border = new Border
@@ -431,7 +446,7 @@ public partial class PluginSidebar : UserControl
             hint.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextMuted");
             _hubSearch.TextChanged += (_, _) =>
             {
-                hint.Visibility = _hubSearch.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+                hint.Visibility = string.IsNullOrWhiteSpace(_hubSearch.Text) ? Visibility.Visible : Visibility.Collapsed;
                 RebuildHubRows();
             };
             var searchArea = new Grid { Margin = new Thickness(0, 0, 0, 8) };
@@ -457,6 +472,8 @@ public partial class PluginSidebar : UserControl
         return _hubPage;
     }
 
+    // Rebuilding drops the button that has the keyboard focus, so the focus is put back afterwards. Focus that was
+    // somewhere else (the search box while typing) is left alone.
     private void RebuildHubRows()
     {
         if (_hubRows is null || _hubSearch is null)
@@ -464,15 +481,67 @@ public partial class PluginSidebar : UserControl
             return;
         }
 
-        _hubRows.Children.Clear();
+        string? focusedName = null;
+        string? focusedRowId = null;
+        if (_hubRows.IsKeyboardFocusWithin && Keyboard.FocusedElement is DependencyObject focused)
+        {
+            focusedName = AutomationProperties.GetName(focused);
+            focusedRowId = _hubRows.Children.OfType<Border>().FirstOrDefault(row => row.IsKeyboardFocusWithin)?.Tag as string;
+        }
+
+        FillHubRows();
+        if (focusedName is not null)
+        {
+            RestoreHubFocus(focusedName, focusedRowId);
+        }
+    }
+
+    // Focus goes to the button with the same name in the same row, else that row's Details button, else (the row is
+    // gone) the search box. A Details button keeps its name when it reads "Less", so it is found again.
+    private void RestoreHubFocus(string name, string? rowId)
+    {
+        FrameworkElement? scope = _hubRows;
+        if (rowId is not null)
+        {
+            scope = _hubRows!.Children.OfType<Border>().FirstOrDefault(row => row.Tag as string == rowId);
+        }
+
+        var buttons = scope is null ? [] : HubButtons(scope).Where(button => button.IsEnabled).ToList();
+        UIElement? target = buttons.FirstOrDefault(button => AutomationProperties.GetName(button) == name) ??
+                            (rowId is null ? null : buttons.FirstOrDefault());
+        (target ?? _hubSearch)?.Focus();
+    }
+
+    // Every button below the element, in order. A row's first button is its Details button.
+    private static IEnumerable<Button> HubButtons(DependencyObject parent)
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(parent).OfType<DependencyObject>())
+        {
+            if (child is Button button)
+            {
+                yield return button;
+            }
+
+            foreach (var inner in HubButtons(child))
+            {
+                yield return inner;
+            }
+        }
+    }
+
+    private void FillHubRows()
+    {
+        _hubRows!.Children.Clear();
         if (_hub.Unreachable)
         {
+            // A list that is still showing is the last one that was fetched.
             _hubRows.Children.Add(HubNote(
-                "The hub couldn't be reached. The plugins you have installed keep working.", "Brush.Danger"));
+                "The hub couldn't be reached. The plugins you have installed keep working." +
+                (_hub.Plugins.Count > 0 ? " This list may be out of date." : ""),
+                "Brush.Danger"));
             var retry = new Button
             {
                 Content = "Try again",
-                Height = 28,
                 Padding = new Thickness(10, 0, 10, 0),
                 Margin = new Thickness(0, 6, 0, 10),
                 HorizontalAlignment = HorizontalAlignment.Left,
@@ -497,15 +566,21 @@ public partial class PluginSidebar : UserControl
             return;
         }
 
-        var matches = HubPolicy.Search(_hub.Plugins, _hubSearch.Text, _hub.Installed);
+        var matches = HubPolicy.Search(_hub.Plugins, _hubSearch!.Text, _hub.Installed);
         if (matches.Count == 0)
         {
             _hubRows.Children.Add(HubNote("No plugins match.", "Brush.TextMuted"));
         }
 
-        foreach (var plugin in matches)
+        foreach (var plugin in matches.Take(HubRowLimit))
         {
             _hubRows.Children.Add(CreateHubRow(plugin));
+        }
+
+        if (matches.Count > HubRowLimit)
+        {
+            _hubRows.Children.Add(HubNote(
+                $"Showing the first {HubRowLimit} of {matches.Count}. Search to narrow it down.", "Brush.TextMuted"));
         }
     }
 
@@ -556,6 +631,12 @@ public partial class PluginSidebar : UserControl
             TextWrapping = TextWrapping.Wrap
         });
         text.Children.Add(HubNote($"by {plugin.Author} · v{plugin.Version}", "Brush.TextMuted"));
+        // Seen before Install is pressed; an expanded row says it below instead, so it isn't said twice.
+        if (plugin.AnySite && !expanded)
+        {
+            text.Children.Add(HubNote("Can contact any website", "Brush.AccentGold"));
+        }
+
         if (_hub.Errors.TryGetValue(plugin.Id, out var error))
         {
             text.Children.Add(HubNote(error, "Brush.Danger"));
@@ -573,7 +654,7 @@ public partial class PluginSidebar : UserControl
                 plugin.AnySite ? "Can contact: any website"
                 : plugin.Sites.Count == 0 ? "Can contact: no websites"
                 : "Can contact: " + string.Join(", ", plugin.Sites.Select(PluginNetworkPolicy.SiteLabel)),
-                "Brush.TextMuted"));
+                plugin.AnySite ? "Brush.AccentGold" : "Brush.TextMuted"));
             if (plugin.Cards.Count > 0)
             {
                 text.Children.Add(HubNote(
@@ -595,7 +676,6 @@ public partial class PluginSidebar : UserControl
         var details = new Button
         {
             Content = expanded ? "Less" : "Details",
-            Height = 24,
             Padding = new Thickness(8, 0, 8, 0),
             Style = (Style)FindResource("AppButtonStyle")
         };
@@ -607,11 +687,11 @@ public partial class PluginSidebar : UserControl
             var source = new Button
             {
                 Content = "Source",
-                Height = 24,
                 Padding = new Thickness(8, 0, 8, 0),
                 Margin = new Thickness(6, 0, 0, 0),
                 Style = (Style)FindResource("AppButtonStyle")
             };
+            AutomationProperties.SetName(source, $"{plugin.Name} source");
             source.Click += (_, _) => HubSourceRequested?.Invoke(plugin.Repository);
             actions.Children.Add(source);
             if (installed)
@@ -619,7 +699,6 @@ public partial class PluginSidebar : UserControl
                 var uninstall = new Button
                 {
                     Content = "Uninstall",
-                    Height = 24,
                     Padding = new Thickness(8, 0, 8, 0),
                     Margin = new Thickness(6, 0, 0, 0),
                     IsEnabled = !busy,
@@ -644,12 +723,12 @@ public partial class PluginSidebar : UserControl
             var install = new Button
             {
                 Content = busy ? "Working…" : "Install",
-                Height = 26,
                 Padding = new Thickness(10, 0, 10, 0),
                 IsEnabled = !busy,
                 Style = (Style)FindResource("PrimaryButtonStyle")
             };
-            AutomationProperties.SetName(install, $"Install {plugin.Name}");
+            // The name follows what the button says, so a screen reader doesn't offer "Install" while it is working.
+            AutomationProperties.SetName(install, busy ? $"{plugin.Name}: working" : $"Install {plugin.Name}");
             install.Click += (_, _) => HubInstallRequested?.Invoke(plugin.Id);
             action = install;
         }
@@ -672,6 +751,10 @@ public partial class PluginSidebar : UserControl
             CornerRadius = new CornerRadius(6),
             BorderThickness = new Thickness(1),
             Cursor = Cursors.Hand,
+            // Clips a name of stacked combining marks, which would otherwise draw over the row above.
+            ClipToBounds = true,
+            // Which plugin this row is, so a rebuild can find it again to put the keyboard focus back.
+            Tag = plugin.Id,
             Child = row
         };
         border.SetResourceReference(Border.BackgroundProperty, "Brush.SurfaceRaised");
