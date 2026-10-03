@@ -15,6 +15,7 @@ public sealed class PluginFileServerTests : IDisposable
         File.WriteAllText(Path.Combine(folder, "index.html"), "<!doctype html>");
         File.WriteAllText(Path.Combine(folder, "js", "app.js"), "");
         File.WriteAllText(Path.Combine(folder, "run.exe"), "");
+        File.WriteAllText(Path.Combine(folder, "plugin.json"), "{}");
         File.WriteAllText(Path.Combine(_root, "secret.txt"), "outside the plugin");
         _manifest = new PluginManifest("cody.goal-tracker", "Goal tracker", "Goals", "1.0.0", "Cody", "", 1,
             "index.html", null, [], false, []) { Folder = folder };
@@ -42,6 +43,10 @@ public sealed class PluginFileServerTests : IDisposable
     [InlineData("/run.exe")]
     [InlineData("/missing.html")]
     [InlineData("/plugin.json")]
+    [InlineData("/PLUGIN.JSON")]
+    [InlineData("/js/../plugin.json")]
+    [InlineData("/index.html:x")]
+    [InlineData("/index.html::$DATA")]
     public void PathsOutsideTheFolderUnknownTypesAndMissingFilesAreRefused(string urlPath) =>
         Assert.False(PluginFileServer.TryResolve(_manifest, urlPath, out _, out _));
 }

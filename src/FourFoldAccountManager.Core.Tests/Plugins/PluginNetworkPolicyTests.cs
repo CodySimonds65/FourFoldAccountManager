@@ -11,7 +11,7 @@ public sealed class PluginNetworkPolicyTests
         [new Uri("https://wiki.example.com"), new Uri("https://api.example.com:8443")], anySite, []);
 
     [Theory]
-    [InlineData("https://cody.goal-tracker.plugin.fourfold/app.js", true)]
+    [InlineData("https://cody--goal-tracker.fourfoldplugin/app.js", true)]
     [InlineData("https://wiki.example.com/page?x=1", true)]
     [InlineData("https://WIKI.example.com/page", true)]
     [InlineData("https://api.example.com:8443/v1", true)]
@@ -19,7 +19,7 @@ public sealed class PluginNetworkPolicyTests
     [InlineData("https://other.example.com/", false)]
     [InlineData("https://evil-wiki.example.com.attacker.net/", false)]
     [InlineData("http://wiki.example.com/page", false)]
-    [InlineData("https://other.plugin.fourfold/app.js", false)]
+    [InlineData("https://other--plugin.fourfoldplugin/app.js", false)]
     [InlineData("file:///C:/Windows/win.ini", false)]
     public void ADefaultPluginReachesOnlyItsOwnFilesAndDeclaredSites(string url, bool allowed) =>
         Assert.Equal(allowed, PluginNetworkPolicy.IsAllowed(new Uri(url), Manifest(), PluginTrust.Developer));
@@ -39,8 +39,33 @@ public sealed class PluginNetworkPolicyTests
     [InlineData("https://localhost./")]
     [InlineData("https://127.0.0.1./")]
     [InlineData("https://192.168.1.1./")]
+    [InlineData("https://100.64.1.1/")]
+    [InlineData("https://[::127.0.0.1]/")]
+    [InlineData("https://[64:ff9b::7f00:1]/")]
+    [InlineData("https://[2002:7f00:1::]/")]
     public void TheLocalNetworkIsNeverReachableEvenWithAnySite(string url) =>
         Assert.False(PluginNetworkPolicy.IsAllowed(new Uri(url), Manifest(anySite: true), PluginTrust.Verified));
+
+    [Fact]
+    public void ThePluginNamespaceIsNeverAnOrdinarySite()
+    {
+        var manifestWithPluginHost = new PluginManifest(
+            "cody.goal-tracker", "Goal tracker", "Goals", "1.0.0", "Cody", "", 1, "index.html", null,
+            [new Uri("https://wiki.example.com"), new Uri("https://other--plugin.fourfoldplugin")], true, []);
+
+        Assert.False(PluginNetworkPolicy.IsAllowed(
+            new Uri("https://other--plugin.fourfoldplugin/app.js"), manifestWithPluginHost, PluginTrust.Verified));
+        Assert.False(PluginNetworkPolicy.IsAllowed(
+            new Uri("https://fourfoldplugin/"), manifestWithPluginHost, PluginTrust.Verified));
+        Assert.False(PluginNetworkPolicy.IsAllowed(
+            new Uri("https://x.y.fourfoldplugin/"), manifestWithPluginHost, PluginTrust.Verified));
+        Assert.False(PluginNetworkPolicy.IsAllowed(
+            new Uri("https://cody--goal-tracker.fourfoldplugin./"), manifestWithPluginHost, PluginTrust.Verified));
+        Assert.False(PluginNetworkPolicy.IsAllowed(
+            new Uri("https://cody--goal-tracker.fourfoldplugin:8443/"), manifestWithPluginHost, PluginTrust.Verified));
+        Assert.True(PluginNetworkPolicy.IsAllowed(
+            new Uri("https://cody--goal-tracker.fourfoldplugin/app.js"), manifestWithPluginHost, PluginTrust.Verified));
+    }
 
     [Fact]
     public void AnySiteNeedsTrustAndNeverAllowsOutsideScriptsOrPlainHttp()
@@ -61,22 +86,26 @@ public sealed class PluginNetworkPolicyTests
     public void TheContentSecurityPolicyNamesOnlyDeclaredSitesAndNeverAllowsInlineScriptOrEval()
     {
         var policy = PluginNetworkPolicy.BuildContentSecurityPolicy(Manifest(), PluginTrust.Developer);
-
-        Assert.Contains("default-src 'none'", policy);
-        Assert.Contains("script-src 'self';", policy);
-        Assert.DoesNotContain("unsafe-eval", policy);
-        Assert.DoesNotContain("script-src 'self' 'unsafe-inline'", policy);
-        Assert.Contains(
-            "connect-src 'self' https://wiki.example.com https://api.example.com:8443 wss://wiki.example.com wss://api.example.com:8443",
+        Assert.Equal(
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://wiki.example.com https://api.example.com:8443; connect-src 'self' https://wiki.example.com https://api.example.com:8443 wss://wiki.example.com wss://api.example.com:8443; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
             policy);
-        Assert.Contains("frame-src 'none'", policy);
 
         var anySite = PluginNetworkPolicy.BuildContentSecurityPolicy(Manifest(anySite: true), PluginTrust.Verified);
-        Assert.Contains("connect-src 'self' https: wss:", anySite);
-        Assert.Contains("script-src 'self';", anySite);
+        Assert.Equal(
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; connect-src 'self' https: wss://wiki.example.com wss://api.example.com:8443; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+            anySite);
 
         var untrusted = PluginNetworkPolicy.BuildContentSecurityPolicy(Manifest(anySite: true), PluginTrust.Standard);
-        Assert.DoesNotContain("https: wss:", untrusted);
+        Assert.Equal(
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://wiki.example.com https://api.example.com:8443; connect-src 'self' https://wiki.example.com https://api.example.com:8443 wss://wiki.example.com wss://api.example.com:8443; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+            untrusted);
+
+        var noSites = new PluginManifest("cody.goal-tracker", "Goal tracker", "Goals", "1.0.0", "Cody", "", 1,
+            "index.html", null, [], false, []);
+        var nositespolicy = PluginNetworkPolicy.BuildContentSecurityPolicy(noSites, PluginTrust.Developer);
+        Assert.Equal(
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+            nositespolicy);
     }
 
     [Theory]
@@ -84,6 +113,17 @@ public sealed class PluginNetworkPolicyTests
     [InlineData("172.32.0.1", false)]
     [InlineData("172.31.255.255", true)]
     [InlineData("0.0.0.0", true)]
+    [InlineData("100.63.255.255", false)]
+    [InlineData("100.64.0.0", true)]
+    [InlineData("100.127.255.255", true)]
+    [InlineData("100.128.0.0", false)]
     public void LocalAddressRangesAreRecognised(string address, bool local) =>
         Assert.Equal(local, PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse(address)));
+
+    [Fact]
+    public void Ipv6EmbeddedAddressesAreLocal()
+    {
+        Assert.True(PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse("::1")));
+        Assert.False(PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse("2001:4860:4860::8888")));
+    }
 }

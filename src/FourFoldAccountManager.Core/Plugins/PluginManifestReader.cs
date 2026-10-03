@@ -98,7 +98,7 @@ public static partial class PluginManifestReader
                 }
 
                 var panel = Text(root, "panel");
-                if (panel is null || !panel.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ||
+                if (panel is null || panel.Contains('\\') || !panel.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ||
                     !PluginPaths.TryResolveInside(folder, panel, out var panelPath) || !File.Exists(panelPath))
                 {
                     return Reject("The panel must be an .html file inside the plugin folder.");
@@ -106,7 +106,7 @@ public static partial class PluginManifestReader
 
                 var icon = Text(root, "icon");
                 if (icon is not null &&
-                    (!icon.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                    (icon.Contains('\\') || !icon.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
                      !PluginPaths.TryResolveInside(folder, icon, out var iconPath) || !File.Exists(iconPath) ||
                      new FileInfo(iconPath).Length > MaximumIconBytes))
                 {
@@ -172,7 +172,7 @@ public static partial class PluginManifestReader
                 uri.Scheme != Uri.UriSchemeHttps || uri.AbsolutePath != "/" || uri.Query.Length > 0 ||
                 uri.Fragment.Length > 0 || uri.UserInfo.Length > 0 || uri.HostNameType != UriHostNameType.Dns ||
                 PluginNetworkHosts.IsLocalName(uri.IdnHost) || uri.IdnHost.EndsWith('.') ||
-                IsIpLikeHost(uri.IdnHost))
+                IsIpLikeHost(uri.IdnHost) || PluginNetworkPolicy.IsPluginHost(uri.IdnHost))
             {
                 return false;
             }
