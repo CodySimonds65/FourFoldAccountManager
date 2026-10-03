@@ -46,6 +46,7 @@ public sealed class PluginFileServerTests : IDisposable
     [InlineData("/PLUGIN.JSON")]
     [InlineData("/js/../plugin.json")]
     [InlineData("/index.html:x")]
+    [InlineData("/index.html:x.js")]
     [InlineData("/index.html::$DATA")]
     public void PathsOutsideTheFolderUnknownTypesAndMissingFilesAreRefused(string urlPath) =>
         Assert.False(PluginFileServer.TryResolve(_manifest, urlPath, out _, out _));

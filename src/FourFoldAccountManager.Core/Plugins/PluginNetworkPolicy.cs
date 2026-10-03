@@ -112,19 +112,17 @@ public static class PluginNetworkPolicy
 
     public static string BuildContentSecurityPolicy(PluginManifest manifest, PluginTrust trust)
     {
-        var allowsAnySite = manifest.AnySite && trust is (PluginTrust.Developer or PluginTrust.Verified);
+        var allowsAnySite = AllowsAnySite(manifest, trust);
+        var wssSites = string.Join(' ', manifest.Sites.Select(site =>
+            site.IsDefaultPort ? $"wss://{site.IdnHost}" : $"wss://{site.IdnHost}:{site.Port}"));
 
         string images;
         string connectHttps;
-        string connectWss;
 
         if (allowsAnySite)
         {
             images = "https:";
             connectHttps = "https:";
-            var wssSites = string.Join(' ', manifest.Sites.Select(site =>
-                site.IsDefaultPort ? $"wss://{site.IdnHost}" : $"wss://{site.IdnHost}:{site.Port}"));
-            connectWss = wssSites;
         }
         else
         {
@@ -132,11 +130,9 @@ public static class PluginNetworkPolicy
                 site.IsDefaultPort ? $"https://{site.IdnHost}" : $"https://{site.IdnHost}:{site.Port}").ToArray();
             images = string.Join(' ', originParts);
             connectHttps = string.Join(' ', originParts);
-            connectWss = string.Join(' ', manifest.Sites.Select(site =>
-                site.IsDefaultPort ? $"wss://{site.IdnHost}" : $"wss://{site.IdnHost}:{site.Port}"));
         }
 
-        var connect = Prefix(connectHttps) + Prefix(connectWss);
+        var connect = Prefix(connectHttps) + Prefix(wssSites);
         return "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; " +
                $"img-src 'self' data:{Prefix(images)}; connect-src 'self'{connect}; " +
                "frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
