@@ -43,6 +43,15 @@ Choose **Tabs** in the layout picker to give each account its own full-size tab.
 
 Press **Theatre** in the header, or the Toggle theatre mode shortcut (Ctrl+Alt+Shift+T by default), to hide the accounts panel, the Plugins sidebar, the toolbar, the tab strip, and each panel's header without leaving the window. The header row stays, and **Esc** or **Exit theatre** returns to the normal view. Your overlay cards and the edge tab work in theatre mode the same as in full screen; turn that off with **Show overlays in theatre mode** in Settings. You can go full screen from theatre mode, and Esc then returns you to theatre mode.
 
+## Second monitor
+
+Choose how to use a second monitor in **Settings → Display → Second monitor**.
+
+- **Account tools window** (the default): press **Pop out tools** in the header, or in the Overlays panel in theatre mode and full screen, to move the Account tools panel into its own window, then drag it to another monitor. Close that window to put the panel back. FourFold remembers whether it was open and where, and reopens it there; if that monitor is gone, it opens on the main monitor.
+- **Floating cards**: press **Floating cards** to choose which overlay cards float. A floating card stays on top of every window on any monitor, never takes focus, and lets clicks pass through to whatever is underneath. Tick **Arrange floating cards** in the same menu to drag and resize them, and untick it to lock them again. A card is either over the game or floating: switching it on in the Overlays panel moves it back over the game, each to its own saved spot. Floating cards hide while FourFold is minimized.
+
+Switching modes closes the tools window or puts floating cards back over the game; saved positions are kept.
+
 ## Requirements
 
 - Windows

@@ -62,6 +62,10 @@ public partial class MainWindow : Window
     private bool _viewAdjustmentVisible;
     private bool _isFullScreen;
     private bool _isTheatre;
+    private ToolsWindow? _toolsWindow;
+    private readonly FloatingCardHost _floatingCards = new();
+    private bool _arrangingFloatingCards;
+    private IReadOnlyList<FloatingChecklistItem> _floatingChecklist = [];
     private bool _showingLeaderboard;
     private bool _overlayEditing;
     private WindowState _previousWindowState;
@@ -93,6 +97,10 @@ public partial class MainWindow : Window
         FullscreenOverlayTray.EditRequested += (_, _) => SetOverlayEditing(true);
         FullscreenOverlayTray.DoneRequested += (_, _) => SetOverlayEditing(false);
         FullscreenOverlayTray.CardToggleRequested += FullscreenOverlayTray_CardToggleRequested;
+        FullscreenOverlayTray.SecondMonitorRequested += (_, _) => UseSecondMonitor();
+        _floatingCards.BoundsCommitted += FloatingCards_BoundsCommitted;
+        // Floating cards hide while FourFold is minimized and come back when it is restored.
+        StateChanged += (_, _) => _floatingCards.SetHidden(WindowState == WindowState.Minimized);
         GlobalOverlayLayer.BoundsCommitted += OverlayLayer_BoundsCommitted;
         PluginSidebar.SetTrackerItemsSource(_xpTrackerRows);
         PluginSidebar.AttachTimer(_timer);
@@ -128,6 +136,7 @@ public partial class MainWindow : Window
         AccountsListBox.ItemsSource = _accounts;
         AddAccountButton.IsEnabled = false;
         SettingsButton.IsEnabled = false;
+        SecondMonitorButton.IsEnabled = false;
         LayoutPicker.IsEnabled = false;
         LaunchVisibleButton.IsEnabled = false;
         LayoutPicker.ItemsSource = new[]
@@ -311,6 +320,7 @@ public partial class MainWindow : Window
             _isReady = true;
             AddAccountButton.IsEnabled = true;
             SettingsButton.IsEnabled = true;
+            SecondMonitorButton.IsEnabled = true;
             LayoutPicker.IsEnabled = true;
             LaunchVisibleButton.IsEnabled = true;
             TogglePluginsButton.IsEnabled = true;
@@ -318,6 +328,13 @@ public partial class MainWindow : Window
             AccountsListBox.SelectedIndex = _accounts.Count > 0 ? 0 : -1;
             UpdateAccountActions();
             await RebuildPanelAsync(closeExistingViews: false);
+            UpdateSecondMonitorButtons();
+            if (_panelSettings.SecondMonitorMode == SecondMonitorMode.AccountToolsWindow &&
+                _panelSettings.ToolsWindow is { IsOpen: true })
+            {
+                OpenToolsWindow(activate: false);
+            }
+
             GlobalStatusText.Text = "Choose your layout, assign your accounts, and launch your party.";
             _ = CheckForUpdatesAsync();
         }
@@ -325,6 +342,7 @@ public partial class MainWindow : Window
         {
             AddAccountButton.IsEnabled = false;
             SettingsButton.IsEnabled = false;
+            SecondMonitorButton.IsEnabled = false;
             LayoutPicker.IsEnabled = false;
             LaunchVisibleButton.IsEnabled = false;
             TogglePluginsButton.IsEnabled = false;
@@ -336,6 +354,7 @@ public partial class MainWindow : Window
         {
             AddAccountButton.IsEnabled = false;
             SettingsButton.IsEnabled = false;
+            SecondMonitorButton.IsEnabled = false;
             LayoutPicker.IsEnabled = false;
             LaunchVisibleButton.IsEnabled = false;
             TogglePluginsButton.IsEnabled = false;
@@ -955,7 +974,8 @@ public partial class MainWindow : Window
                 action => action,
                 action => GlobalShortcutActions.GetChord(_panelSettings, action)),
             GlobalShortcutActions.All.Where(action => _shortcuts?.IsAvailable(action) != true).ToHashSet(),
-            showOverlaysInTheatreMode: _panelSettings.ShowOverlaysInTheatreMode)
+            showOverlaysInTheatreMode: _panelSettings.ShowOverlaysInTheatreMode,
+            secondMonitorMode: _panelSettings.SecondMonitorMode)
         {
             Owner = this
         };
@@ -979,9 +999,16 @@ public partial class MainWindow : Window
             .Where(action => dialog.Shortcuts[action] != GlobalShortcutActions.GetChord(_panelSettings, action))
             .ToArray();
         var theatreOverlaysChanged = dialog.ShowOverlaysInTheatreMode != _panelSettings.ShowOverlaysInTheatreMode;
+        var secondMonitorModeChanged = dialog.SecondMonitorMode != _panelSettings.SecondMonitorMode;
+        // Leaving Account tools mode closes the tools window; its spot is saved with the mode change.
+        var closingToolsPlacement = secondMonitorModeChanged &&
+            dialog.SecondMonitorMode != SecondMonitorMode.AccountToolsWindow
+                ? _toolsWindow?.CapturePlacement(isOpen: false)
+                : null;
         if (dialog.FillGameToPanel == _panelSettings.FillGameToPanel &&
             dialog.ShowFullScreenExitButton == _panelSettings.ShowFullScreenExitButton &&
             !theatreOverlaysChanged &&
+            !secondMonitorModeChanged &&
             changedShortcuts.Length == 0 &&
             !dialog.ResetLayoutSizes)
         {
@@ -1008,8 +1035,18 @@ public partial class MainWindow : Window
                     {
                         FillGameToPanel = dialog.FillGameToPanel,
                         ShowFullScreenExitButton = dialog.ShowFullScreenExitButton,
-                        ShowOverlaysInTheatreMode = dialog.ShowOverlaysInTheatreMode
+                        ShowOverlaysInTheatreMode = dialog.ShowOverlaysInTheatreMode,
+                        SecondMonitorMode = dialog.SecondMonitorMode
                     });
+                    if (secondMonitorModeChanged && dialog.SecondMonitorMode == SecondMonitorMode.AccountToolsWindow)
+                    {
+                        candidate = OverlayCardPolicy.ReturnFloatingCardsToGame(candidate);
+                    }
+
+                    if (closingToolsPlacement is not null)
+                    {
+                        candidate = candidate with { ToolsWindow = closingToolsPlacement };
+                    }
                     scalingChanged = candidate.FillGameToPanel != currentSettings.FillGameToPanel;
                     if (scalingChanged)
                     {
@@ -1061,6 +1098,11 @@ public partial class MainWindow : Window
             }
             UpdateManageSlotsButton();
             UpdateTimerHotkeys();
+            if (secondMonitorModeChanged)
+            {
+                ApplySecondMonitorMode();
+            }
+
             if (theatreOverlaysChanged && _isTheatre)
             {
                 ApplyClutterVisibility();
@@ -1087,6 +1129,10 @@ public partial class MainWindow : Window
                     ? "Global shortcuts updated."
                     : changedShortcuts.Length == 1
                     ? $"{GlobalShortcutActions.DisplayName(changedShortcuts[0])} shortcut updated."
+                    : secondMonitorModeChanged
+                    ? nextSettings.SecondMonitorMode == SecondMonitorMode.FloatingCards
+                        ? "Second monitor set to Floating cards."
+                        : "Second monitor set to Account tools window."
                     : theatreOverlaysChanged
                     ? nextSettings.ShowOverlaysInTheatreMode
                         ? "Overlays now show in theatre mode."
@@ -1115,6 +1161,208 @@ public partial class MainWindow : Window
     private void FullScreenExit_Click(object sender, RoutedEventArgs e)
     {
         ExitFullScreen();
+    }
+
+    private void SecondMonitor_Click(object sender, RoutedEventArgs e) => UseSecondMonitor();
+
+    private void UseSecondMonitor()
+    {
+        if (_panelSettings.SecondMonitorMode == SecondMonitorMode.FloatingCards)
+        {
+            ShowFloatingCardsMenu();
+        }
+        else
+        {
+            OpenToolsWindow(activate: true);
+        }
+    }
+
+    private void UpdateSecondMonitorButtons()
+    {
+        var floating = _panelSettings.SecondMonitorMode == SecondMonitorMode.FloatingCards;
+        var label = floating ? "Floating cards" : "Pop out tools";
+        SecondMonitorButton.Content = label;
+        SecondMonitorButton.ToolTip = floating
+            ? "Choose which overlay cards float on top of every window, and arrange them."
+            : "Move the Account tools panel into its own window that you can put on another monitor.";
+        FullscreenOverlayTray.SetSecondMonitorLabel(label);
+    }
+
+    private void ShowFloatingCardsMenu()
+    {
+        if (_shutdownStarted || !_isReady)
+        {
+            return;
+        }
+
+        var menu = new ContextMenu { Placement = PlacementMode.MousePoint };
+        foreach (var item in _floatingChecklist)
+        {
+            var show = !item.IsFloating;
+            menu.Items.Add(CreateCheckMenuItem(item.Label, item.IsFloating, () => _ = SetFloatingAsync(item.Key, show)));
+        }
+
+        menu.Items.Add(new Separator());
+        var arranging = _arrangingFloatingCards;
+        menu.Items.Add(CreateCheckMenuItem("Arrange floating cards", arranging, () =>
+        {
+            _arrangingFloatingCards = !arranging;
+            RefreshTrackerRows();
+        }));
+        menu.IsOpen = true;
+    }
+
+    // The themed MenuItem draws no check mark, so the tick is a CheckBox. Its content is a TextBlock so an
+    // underscore in an account name is not read as an access key.
+    private static MenuItem CreateCheckMenuItem(string label, bool isChecked, Action onClick)
+    {
+        var checkBox = new CheckBox
+        {
+            Content = new TextBlock { Text = label },
+            IsChecked = isChecked,
+            IsHitTestVisible = false,
+            Focusable = false
+        };
+        checkBox.SetResourceReference(Control.ForegroundProperty, "Brush.TextPrimary");
+        // Checkable with a name, so screen readers announce each item and its state; the themed template draws no
+        // check mark of its own, so this changes nothing visually.
+        var menuItem = new MenuItem { Header = checkBox, IsCheckable = true, IsChecked = isChecked };
+        System.Windows.Automation.AutomationProperties.SetName(menuItem, label);
+        menuItem.Click += (_, _) => onClick();
+        return menuItem;
+    }
+
+    private async Task SetFloatingAsync(OverlayCardKey key, bool show)
+    {
+        if (!OverlayCardPolicy.IsValidKey(key))
+        {
+            return;
+        }
+
+        try
+        {
+            await UpdateSettingsAsync(settings => OverlayCardPolicy.WithFloating(settings, key, show));
+        }
+        catch
+        {
+            MessageBox.Show(this, "The card setting could not be saved.",
+                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            // Rebuild from saved settings so a failed save also reverts the checklist.
+            RefreshTrackerRows();
+        }
+    }
+
+    private async void FloatingCards_BoundsCommitted(object? sender, FloatingCardBoundsCommittedEventArgs args)
+    {
+        // A drag that ends after its card stopped floating is not saved.
+        if (OverlayCardPolicy.Get(_panelSettings, args.Key) is not { Enabled: true, IsFloating: true })
+        {
+            return;
+        }
+
+        try
+        {
+            await UpdateSettingsAsync(settings => OverlayCardPolicy.WithFloatingBounds(settings, args.Key, args.Bounds));
+        }
+        catch
+        {
+            _floatingCards.Restore(args.Key, OverlayCardPolicy.Get(_panelSettings, args.Key)?.FloatingBounds);
+            MessageBox.Show(this,
+                "The overlay placement could not be saved. Its previous position was restored.",
+                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    // Ends whichever second-monitor mode is no longer selected. Saved positions in both places are kept.
+    private void ApplySecondMonitorMode()
+    {
+        if (_panelSettings.SecondMonitorMode != SecondMonitorMode.AccountToolsWindow && _toolsWindow is { } toolsWindow)
+        {
+            CloseToolsWindowFromApp(toolsWindow);
+        }
+
+        _arrangingFloatingCards = false;
+        UpdateSecondMonitorButtons();
+        RefreshTrackerRows();
+    }
+
+    // Moves the Account tools panel into the tools window, or brings an open tools window to the front.
+    private void OpenToolsWindow(bool activate)
+    {
+        // A window opened while FourFold is shutting down would never be closed and would keep the app running,
+        // and one opened before settings have loaded would save defaults over them.
+        if (_shutdownStarted || !_isReady)
+        {
+            return;
+        }
+
+        if (_toolsWindow is { } open)
+        {
+            if (open.WindowState == WindowState.Minimized)
+            {
+                // Back to how it was before it was minimized, maximized included.
+                SystemCommands.RestoreWindow(open);
+            }
+
+            open.Activate();
+            return;
+        }
+
+        var window = new ToolsWindow { ShowActivated = activate };
+        window.ApplyPlacement(_panelSettings.ToolsWindow);
+        MainContentGrid.Children.Remove(PluginSidebar);
+        window.Host(PluginSidebar);
+        window.ClosedByUser += ToolsWindow_ClosedByUser;
+        _toolsWindow = window;
+        window.Show();
+        if (!activate)
+        {
+            // WPF ignores ShowActivated for a window shown maximized, so hand focus back to the main window.
+            Activate();
+        }
+
+        UpdatePluginSidebarVisibility();
+    }
+
+    private async void ToolsWindow_ClosedByUser(object? sender, ToolsWindowPlacement placement)
+    {
+        if (sender is ToolsWindow window)
+        {
+            window.ClosedByUser -= ToolsWindow_ClosedByUser;
+            ReturnPluginSidebar(window);
+        }
+
+        _toolsWindow = null;
+        UpdatePluginSidebarVisibility();
+        try
+        {
+            await UpdateSettingsAsync(settings => settings with { ToolsWindow = placement });
+        }
+        catch
+        {
+            GlobalStatusText.Text = "The tools window position could not be saved.";
+        }
+    }
+
+    // Closes the tools window without counting it as the user's close, and returns the panel to the main window.
+    private void CloseToolsWindowFromApp(ToolsWindow window)
+    {
+        window.ClosedByUser -= ToolsWindow_ClosedByUser;
+        _toolsWindow = null;
+        ReturnPluginSidebar(window);
+        window.CloseFromApp();
+        UpdatePluginSidebarVisibility();
+    }
+
+    private void ReturnPluginSidebar(ToolsWindow window)
+    {
+        if (window.Release() is { } panel && !MainContentGrid.Children.Contains(panel))
+        {
+            MainContentGrid.Children.Add(panel);
+        }
     }
 
     private void Theatre_Click(object sender, RoutedEventArgs e) => ToggleTheatreMode();
@@ -1256,14 +1504,14 @@ public partial class MainWindow : Window
         var editing = OverlaysShown && _overlayEditing;
         _xpTrackerRows.Clear();
 
-        // Every card sits on the one window-wide layer, so it can go anywhere in the window, header included.
-        var cards = new List<OverlayCardModel>();
+        // Every card over the game sits on the one window-wide layer, so it can go anywhere in the window.
+        var build = new OverlayCardBuild();
         var globalSwitches = new List<OverlayTraySwitch>();
         foreach (var definition in OverlayAddOnCatalog.All.Where(
                      definition => definition.Scope == OverlayAddOnScope.Global))
         {
             AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, null),
-                string.Empty, null, false, cards, globalSwitches);
+                string.Empty, null, false, showOverGame: true, globalSwitches, build);
         }
 
         foreach (var slot in _slotCards.OrderBy(slot => slot.SlotIndex))
@@ -1292,9 +1540,9 @@ public partial class MainWindow : Window
                     foreach (var definition in OverlayAddOnCatalog.All.Where(
                                  definition => definition.Scope == OverlayAddOnScope.Account))
                     {
-                        // A background tab's account keeps its switches in the Overlays panel but shows no cards.
+                        // A background tab's account shows no cards over the game; its floating cards still show.
                         AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, trackedAccountId),
-                            label, trackerRow, isStale, ShowsAccountCards(slot) ? cards : null, switches);
+                            label, trackerRow, isStale, ShowsAccountCards(slot), switches, build);
                     }
 
                     accountRows.Add(new OverlayTrayAccountRow(trackedAccountId, label, switches));
@@ -1302,7 +1550,14 @@ public partial class MainWindow : Window
             }
         }
 
-        GlobalOverlayLayer.SetCards(cards, editing);
+        GlobalOverlayLayer.SetCards(build.GameCards, editing);
+        _floatingChecklist = build.Checklist;
+        // Floating windows exist only in Floating cards mode, and never during shutdown, when they are closed.
+        _floatingCards.Update(
+            _panelSettings.SecondMonitorMode == SecondMonitorMode.FloatingCards && !_shutdownStarted
+                ? build.FloatingCards
+                : [],
+            _arrangingFloatingCards);
         FullscreenOverlayTray.SetRows(globalSwitches, accountRows);
         UpdatePluginSidebarVisibility();
     }
@@ -1311,15 +1566,17 @@ public partial class MainWindow : Window
     private bool ShowsAccountCards(PanelSlotCard slot) =>
         _panelSettings.Layout != PanelLayout.Tabs || slot.SlotIndex == _panelSettings.ActiveTab;
 
-    // A null cards list adds the Overlays panel switch without putting a card on screen.
+    // Adds the card's Overlays panel switch and floating checklist entry, then puts the card in the one place it is
+    // assigned to. showOverGame is false for a background tab's account, whose cards stay off the game.
     private void AddOverlayAddOn(
         OverlayAddOnDefinition definition,
         OverlayCardKey key,
         string accountLabel,
         XpTrackerRow? trackerRow,
         bool isStale,
-        List<OverlayCardModel>? cards,
-        List<OverlayTraySwitch> switches)
+        bool showOverGame,
+        List<OverlayTraySwitch> switches,
+        OverlayCardBuild build)
     {
         if (CreateOverlayCardData(definition.Kind, key.AccountId, accountLabel, trackerRow, isStale) is not { } data)
         {
@@ -1327,16 +1584,34 @@ public partial class MainWindow : Window
         }
 
         var placement = OverlayCardPolicy.Get(_panelSettings, key);
+        var isFloating = placement is { Enabled: true, IsFloating: true };
         var accessibleName = accountLabel.Length > 0
             ? $"{accountLabel} {definition.DisplayName}"
             : definition.DisplayName;
-        switches.Add(new OverlayTraySwitch(key, definition.DisplayName, data.Summary,
-            placement?.Enabled == true, accessibleName));
-        if (cards is not null && OverlaysShown && placement is { Enabled: true })
+        switches.Add(new OverlayTraySwitch(key, definition.DisplayName,
+            isFloating ? "Floating" : data.Summary,
+            placement is { Enabled: true, IsFloating: false }, accessibleName));
+        build.Checklist.Add(new FloatingChecklistItem(key, accessibleName, isFloating));
+        if (placement is { Enabled: true, IsFloating: true } floatingPlacement)
         {
-            cards.Add(new OverlayCardModel(key, definition, placement.Bounds, cards.Count, data));
+            build.FloatingCards.Add(new FloatingCardModel(key, definition, floatingPlacement.FloatingBounds, data));
+        }
+        else if (showOverGame && OverlaysShown && placement is { Enabled: true })
+        {
+            build.GameCards.Add(new OverlayCardModel(key, definition, placement.Bounds, build.GameCards.Count, data));
         }
     }
+
+    private sealed class OverlayCardBuild
+    {
+        public List<OverlayCardModel> GameCards { get; } = [];
+
+        public List<FloatingCardModel> FloatingCards { get; } = [];
+
+        public List<FloatingChecklistItem> Checklist { get; } = [];
+    }
+
+    private sealed record FloatingChecklistItem(OverlayCardKey Key, string Label, bool IsFloating);
 
     // Each overlay add-on supplies its card data here; a kind without data is not offered in the Overlays panel.
     private IOverlayCardData? CreateOverlayCardData(
@@ -1355,6 +1630,17 @@ public partial class MainWindow : Window
 
     private void UpdatePluginSidebarVisibility()
     {
+        // Popped out, the panel always shows in the tools window and the main window's column stays closed.
+        if (_toolsWindow is not null)
+        {
+            PluginSidebar.Visibility = Visibility.Visible;
+            TogglePluginsButton.Visibility = Visibility.Collapsed;
+            TrackerGapColumn.Width = new GridLength(0);
+            TrackerColumn.Width = new GridLength(0);
+            return;
+        }
+
+        TogglePluginsButton.Visibility = Visibility.Visible;
         var expanded = _panelSettings.PluginsSidebarExpanded;
         TogglePluginsButton.ToolTip = expanded
             ? "Hide the plugins sidebar to expand the multi-box panel."
@@ -1411,11 +1697,13 @@ public partial class MainWindow : Window
         }
     }
 
-    // A drag that ends after its card left the screen (its tab swapped away, its game closed) is not saved.
+    // A drag that ends after its card left the game (it started floating, its tab swapped away, its game closed)
+    // is not saved.
     private bool IsOverlayCardOnScreen(OverlayCardKey key) =>
-        key.AccountId is not { } accountId ||
-        _slotCards.Any(slot => AccountIdFor(slot.SlotIndex) == accountId && ShowsAccountCards(slot) &&
-            _openAccountIds.Contains(accountId) && slot.View is not null);
+        OverlayCardPolicy.Get(_panelSettings, key) is not { IsFloating: true } &&
+        (key.AccountId is not { } accountId ||
+            _slotCards.Any(slot => AccountIdFor(slot.SlotIndex) == accountId && ShowsAccountCards(slot) &&
+                _openAccountIds.Contains(accountId) && slot.View is not null));
 
     // The account a card shows: its tab's account in the Tabs layout, otherwise its grid slot's.
     // A card left over from the Tabs layout can carry an index past the grid slots; it has no account.
@@ -2989,19 +3277,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task SaveSettingsAsync()
-    {
-        await _settingsMutationGate.WaitAsync();
-        try
-        {
-            await _settingsStore.SaveAsync(_panelSettings);
-        }
-        finally
-        {
-            _settingsMutationGate.Release();
-        }
-    }
-
     private async Task ReloadLocalDataAfterFailureAsync()
     {
         try
@@ -3119,13 +3394,32 @@ public partial class MainWindow : Window
         LeaderboardPanelView.Disconnect();
         try
         {
+            // Close the extra windows first: a leftover one would keep the app running after the main window closes.
+            _arrangingFloatingCards = false;
+            _floatingCards.CloseAll();
+            // Keep the tools window marked open, with its current spot, so it reopens there next launch.
+            ToolsWindowPlacement? toolsPlacement = null;
+            if (_toolsWindow is { } toolsWindow)
+            {
+                toolsPlacement = toolsWindow.CapturePlacement(isOpen: true);
+                CloseToolsWindowFromApp(toolsWindow);
+            }
+
             CancelProfileRead();
             // Flush a pending sidebar XP target save before the final settings save, so a target
             // typed just before closing reaches disk instead of being lost.
             PluginSidebar.FlushPendingXpTarget();
+
             try
             {
-                await SaveSettingsAsync();
+                // Through the settings gate, so a save still in flight (such as the XP target just flushed)
+                // can't overwrite the tools window placement. Skipped after a failed load, which would save
+                // defaults over the user's settings.
+                if (_isReady)
+                {
+                    await UpdateSettingsAsync(settings =>
+                        toolsPlacement is null ? settings : settings with { ToolsWindow = toolsPlacement });
+                }
             }
             catch
             {

@@ -39,7 +39,8 @@ public partial class SettingsDialog : Window
         IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> shortcuts,
         IReadOnlySet<GlobalShortcutAction> unavailableShortcuts,
         Func<MessageBoxResult>? confirmResetLayoutSizes = null,
-        bool showOverlaysInTheatreMode = true)
+        bool showOverlaysInTheatreMode = true,
+        SecondMonitorMode secondMonitorMode = SecondMonitorMode.AccountToolsWindow)
     {
         ArgumentNullException.ThrowIfNull(shortcuts);
         ArgumentNullException.ThrowIfNull(unavailableShortcuts);
@@ -58,6 +59,8 @@ public partial class SettingsDialog : Window
         FitOption.IsChecked = !fillGameToPanel;
         ShowFullScreenExitOption.IsChecked = showFullScreenExitButton;
         ShowOverlaysInTheatreModeOption.IsChecked = showOverlaysInTheatreMode;
+        AccountToolsModeOption.IsChecked = secondMonitorMode == SecondMonitorMode.AccountToolsWindow;
+        FloatingCardsModeOption.IsChecked = secondMonitorMode == SecondMonitorMode.FloatingCards;
         _rows = new[]
         {
             RevealShortcutRow, DividerShortcutRow, TimerSplitShortcutRow, TimerFinishShortcutRow, TimerResetShortcutRow,
@@ -78,6 +81,8 @@ public partial class SettingsDialog : Window
     public bool ShowFullScreenExitButton { get; private set; }
 
     public bool ShowOverlaysInTheatreMode { get; private set; }
+
+    public SecondMonitorMode SecondMonitorMode { get; private set; }
 
     public IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> Shortcuts => _shortcuts;
 
@@ -232,6 +237,9 @@ public partial class SettingsDialog : Window
         FillGameToPanel = FillOption.IsChecked == true;
         ShowFullScreenExitButton = ShowFullScreenExitOption.IsChecked == true;
         ShowOverlaysInTheatreMode = ShowOverlaysInTheatreModeOption.IsChecked == true;
+        SecondMonitorMode = FloatingCardsModeOption.IsChecked == true
+            ? SecondMonitorMode.FloatingCards
+            : SecondMonitorMode.AccountToolsWindow;
         DialogResult = true;
     }
 

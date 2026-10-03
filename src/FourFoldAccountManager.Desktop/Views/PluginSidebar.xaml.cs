@@ -15,6 +15,10 @@ public partial class PluginSidebar : UserControl
     public PluginSidebar()
     {
         InitializeComponent();
+        // Subscribed once: the panel moves between the main window and the tools window, and each move reloads it.
+        TrackerPanel.LinkRequested += accountId => LinkRequested?.Invoke(accountId);
+        TrackerPanel.ResetRateRequested += accountId => ResetRateRequested?.Invoke(accountId);
+        TrackerPanel.ResetAllRequested += accountId => ResetAllRequested?.Invoke(accountId);
         ActivePlugin = PluginKind.XpTracker;
         ClassComparisonPanelView.RefreshRequested += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
         XpCalculatorPanelView.RefreshRequested += (_, _) => RefreshRequested?.Invoke(this, EventArgs.Empty);
@@ -132,12 +136,5 @@ public partial class PluginSidebar : UserControl
         ClassComparisonButton.Opacity = ActivePlugin == PluginKind.ClassComparison ? 1d : 0.65d;
         XpCalculatorButton.Opacity = ActivePlugin == PluginKind.XpCalculator ? 1d : 0.65d;
         TimerButton.Opacity = ActivePlugin == PluginKind.Timer ? 1d : 0.65d;
-    }
-
-    private void TrackerPanel_Loaded(object sender, RoutedEventArgs e)
-    {
-        TrackerPanel.LinkRequested += accountId => LinkRequested?.Invoke(accountId);
-        TrackerPanel.ResetRateRequested += accountId => ResetRateRequested?.Invoke(accountId);
-        TrackerPanel.ResetAllRequested += accountId => ResetAllRequested?.Invoke(accountId);
     }
 }
