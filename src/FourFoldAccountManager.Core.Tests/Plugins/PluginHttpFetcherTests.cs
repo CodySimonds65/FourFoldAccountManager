@@ -10,6 +10,10 @@ public sealed class PluginHttpFetcherTests
         "cody.goal-tracker", "Goal tracker", "Goals", "1.0.0", "Cody", "", 1, "index.html", null,
         [new Uri("https://wiki.example.com")], false, []);
 
+    private static readonly PluginManifest MultiSiteManifest = new(
+        "cody.goal-tracker", "Goal tracker", "Goals", "1.0.0", "Cody", "", 1, "index.html", null,
+        [new Uri("https://wiki.example.com"), new Uri("https://cdn.example.net")], false, []);
+
     private static PluginHttpRequest Get(string url) => new(url, "GET", null, null);
 
     [Fact]
@@ -73,18 +77,27 @@ public sealed class PluginHttpFetcherTests
             new Dictionary<string, string>
             {
                 ["Cookie"] = "session=1",
+                ["cookie"] = "lowercase=1",
                 ["Host"] = "attacker.example.net",
                 ["Sec-Fetch-Site"] = "same-origin",
+                ["SEC-Fetch-Mode"] = "cors",
                 ["Proxy-Authorization"] = "Basic x",
-                ["X-Api-Key"] = "abc"
+                ["proxy-connection"] = "keep-alive",
+                ["Connection"] = "close",
+                ["X-Keep"] = "yes"
             }, null));
 
         Assert.NotNull(sent);
         Assert.False(sent.Headers.Contains("Cookie"));
+        Assert.False(sent.Headers.Contains("cookie"));
         Assert.False(sent.Headers.Contains("Sec-Fetch-Site"));
+        Assert.False(sent.Headers.Contains("SEC-Fetch-Mode"));
         Assert.False(sent.Headers.Contains("Proxy-Authorization"));
+        Assert.False(sent.Headers.Contains("proxy-connection"));
+        Assert.False(sent.Headers.Contains("Connection"));
         Assert.Null(sent.Headers.Host);
-        Assert.Equal("abc", sent.Headers.GetValues("X-Api-Key").Single());
+        Assert.Null(sent.Content);
+        Assert.Equal("yes", sent.Headers.GetValues("X-Keep").Single());
     }
 
     [Fact]
@@ -93,6 +106,21 @@ public sealed class PluginHttpFetcherTests
         var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new ByteArrayContent(new byte[PluginHttpFetcher.MaximumResponseBytes + 1])
+        });
+        using var fetcher = new PluginHttpFetcher(Manifest, PluginTrust.Developer, handler);
+
+        var error = await Assert.ThrowsAsync<PluginApiException>(
+            () => fetcher.FetchAsync(Get("https://wiki.example.com/big")));
+
+        Assert.Equal("limit-exceeded", error.Code);
+    }
+
+    [Fact]
+    public async Task AStreamedResponseOverTwoMegabytesIsRefused()
+    {
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new UnknownLengthContent(new byte[PluginHttpFetcher.MaximumResponseBytes + 1])
         });
         using var fetcher = new PluginHttpFetcher(Manifest, PluginTrust.Developer, handler);
 
@@ -159,6 +187,145 @@ public sealed class PluginHttpFetcherTests
         Assert.Equal(expected, result);
     }
 
+    [Theory]
+    [InlineData("v\r\nCookie: x")]
+    [InlineData("v\nHost: evil")]
+    [InlineData("v\rX: y")]
+    [InlineData("café")]
+    public async Task AHeaderValueWithALineBreakIsRefusedAndNothingIsSent(string invalidValue)
+    {
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        using var fetcher = new PluginHttpFetcher(Manifest, PluginTrust.Developer, handler);
+
+        var error = await Assert.ThrowsAsync<PluginApiException>(
+            () => fetcher.FetchAsync(new PluginHttpRequest("https://wiki.example.com/", "GET",
+                new Dictionary<string, string> { ["X-Test"] = invalidValue }, null)));
+
+        Assert.Equal("invalid-argument", error.Code);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData("bad name")]
+    [InlineData("X:Y")]
+    [InlineData("")]
+    [InlineData("Cookie ")]
+    public async Task AnInvalidHeaderNameIsRefused(string invalidName)
+    {
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        using var fetcher = new PluginHttpFetcher(Manifest, PluginTrust.Developer, handler);
+
+        var error = await Assert.ThrowsAsync<PluginApiException>(
+            () => fetcher.FetchAsync(new PluginHttpRequest("https://wiki.example.com/", "POST",
+                new Dictionary<string, string> { [invalidName] = "value" }, "body")));
+
+        Assert.Equal("invalid-argument", error.Code);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task ARequestThatTakesTooLongIsRefused()
+    {
+        var handler = new HangingHandler();
+        using var fetcher = new PluginHttpFetcher(
+            Manifest, PluginTrust.Developer, handler, timeout: TimeSpan.FromMilliseconds(100));
+
+        var error = await Assert.ThrowsAsync<PluginApiException>(
+            () => fetcher.FetchAsync(Get("https://wiki.example.com/")));
+
+        Assert.Equal("unavailable", error.Code);
+    }
+
+    [Fact]
+    public async Task AMalformedRedirectIsRefusedCleanly()
+    {
+        var handler = new FakeHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Found);
+            response.Headers.TryAddWithoutValidation("Location", "//host:99999/");
+            return response;
+        });
+        using var fetcher = new PluginHttpFetcher(Manifest, PluginTrust.Developer, handler);
+
+        var error = await Assert.ThrowsAsync<PluginApiException>(
+            () => fetcher.FetchAsync(Get("https://wiki.example.com/")));
+
+        Assert.Equal("unavailable", error.Code);
+    }
+
+    [Fact]
+    public async Task ABrokenBodyIsRefusedCleanly()
+    {
+        var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new ThrowingContent()
+        });
+        using var fetcher = new PluginHttpFetcher(Manifest, PluginTrust.Developer, handler);
+
+        var error = await Assert.ThrowsAsync<PluginApiException>(
+            () => fetcher.FetchAsync(Get("https://wiki.example.com/")));
+
+        Assert.Equal("unavailable", error.Code);
+    }
+
+    [Fact]
+    public async Task PluginHeadersAreNotForwardedToAnotherHost()
+    {
+        var capturedHeaders = new List<(Uri, bool hasAuth)>();
+        var handler = new FakeHandler(request =>
+        {
+            var hasAuth = request.Headers.Contains("Authorization");
+            capturedHeaders.Add((request.RequestUri!, hasAuth));
+
+            if (request.RequestUri!.Host == "wiki.example.com")
+            {
+                return Redirect("https://cdn.example.net/x");
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") };
+        });
+        using var fetcher = new PluginHttpFetcher(MultiSiteManifest, PluginTrust.Developer, handler);
+
+        await fetcher.FetchAsync(new PluginHttpRequest("https://wiki.example.com/", "GET",
+            new Dictionary<string, string> { ["Authorization"] = "Bearer t" }, null));
+
+        Assert.Equal(2, capturedHeaders.Count);
+        Assert.True(capturedHeaders[0].hasAuth, "First request should have Authorization");
+        Assert.False(capturedHeaders[1].hasAuth, "Second request to different host should not have Authorization");
+    }
+
+    [Fact]
+    public async Task RedirectHopsCountTowardsTheRateLimit()
+    {
+        var clock = new FakeClock();
+        var requestCount = 0;
+        var handler = new FakeHandler(_ =>
+        {
+            requestCount++;
+            // Each fetch can have up to 5 redirects (6 total requests), so 10 fetches = 60 requests
+            var withinFetch = requestCount % 6;
+            if (withinFetch != 0)
+            {
+                return Redirect("/again");
+            }
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") };
+        });
+        using var fetcher = new PluginHttpFetcher(Manifest, PluginTrust.Developer, handler, clock);
+
+        // Make 10 successful fetches (each with 6 requests = 60 total)
+        for (var i = 0; i < 10; i++)
+        {
+            await fetcher.FetchAsync(Get("https://wiki.example.com/start"));
+        }
+
+        // The 11th fetch should hit the rate limit
+        var error = await Assert.ThrowsAsync<PluginApiException>(
+            () => fetcher.FetchAsync(Get("https://wiki.example.com/start")));
+
+        Assert.Equal("limit-exceeded", error.Code);
+        Assert.Equal(60, requestCount);
+    }
+
     private static HttpResponseMessage Redirect(string location) =>
         new(HttpStatusCode.Found) { Headers = { Location = new Uri(location, UriKind.RelativeOrAbsolute) } };
 
@@ -171,6 +338,44 @@ public sealed class PluginHttpFetcherTests
         {
             Requests.Add(request.RequestUri!);
             return Task.FromResult(respond(request));
+        }
+    }
+
+    private sealed class HangingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        }
+    }
+
+    private sealed class UnknownLengthContent(byte[] data) : HttpContent
+    {
+        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            await stream.WriteAsync(data);
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
+
+    private sealed class ThrowingContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            throw new IOException("broken");
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
         }
     }
 
