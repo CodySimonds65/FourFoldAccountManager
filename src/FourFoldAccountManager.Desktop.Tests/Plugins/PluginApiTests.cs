@@ -58,7 +58,9 @@ public sealed class PluginApiTests : IDisposable
                      "file:///C:/Windows/System32/calc.exe", "javascript:alert(1)", "http://example.com/",
                      "https://localhost/", "https://192.168.1.1/", "https://printer.local/",
                      "https://user@example.com/", "ms-settings:",
-                     "not a url"
+                     "not a url",
+                     // An invalid international host name, for which reading the Uri's IdnHost throws.
+                     "https://a\u200Db.example/"
                  })
         {
             Assert.Equal("invalid-argument", ErrorCode(await Call("openExternal", new { url })));

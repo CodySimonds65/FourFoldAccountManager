@@ -280,14 +280,14 @@ internal sealed class PluginApi(
     {
         // A "user@" prefix can make a link read as a trusted site while it goes somewhere else.
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps ||
-            uri.UserInfo.Length > 0 || PluginNetworkPolicy.IsLocalHost(uri.IdnHost))
+            uri.UserInfo.Length > 0 || TryGetIdnHost(uri) is not { } idnHost || PluginNetworkPolicy.IsLocalHost(idnHost))
         {
             throw new PluginApiException("invalid-argument", "Only https links can be opened.");
         }
 
         // A plugin can send the user only where it may go itself: the sites it declared, or anywhere once the hub has
         // cleared it for any website. That list is what the hub shows and what was reviewed.
-        if (PluginNetworkPolicy.IsPluginHost(uri.IdnHost) || !PluginNetworkPolicy.IsAllowed(uri, manifest, trust))
+        if (PluginNetworkPolicy.IsPluginHost(idnHost) || !PluginNetworkPolicy.IsAllowed(uri, manifest, trust))
         {
             throw new PluginApiException("site-not-allowed", "A plugin can only open links on the sites it declares.");
         }
@@ -305,6 +305,20 @@ internal sealed class PluginApi(
         }
 
         _lastOpened = now;
-        host.OpenInBrowser(uri);
+        // The browser gets the host as it was checked (its xn-- form), not a Unicode or fullwidth spelling of it.
+        host.OpenInBrowser(new UriBuilder(uri) { Host = idnHost }.Uri);
+    }
+
+    // IdnHost throws for some invalid international host names; such a link is a bad argument, not a failure.
+    private static string? TryGetIdnHost(Uri uri)
+    {
+        try
+        {
+            return uri.IdnHost;
+        }
+        catch (UriFormatException)
+        {
+            return null;
+        }
     }
 }

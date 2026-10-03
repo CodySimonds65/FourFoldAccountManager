@@ -112,6 +112,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             Text = manifest.Name,
             FontSize = 11,
             FontWeight = FontWeights.SemiBold,
+            MaxWidth = 100,
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis
         };
@@ -149,6 +150,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             Padding = new Thickness(9, 0, 9, 0),
             BorderThickness = new Thickness(0, 0, 0, 1),
             CornerRadius = new CornerRadius(8, 8, 0, 0),
+            // The tag stays first, so it is measured first and can never be squeezed out.
             Child = new DockPanel { Children = { barTag, barName, barAuthor } }
         };
         bar.SetResourceReference(Border.BackgroundProperty, "Brush.SurfaceRaised");
