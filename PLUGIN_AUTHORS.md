@@ -74,7 +74,7 @@ A `plugin.json` that breaks any rule below is rejected: the plugin doesn't load,
 | `panel` | yes | Path to an existing `.html` file inside the plugin folder. Forward slashes only. |
 | `icon` | no | Path to a `.png` file inside the plugin folder, at most 256 by 256 pixels and 64 KB. Forward slashes only. Without one, the strip shows a default icon. |
 | `sites` | no | At most 10 websites the plugin may contact. Each is an origin: `https://host` or `https://host:port`, with no path, query or `user@`. The host must be a DNS name: no IP address, no trailing dot, and no name that only works on the local network. `localhost`, `.localhost`, `.local`, `.internal`, `.lan` and `.home.arpa` names are refused, and so is a single-label name such as `router`. A subdomain is its own site, so `https://example.com` doesn't cover `https://www.example.com`. An international host name is fine: FourFold converts it to its `xn--` form, and that form is what it shows users. After the conversion the host can contain only letters, digits, dots and dashes, so a name with an underscore or any other punctuation is refused. |
-| `anySite` | no | `true` lets the plugin contact any `https` site. Default `false`. FourFold honors it for plugins in the dev folder. A plugin from the plugin hub gets it only when the maintainers also clear it there. See [Getting on the hub](#getting-on-the-hub). |
+| `anySite` | no | `true` lets the plugin contact any `https` site. Default `false`. FourFold honors it for plugins in the dev folder. A plugin from the plugin hub gets it only when the maintainers also approve it there. See [Getting on the hub](#getting-on-the-hub). |
 | `cards` | no | At most 6 overlay cards. See [Cards](#cards). |
 
 Each entry in `cards`:
@@ -198,9 +198,9 @@ button.addEventListener('click', () => {
 
 `fourfold.openExternal(url)` opens an `https` link in the user's default browser. The example works because the `plugin.json` above declares `https://wiki.example.com`.
 
-- The URL must be `https`, with no `user@`, and not `localhost`, a `.localhost`, `.local`, `.internal`, `.lan` or `.home.arpa` name, a single-label name such as `router`, or a local network address. A host name that can't be converted to a real host name fails too (`invalid-argument`).
+- A URL that isn't a valid `https` link fails with `invalid-argument`. That covers other schemes, a `user@` part, `localhost`, a `.localhost`, `.local`, `.internal`, `.lan` or `.home.arpa` name, a single-label name such as `router`, a local network address, and a host name that can't be converted to a real host name.
 - The link must be on one of the plugin's `sites`, with the same host and port, or on any public host if the plugin has `anySite` and FourFold honors it. The path and query can be anything. A link to any other site fails with `site-not-allowed`.
-- It works only while the plugin's panel is showing, and only in response to a click (`unavailable`).
+- It works only while the plugin's panel is showing, and only right after the user clicks or presses a key in your page. Otherwise it fails with `unavailable`.
 - At most one link every 2 seconds (`limit-exceeded`).
 
 ### Storage
@@ -262,9 +262,9 @@ body { background: var(--ff-surface); color: var(--ff-text); }
 |---|---|
 | `invalid-argument` | A parameter is missing or wrong: an unknown account id, a missing or bad key, URL, header or method, control characters or a `progress` outside 0 to 1 in a card, a method FourFold doesn't have. |
 | `not-declared` | `cards.set` or `cards.clear` for a card id that isn't in `plugin.json`. |
-| `site-not-allowed` | `http.fetch` to a site that isn't allowed: not in `sites`, not `https`, or on the local network. This includes a redirect to such a site. `openExternal` to a site the plugin didn't declare also gets this code. |
+| `site-not-allowed` | `http.fetch` to a site that isn't allowed: not in `sites`, not `https`, or on the local network. This includes a redirect to such a site. `openExternal` to an `https` site the plugin isn't allowed to contact also gets this code. |
 | `limit-exceeded` | A size, rate or count limit. See the table below. |
-| `unavailable` | FourFold couldn't do it right now: storage can't be read, a web request failed or took longer than 15 seconds, `openExternal` with no click or no panel showing, or an unexpected failure. |
+| `unavailable` | FourFold couldn't do it right now: storage can't be read, a web request failed or took longer than 15 seconds, `openExternal` with no recent click or key press, or no panel showing, or an unexpected failure. |
 
 ### Limits
 
@@ -401,8 +401,10 @@ The hub is a GitHub repository:
 [FourFoldAccountManager-plugin-hub](https://github.com/CodySimonds65/FourFoldAccountManager-plugin-hub).
 
 1. Put your plugin in a public GitHub repository, at the root or in a folder.
-2. Test the exact commit you want listed, with developer mode on.
-3. Open a pull request on the hub that adds `plugins/<your plugin id>.json`:
+2. Test the exact commit you want listed, with developer mode on. The check runs on Linux, where names are
+   case-sensitive. `panel`, `icon` and `path` must match the real file and folder names letter for letter, even
+   though Windows lets a mismatch work in the dev folder.
+3. Open a pull request on the hub that adds your entry file, `plugins/<your plugin id>.json`:
 
    ```json
    {
@@ -411,36 +413,47 @@ The hub is a GitHub repository:
    }
    ```
 
-   `commit` is the full 40-character commit in lowercase. Add `"path"` when the plugin is in a folder.
-4. A check validates your `plugin.json` with the same rules FourFold uses, builds the package, and scans your
-   repository for secrets. Then a maintainer reads the code. When they merge, the plugin is on the hub.
+   `repository` must be exactly `https://github.com/owner/repo`, with no trailing slash or `/tree/...`. `commit` is
+   the full 40-character commit in lowercase. Add `"path"` when the plugin is in a folder. `path` is written with
+   forward slashes, uses only letters, digits, `.`, `_` and `-`, and has no trailing slash. The pull request changes
+   only that one file.
+4. A check validates your `plugin.json` with the same rules FourFold uses, builds the package (the zip that users
+   install), and scans the files in your repository at that commit for secrets. Then a maintainer reads the code.
+   When they merge, the plugin is on the hub. If the check fails, fix it in your plugin's repository, then put the
+   new commit in your entry file.
 
-To update, raise `version` in `plugin.json` and open a pull request that changes `commit`. Users get the new
-version automatically once it is merged: FourFold checks the hub when it starts and every 6 hours.
+The check downloads your whole repository at that commit, not only the plugin's folder. It must be public, under
+50 MB as a download, and hold at most 20,000 files. No path in your repository can have more than 63 parts,
+counting the folders from the repository root and the file's name.
+
+To update, raise `version` in `plugin.json` and open a pull request that changes `commit` in your entry file. Users
+get the new version automatically once it is merged: FourFold checks the hub when it starts and every 6 hours.
 
 A `version` is three numbers joined by dots, such as `1.4.0`, and each number can be at most 2147483647. The check
 refuses a version it can't compare, and an update must raise it, comparing number by number (`1.10.0` is higher than
 `1.9.0`).
 
-What goes into the package: `plugin.json` and the file types FourFold serves (see
-[Where your page runs](#where-your-page-runs)), at most 500 files and 5 MB. Every other file in your repository is
-left out, such as `README.md` and `LICENSE`, and so is any file or folder whose name starts with a dot. Your panel
-page, and everything it loads, must be in the package, so none of them can start with a dot. The files that go in
-must also unpack on Windows:
+What goes into the package: `plugin.json` and every file of a type FourFold serves (see
+[Where your page runs](#where-your-page-runs)) in the plugin's folder (the repository root, or `path`). At most 500
+files and 5 MB in all. Every such file goes in, whether or not your page loads it, so keep tests and screenshots in
+another folder. Everything else is left out, such as `README.md` and `LICENSE`, and so is any file or folder whose
+name starts with a dot. Your panel page, and everything it loads, must be in the package, so none of them can start
+with a dot. The files that go in must also unpack on Windows:
 
 - A file or folder name can't contain `< > " | ? *` or a control character, and can't end in a dot or a space. A
   file with a `\` or a `:` in its path is left out.
 - Two files can't differ only by capital letters.
-- A path can have at most 64 parts, counting the file's name.
 
-A user can uninstall a plugin, and that deletes the plugin's saved data. If the maintainers remove a plugin from the
-hub, FourFold stops it for everyone who has it and shows them why. Its saved data is kept until they uninstall it.
+A user can uninstall a plugin: FourFold asks first, and uninstalling deletes the plugin's saved data. If the
+maintainers remove a plugin from the hub, FourFold stops it for everyone who has it and shows them why. Its saved
+data is kept until they uninstall it.
 
 **Never put a secret key in a plugin.** Everything in a plugin is public and runs on users' machines. A plugin that
 needs a secret key can't be listed.
 
-A plugin gets access to any website only when it asks for it in `plugin.json` **and** a maintainer clears it on the
-hub. Ask in your pull request and say why. Users see "Can contact any website" next to a cleared plugin in the hub
+A plugin gets access to any website only when it asks for it in `plugin.json` **and** a maintainer approves it on the
+hub. Ask in your pull request and say why. Users see "Can contact any website" next to an approved plugin in the hub
 before they install it. For every other plugin, the hub's **Details** list the sites it declares.
 
-The hub's [README](https://github.com/CodySimonds65/FourFoldAccountManager-plugin-hub#readme) has the full rules.
+The hub's [README](https://github.com/CodySimonds65/FourFoldAccountManager-plugin-hub#readme) has the rest of the
+submission rules: what a pull request may change, the secret scan and any-website access.
