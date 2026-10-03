@@ -45,7 +45,7 @@ Press **Theatre** in the header, or the Toggle theatre mode shortcut (Ctrl+Alt+S
 
 ## Stats window
 
-Press **Stats window** in the header (or **Open stats window** in the Overlays panel) to open a separate window for overlay cards, then drag it to another monitor. Use its **Cards** button to choose which cards it shows: the Timer and each launched account's XP/hr, Stats, and XP calc. Cards in the stats window can always be dragged and resized. A card is either over the game or in the stats window: ticking it in the window takes it off the game, and switching it on in the Overlays panel moves it back, each to its own saved spot. In the Tabs layout the stats window shows every launched account's cards, whichever tab is active. FourFold remembers whether the window was open and where it was, and reopens it there; if that monitor is gone, it opens on the main monitor.
+Press **Stats window** in the header (or **Open stats window** in the Overlays panel) to open a separate window for overlay cards, then drag it to another monitor. Use its **Cards** button to choose which cards it shows: the Timer and each launched account's XP/hr, Stats, and XP calc. Cards in the stats window can always be dragged and resized. A card is either over the game or in the stats window: ticking it in the window takes it off the game, and switching it on in the Overlays panel moves it back, each to its own saved spot. Unticking a card in the window switches it off. In the Tabs layout the stats window shows every launched account's window cards, whichever tab is active. FourFold remembers whether the window was open and where it was, and reopens it there; if that monitor is gone, it opens on the main monitor.
 
 ## Requirements
 
