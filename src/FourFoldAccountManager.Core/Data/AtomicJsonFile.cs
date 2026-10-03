@@ -34,7 +34,15 @@ public static class AtomicJsonFile
                 stream.Flush(flushToDisk: true);
             }
 
-            File.Move(temporaryPath, path, overwrite: true);
+            // File.Replace, not File.Move: it still works while antivirus or the indexer has the old file open.
+            if (File.Exists(path))
+            {
+                File.Replace(temporaryPath, path, destinationBackupFileName: null);
+            }
+            else
+            {
+                File.Move(temporaryPath, path);
+            }
         }
         finally
         {
