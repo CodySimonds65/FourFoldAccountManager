@@ -312,43 +312,14 @@ public sealed class AccountBrowserSessionService
         }
 
         var core = session.View.CoreWebView2;
-        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        ulong? targetNavigationId = null;
-        EventHandler<CoreWebView2NavigationStartingEventArgs> navigationStarting = (_, args) =>
+        using var watch = new NavigationWatch(core, destination);
+        core.Navigate(destination.AbsoluteUri);
+        return await watch.WaitAsync() switch
         {
-            if (IsSamePage(args.Uri, destination))
-            {
-                targetNavigationId = args.NavigationId;
-            }
+            true => BrowserNavigationResult.Navigated,
+            false => BrowserNavigationResult.Failed,
+            null => BrowserNavigationResult.TimedOut
         };
-        EventHandler<CoreWebView2NavigationCompletedEventArgs> navigationCompleted = (_, args) =>
-        {
-            if (targetNavigationId == args.NavigationId)
-            {
-                completion.TrySetResult(args.IsSuccess);
-            }
-        };
-
-        core.NavigationStarting += navigationStarting;
-        core.NavigationCompleted += navigationCompleted;
-        try
-        {
-            core.Navigate(destination.AbsoluteUri);
-            try
-            {
-                var succeeded = await completion.Task.WaitAsync(NavigationTimeout, cancellationToken);
-                return succeeded ? BrowserNavigationResult.Navigated : BrowserNavigationResult.Failed;
-            }
-            catch (TimeoutException)
-            {
-                return BrowserNavigationResult.TimedOut;
-            }
-        }
-        finally
-        {
-            core.NavigationStarting -= navigationStarting;
-            core.NavigationCompleted -= navigationCompleted;
-        }
     }
 
     private async Task<LoginSubmissionResult> SubmitSavedLoginCoreAsync(
@@ -371,50 +342,21 @@ public sealed class AccountBrowserSessionService
             return LoginSubmissionResult.NotOnLoginPage;
         }
 
-        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        ulong? authNavigationId = null;
-        EventHandler<CoreWebView2NavigationStartingEventArgs> navigationStarting = (_, args) =>
+        using var watch = new NavigationWatch(core, FourFoldDestination.LoginSubmitUri);
+        cancellationToken.ThrowIfCancellationRequested();
+        var scriptResult = await SubmitLoginFormScriptAsync(core, credentials);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!string.Equals(scriptResult, "true", StringComparison.OrdinalIgnoreCase))
         {
-            if (IsSamePage(args.Uri, FourFoldDestination.LoginSubmitUri))
-            {
-                authNavigationId = args.NavigationId;
-            }
-        };
-        EventHandler<CoreWebView2NavigationCompletedEventArgs> navigationCompleted = (_, args) =>
-        {
-            if (authNavigationId == args.NavigationId)
-            {
-                completion.TrySetResult(args.IsSuccess);
-            }
-        };
-
-        core.NavigationStarting += navigationStarting;
-        core.NavigationCompleted += navigationCompleted;
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var scriptResult = await SubmitLoginFormScriptAsync(core, credentials);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!string.Equals(scriptResult, "true", StringComparison.OrdinalIgnoreCase))
-            {
-                return LoginSubmissionResult.LoginFieldsNotFound;
-            }
-
-            try
-            {
-                var succeeded = await completion.Task.WaitAsync(NavigationTimeout, cancellationToken);
-                return succeeded ? LoginSubmissionResult.Submitted : LoginSubmissionResult.NavigationFailed;
-            }
-            catch (TimeoutException)
-            {
-                return LoginSubmissionResult.TimedOut;
-            }
+            return LoginSubmissionResult.LoginFieldsNotFound;
         }
-        finally
+
+        return await watch.WaitAsync() switch
         {
-            core.NavigationStarting -= navigationStarting;
-            core.NavigationCompleted -= navigationCompleted;
-        }
+            true => LoginSubmissionResult.Submitted,
+            false => LoginSubmissionResult.NavigationFailed,
+            null => LoginSubmissionResult.TimedOut
+        };
     }
 
     private async Task<PlayInBrowserResult> SelectPlayInBrowserCoreAsync(
@@ -532,13 +474,7 @@ public sealed class AccountBrowserSessionService
         await _lifecycleGate.WaitAsync();
         try
         {
-            if (_views.Remove(accountId, out var session))
-            {
-                session.View.CoreWebView2.NavigationStarting -= session.NavigationStarting;
-                session.View.CoreWebView2.NewWindowRequested -= session.NewWindowRequested;
-                DetachFromParent(session.View);
-                session.View.Dispose();
-            }
+            CloseViewCoreUnderLock(accountId);
         }
         finally
         {
@@ -682,19 +618,60 @@ public sealed class AccountBrowserSessionService
         }
     }
 
-    private static void DetachFromParent(WebView2CompositionControl view)
+    // Views are only ever hosted in a Panel.
+    private static void DetachFromParent(WebView2CompositionControl view) =>
+        (view.Parent as Panel)?.Children.Remove(view);
+
+    // Matches one navigation to `page` by its ID. Create it before starting the navigation so no event is
+    // missed, and dispose it to unsubscribe.
+    private sealed class NavigationWatch : IDisposable
     {
-        switch (view.Parent)
+        private readonly CoreWebView2 _core;
+        private readonly Uri _page;
+        private readonly TaskCompletionSource<bool> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private ulong? _navigationId;
+
+        public NavigationWatch(CoreWebView2 core, Uri page)
         {
-            case Panel panel:
-                panel.Children.Remove(view);
-                break;
-            case ContentControl contentControl when ReferenceEquals(contentControl.Content, view):
-                contentControl.Content = null;
-                break;
-            case Decorator decorator when ReferenceEquals(decorator.Child, view):
-                decorator.Child = null;
-                break;
+            _core = core;
+            _page = page;
+            core.NavigationStarting += OnNavigationStarting;
+            core.NavigationCompleted += OnNavigationCompleted;
+        }
+
+        // Whether the navigation succeeded, or null if it did not finish within the timeout.
+        public async Task<bool?> WaitAsync()
+        {
+            try
+            {
+                return await _completion.Task.WaitAsync(NavigationTimeout);
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+        }
+
+        public void Dispose()
+        {
+            _core.NavigationStarting -= OnNavigationStarting;
+            _core.NavigationCompleted -= OnNavigationCompleted;
+        }
+
+        private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs args)
+        {
+            if (IsSamePage(args.Uri, _page))
+            {
+                _navigationId = args.NavigationId;
+            }
+        }
+
+        private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs args)
+        {
+            if (_navigationId == args.NavigationId)
+            {
+                _completion.TrySetResult(args.IsSuccess);
+            }
         }
     }
 
