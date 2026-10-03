@@ -62,7 +62,7 @@ public partial class MainWindow : Window
     private bool _viewAdjustmentVisible;
     private bool _isFullScreen;
     private bool _isTheatre;
-    private StatsWindow? _statsWindow;
+    private ToolsWindow? _toolsWindow;
     private bool _showingLeaderboard;
     private bool _overlayEditing;
     private WindowState _previousWindowState;
@@ -94,7 +94,7 @@ public partial class MainWindow : Window
         FullscreenOverlayTray.EditRequested += (_, _) => SetOverlayEditing(true);
         FullscreenOverlayTray.DoneRequested += (_, _) => SetOverlayEditing(false);
         FullscreenOverlayTray.CardToggleRequested += FullscreenOverlayTray_CardToggleRequested;
-        FullscreenOverlayTray.StatsWindowRequested += (_, _) => OpenStatsWindow(activate: true);
+        FullscreenOverlayTray.SecondMonitorRequested += (_, _) => UseSecondMonitor();
         GlobalOverlayLayer.BoundsCommitted += OverlayLayer_BoundsCommitted;
         PluginSidebar.SetTrackerItemsSource(_xpTrackerRows);
         PluginSidebar.AttachTimer(_timer);
@@ -322,7 +322,7 @@ public partial class MainWindow : Window
             await RebuildPanelAsync(closeExistingViews: false);
             if (_panelSettings.StatsWindow is { IsOpen: true })
             {
-                OpenStatsWindow(activate: false);
+                OpenToolsWindow(activate: false);
             }
 
             GlobalStatusText.Text = "Choose your layout, assign your accounts, and launch your party.";
@@ -1124,10 +1124,12 @@ public partial class MainWindow : Window
         ExitFullScreen();
     }
 
-    private void StatsWindow_Click(object sender, RoutedEventArgs e) => OpenStatsWindow(activate: true);
+    private void SecondMonitor_Click(object sender, RoutedEventArgs e) => UseSecondMonitor();
 
-    // Opens the stats window, or brings an open one to the front.
-    private void OpenStatsWindow(bool activate)
+    private void UseSecondMonitor() => OpenToolsWindow(activate: true);
+
+    // Moves the Account tools panel into the tools window, or brings an open tools window to the front.
+    private void OpenToolsWindow(bool activate)
     {
         // A window opened while FourFold is shutting down would never be closed and would keep the app running,
         // and one opened before settings have loaded would save defaults over them.
@@ -1136,7 +1138,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_statsWindow is { } open)
+        if (_toolsWindow is { } open)
         {
             if (open.WindowState == WindowState.Minimized)
             {
@@ -1147,12 +1149,12 @@ public partial class MainWindow : Window
             return;
         }
 
-        var window = new StatsWindow { ShowActivated = activate };
+        var window = new ToolsWindow { ShowActivated = activate };
         window.ApplyPlacement(_panelSettings.StatsWindow);
-        window.Layer.BoundsCommitted += OverlayLayer_BoundsCommitted;
-        window.CardToggleRequested += StatsWindow_CardToggleRequested;
-        window.ClosedByUser += StatsWindow_ClosedByUser;
-        _statsWindow = window;
+        MainContentGrid.Children.Remove(PluginSidebar);
+        window.Host(PluginSidebar);
+        window.ClosedByUser += ToolsWindow_ClosedByUser;
+        _toolsWindow = window;
         window.Show();
         if (!activate)
         {
@@ -1160,49 +1162,44 @@ public partial class MainWindow : Window
             Activate();
         }
 
-        RefreshTrackerRows();
+        UpdatePluginSidebarVisibility();
     }
 
-    private async void StatsWindow_ClosedByUser(object? sender, StatsWindowPlacement placement)
+    private async void ToolsWindow_ClosedByUser(object? sender, StatsWindowPlacement placement)
     {
-        if (sender is StatsWindow window)
+        if (sender is ToolsWindow window)
         {
-            window.Layer.BoundsCommitted -= OverlayLayer_BoundsCommitted;
-            window.CardToggleRequested -= StatsWindow_CardToggleRequested;
-            window.ClosedByUser -= StatsWindow_ClosedByUser;
+            window.ClosedByUser -= ToolsWindow_ClosedByUser;
+            ReturnPluginSidebar(window);
         }
 
-        _statsWindow = null;
+        _toolsWindow = null;
+        UpdatePluginSidebarVisibility();
         try
         {
             await UpdateSettingsAsync(settings => settings with { StatsWindow = placement });
         }
         catch
         {
-            GlobalStatusText.Text = "The stats window position could not be saved.";
+            GlobalStatusText.Text = "The tools window position could not be saved.";
         }
     }
 
-    private async void StatsWindow_CardToggleRequested(object? sender, OverlayCardToggleRequestedEventArgs args)
+    // Closes the tools window without counting it as the user's close, and returns the panel to the main window.
+    private void CloseToolsWindowFromApp(ToolsWindow window)
     {
-        if (!OverlayCardPolicy.IsValidKey(args.Key))
-        {
-            return;
-        }
+        window.ClosedByUser -= ToolsWindow_ClosedByUser;
+        _toolsWindow = null;
+        ReturnPluginSidebar(window);
+        window.CloseFromApp();
+        UpdatePluginSidebarVisibility();
+    }
 
-        try
+    private void ReturnPluginSidebar(ToolsWindow window)
+    {
+        if (window.Release() is { } panel && !MainContentGrid.Children.Contains(panel))
         {
-            await UpdateSettingsAsync(settings => OverlayCardPolicy.WithStatsWindow(settings, args.Key, args.Enabled));
-        }
-        catch
-        {
-            MessageBox.Show(_statsWindow ?? (Window)this, "The card setting could not be saved.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            // Rebuild from saved settings so a failed save also reverts the checklist.
-            RefreshTrackerRows();
+            MainContentGrid.Children.Add(panel);
         }
     }
 
@@ -1381,7 +1378,7 @@ public partial class MainWindow : Window
                     foreach (var definition in OverlayAddOnCatalog.All.Where(
                                  definition => definition.Scope == OverlayAddOnScope.Account))
                     {
-                        // A background tab's account shows no cards over the game; its stats window cards still show.
+                        // A background tab's account keeps its switches in the Overlays panel but shows no cards.
                         AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, trackedAccountId),
                             label, trackerRow, isStale, ShowsAccountCards(slot), switches, build);
                     }
@@ -1392,8 +1389,6 @@ public partial class MainWindow : Window
         }
 
         GlobalOverlayLayer.SetCards(build.GameCards, editing);
-        _statsWindow?.SetCards(build.WindowCards);
-        _statsWindow?.SetChecklist(build.Checklist);
         FullscreenOverlayTray.SetRows(globalSwitches, accountRows);
         UpdatePluginSidebarVisibility();
     }
@@ -1402,8 +1397,8 @@ public partial class MainWindow : Window
     private bool ShowsAccountCards(PanelSlotCard slot) =>
         _panelSettings.Layout != PanelLayout.Tabs || slot.SlotIndex == _panelSettings.ActiveTab;
 
-    // Adds the card's Overlays panel switch and stats window checklist entry, then puts the card in the one place
-    // it is assigned to. showOverGame is false for a background tab's account, whose cards stay off the game.
+    // Adds the card's Overlays panel switch and, when it is switched on and its account's cards show, its card
+    // over the game. showOverGame is false for a background tab's account.
     private void AddOverlayAddOn(
         OverlayAddOnDefinition definition,
         OverlayCardKey key,
@@ -1420,20 +1415,12 @@ public partial class MainWindow : Window
         }
 
         var placement = OverlayCardPolicy.Get(_panelSettings, key);
-        var inStatsWindow = placement is { Enabled: true, InStatsWindow: true };
         var accessibleName = accountLabel.Length > 0
             ? $"{accountLabel} {definition.DisplayName}"
             : definition.DisplayName;
-        switches.Add(new OverlayTraySwitch(key, definition.DisplayName,
-            inStatsWindow ? "In stats window" : data.Summary,
-            placement is { Enabled: true, InStatsWindow: false }, accessibleName));
-        build.Checklist.Add(new StatsWindowChecklistItem(key, accessibleName, inStatsWindow));
-        if (placement is { Enabled: true, InStatsWindow: true } windowPlacement)
-        {
-            build.WindowCards.Add(new OverlayCardModel(
-                key, definition, windowPlacement.StatsWindowBounds, build.WindowCards.Count, data));
-        }
-        else if (showOverGame && OverlaysShown && placement is { Enabled: true })
+        switches.Add(new OverlayTraySwitch(key, definition.DisplayName, data.Summary,
+            placement?.Enabled == true, accessibleName));
+        if (showOverGame && OverlaysShown && placement is { Enabled: true })
         {
             build.GameCards.Add(new OverlayCardModel(key, definition, placement.Bounds, build.GameCards.Count, data));
         }
@@ -1442,10 +1429,6 @@ public partial class MainWindow : Window
     private sealed class OverlayCardBuild
     {
         public List<OverlayCardModel> GameCards { get; } = [];
-
-        public List<OverlayCardModel> WindowCards { get; } = [];
-
-        public List<StatsWindowChecklistItem> Checklist { get; } = [];
     }
 
     // Each overlay add-on supplies its card data here; a kind without data is not offered in the Overlays panel.
@@ -1465,6 +1448,17 @@ public partial class MainWindow : Window
 
     private void UpdatePluginSidebarVisibility()
     {
+        // Popped out, the panel always shows in the tools window and the main window's column stays closed.
+        if (_toolsWindow is not null)
+        {
+            PluginSidebar.Visibility = Visibility.Visible;
+            TogglePluginsButton.Visibility = Visibility.Collapsed;
+            TrackerGapColumn.Width = new GridLength(0);
+            TrackerColumn.Width = new GridLength(0);
+            return;
+        }
+
+        TogglePluginsButton.Visibility = Visibility.Visible;
         var expanded = _panelSettings.PluginsSidebarExpanded;
         TogglePluginsButton.ToolTip = expanded
             ? "Hide the plugins sidebar to expand the multi-box panel."
@@ -1501,49 +1495,31 @@ public partial class MainWindow : Window
 
     private async void OverlayLayer_BoundsCommitted(object? sender, OverlayCardBoundsCommittedEventArgs args)
     {
-        if (sender is not OverlayCardLayer layer)
-        {
-            return;
-        }
-
-        var inStatsWindow = _statsWindow is { } statsWindow && ReferenceEquals(layer, statsWindow.Layer);
-        var accepted = inStatsWindow
-            ? IsOverlayCardInStatsWindow(args.Key)
-            : OverlaysShown && _overlayEditing && IsOverlayCardOnScreen(args.Key);
-        if (!accepted)
+        if (sender is not OverlayCardLayer layer || !OverlaysShown || !_overlayEditing ||
+            !IsOverlayCardOnScreen(args.Key))
         {
             return;
         }
 
         try
         {
-            await UpdateSettingsAsync(settings => inStatsWindow
-                ? OverlayCardPolicy.WithStatsWindowBounds(settings, args.Key, args.Bounds)
-                : OverlayCardPolicy.WithBounds(settings, args.Key, args.Bounds));
+            await UpdateSettingsAsync(settings => OverlayCardPolicy.WithBounds(settings, args.Key, args.Bounds));
             RefreshTrackerRows();
         }
         catch
         {
             layer.RestoreSavedBounds();
-            MessageBox.Show(Window.GetWindow(layer) ?? this,
+            MessageBox.Show(this,
                 "The overlay placement could not be saved. Its previous position was restored.",
                 "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
-    // A drag that ends after its card left the game (moved to the stats window, its tab swapped away, its game
-    // closed) is not saved.
+    // A drag that ends after its card left the screen (its tab swapped away, its game closed) is not saved.
     private bool IsOverlayCardOnScreen(OverlayCardKey key) =>
-        OverlayCardPolicy.Get(_panelSettings, key) is not { InStatsWindow: true } &&
-        (key.AccountId is not { } accountId ||
-            _slotCards.Any(slot => AccountIdFor(slot.SlotIndex) == accountId && ShowsAccountCards(slot) &&
-                _openAccountIds.Contains(accountId) && slot.View is not null));
-
-    // A drag in the stats window counts only while its card is still assigned there and, for an account card,
-    // that account's game is running.
-    private bool IsOverlayCardInStatsWindow(OverlayCardKey key) =>
-        OverlayCardPolicy.Get(_panelSettings, key) is { Enabled: true, InStatsWindow: true } &&
-        (key.AccountId is not { } accountId || _openAccountIds.Contains(accountId));
+        key.AccountId is not { } accountId ||
+        _slotCards.Any(slot => AccountIdFor(slot.SlotIndex) == accountId && ShowsAccountCards(slot) &&
+            _openAccountIds.Contains(accountId) && slot.View is not null);
 
     // The account a card shows: its tab's account in the Tabs layout, otherwise its grid slot's.
     // A card left over from the Tabs layout can carry an index past the grid slots; it has no account.
@@ -3238,24 +3214,23 @@ public partial class MainWindow : Window
             // Flush a pending sidebar XP target save before the final settings save, so a target
             // typed just before closing reaches disk instead of being lost.
             PluginSidebar.FlushPendingXpTarget();
-            // Keep the stats window marked open, with its current spot, so it reopens there next launch.
-            StatsWindowPlacement? statsPlacement = null;
-            if (_statsWindow is { } statsWindow)
+            // Keep the tools window marked open, with its current spot, so it reopens there next launch.
+            StatsWindowPlacement? toolsPlacement = null;
+            if (_toolsWindow is { } toolsWindow)
             {
-                _statsWindow = null;
-                statsPlacement = statsWindow.CapturePlacement(isOpen: true);
-                statsWindow.CloseForShutdown();
+                toolsPlacement = toolsWindow.CapturePlacement(isOpen: true);
+                CloseToolsWindowFromApp(toolsWindow);
             }
 
             try
             {
                 // Through the settings gate, so a save still in flight (such as the XP target just flushed)
-                // can't overwrite the stats window placement. Skipped after a failed load, which would save
+                // can't overwrite the tools window placement. Skipped after a failed load, which would save
                 // defaults over the user's settings.
                 if (_isReady)
                 {
                     await UpdateSettingsAsync(settings =>
-                        statsPlacement is null ? settings : settings with { StatsWindow = statsPlacement });
+                        toolsPlacement is null ? settings : settings with { StatsWindow = toolsPlacement });
                 }
             }
             catch

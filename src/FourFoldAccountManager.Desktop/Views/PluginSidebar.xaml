@@ -29,7 +29,7 @@
                     ToolTip="Speedrun timer" />
         </UniformGrid>
         <Grid Grid.Row="2">
-            <views:XpTrackerPanel x:Name="TrackerPanel" Loaded="TrackerPanel_Loaded" />
+            <views:XpTrackerPanel x:Name="TrackerPanel" />
             <views:ClassComparisonPanel x:Name="ClassComparisonPanelView" Visibility="Collapsed" />
             <views:ExperienceCalculatorPanel x:Name="XpCalculatorPanelView" Visibility="Collapsed" />
             <views:TimerPanel x:Name="TimerPanelView" Visibility="Collapsed" />

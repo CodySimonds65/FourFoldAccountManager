@@ -42,7 +42,7 @@ public partial class FullscreenOverlayTray : UserControl
 
     public event EventHandler<OverlayCardToggleRequestedEventArgs>? CardToggleRequested;
 
-    public event EventHandler? StatsWindowRequested;
+    public event EventHandler? SecondMonitorRequested;
 
     // Rows are rebuilt from saved settings after every toggle, so a failed save shows the persisted state.
     public void SetRows(IReadOnlyList<OverlayTraySwitch> globalSwitches, IReadOnlyList<OverlayTrayAccountRow> accountRows)
@@ -109,8 +109,8 @@ public partial class FullscreenOverlayTray : UserControl
 
     private void EdgeTab_Click(object sender, RoutedEventArgs args) => RequestEdit();
 
-    private void OpenStatsWindowButton_Click(object sender, RoutedEventArgs args) =>
-        StatsWindowRequested?.Invoke(this, EventArgs.Empty);
+    private void SecondMonitorButton_Click(object sender, RoutedEventArgs args) =>
+        SecondMonitorRequested?.Invoke(this, EventArgs.Empty);
 
     private void EdgeTab_MouseEnter(object sender, MouseEventArgs args)
     {
