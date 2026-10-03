@@ -40,4 +40,37 @@ public sealed class HubHttpTests
         Assert.Equal(100, (await HubHttp.DownloadAsync(atLimit, uri, 100, CancellationToken.None))!.Length);
         Assert.Null(await HubHttp.DownloadAsync(overLimit, uri, 100, CancellationToken.None));
     }
+
+    // What a handler that decompresses throws on a corrupt body.
+    private sealed class CorruptContent : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            throw new InvalidDataException("The archive entry was compressed using an unsupported compression method.");
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
+
+    private sealed class CorruptHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new CorruptContent(),
+                RequestMessage = request
+            });
+    }
+
+    [Fact]
+    public async Task ACorruptBodyIsRefusedNotThrown()
+    {
+        using var http = new HttpClient(new CorruptHandler());
+
+        Assert.Null(await HubHttp.DownloadAsync(
+            http, new Uri("https://example.com/file"), 100, CancellationToken.None));
+    }
 }

@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FourFoldAccountManager.Core.Overlay;
+using FourFoldAccountManager.Core.Plugins;
 using FourFoldAccountManager.Core.Plugins.Hub;
 using Xunit;
 
@@ -49,7 +50,74 @@ public sealed class HubCatalogJsonTests
     [InlineData("{}")]
     [InlineData("{\"version\":2,\"plugins\":[]}")]
     [InlineData("{\"version\":\"1\"}")]
+    [InlineData("{\"version\":1,\"plugins\":\"x\"}")]
+    [InlineData("{\"version\":1,\"removed\":{}}")]
+    [InlineData("{\"version\":1,\"removed\":\"x\",\"plugins\":[]}")]
     public void ACatalogThatCannotBeUsedReadsAsNothing(string? json) => Assert.Null(HubCatalogJson.Parse(json));
+
+    [Fact]
+    public void AMissingOrNullListReadsAsEmpty()
+    {
+        var read = HubCatalogJson.Parse("{\"version\":1,\"plugins\":null}")!;
+
+        Assert.Empty(read.Plugins);
+        Assert.Empty(read.Removed);
+    }
+
+    [Fact]
+    public void ARawLoneSurrogateReadsAsNothingNotAnException() =>
+        Assert.Null(HubCatalogJson.Parse("{\"version\":1,\"pad\":\"\ud800\"}"));
+
+    [Fact]
+    public void AnEscapedLoneSurrogateCostsOnlyItsOwnItem()
+    {
+        var read = HubCatalogJson.Parse(
+            "{\"version\":1,\"plugins\":[]," +
+            "\"removed\":[{\"id\":\"pulled.plugin\",\"reason\":\"\\ud800\"}," +
+            "{\"id\":\"\\ud800\",\"reason\":\"x\"}," +
+            "{\"id\":\"other.plugin\",\"reason\":\"Gone.\"}]}")!;
+
+        Assert.Equal([new HubRemoval("pulled.plugin", string.Empty), new HubRemoval("other.plugin", "Gone.")], read.Removed);
+    }
+
+    [Fact]
+    public void ACatalogThatStartsWithAByteOrderMarkStillReads() =>
+        Assert.Single(HubCatalogJson.Parse("\uFEFF" + HubCatalogJson.Write(new HubCatalog([Plugin()], [])))!.Plugins);
+
+    [Fact]
+    public void ASecondEntryWithTheSameIdIsDropped()
+    {
+        var catalog = JsonNode.Parse(HubCatalogJson.Write(new HubCatalog([Plugin()], [])))!;
+        var second = catalog["plugins"]![0]!.DeepClone();
+        second["commit"] = new string('b', 40);
+        catalog["plugins"]!.AsArray().Add(second);
+
+        var read = HubCatalogJson.Parse(catalog.ToJsonString())!;
+
+        Assert.Equal(Commit, Assert.Single(read.Plugins).Commit);
+    }
+
+    [Fact]
+    public void AnAddressIsNeverBuiltFromAnUncheckedIdCommitOrRepository()
+    {
+        var repository = new Uri("https://github.com/cody/goal-tracker");
+
+        Assert.Throws<ArgumentException>(() => HubAddresses.PackageName("../evil", Commit));
+        Assert.Throws<ArgumentException>(() => HubAddresses.Package("cody.goal-tracker", "main"));
+        Assert.Throws<ArgumentException>(() => HubAddresses.RepositoryArchive(repository, "main"));
+        Assert.Throws<ArgumentException>(
+            () => HubAddresses.RepositoryArchive(new Uri("https://evil.example/cody/goal-tracker"), Commit));
+        Assert.Throws<ArgumentException>(
+            () => HubAddresses.RepositoryArchive(new Uri("https://github.com/cody/goal-tracker/tree/main"), Commit));
+        Assert.EndsWith($"/cody.goal-tracker-{Commit}.zip", HubAddresses.Package("cody.goal-tracker", Commit).AbsoluteUri);
+        Assert.Equal(
+            $"https://codeload.github.com/cody/goal-tracker/zip/{Commit}",
+            HubAddresses.RepositoryArchive(repository, Commit).AbsoluteUri);
+    }
+
+    [Fact]
+    public void AVersionWithATrailingNewlineIsNotAVersion() =>
+        Assert.False(PluginManifestReader.IsVersion("1.2.0\n"));
 
     [Fact]
     public void AnOversizedCatalogReadsAsNothing() =>

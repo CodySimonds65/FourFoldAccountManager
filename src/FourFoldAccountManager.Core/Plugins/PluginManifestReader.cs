@@ -25,7 +25,7 @@ public static partial class PluginManifestReader
     [GeneratedRegex("^" + CardIdPattern + @"\z")]
     private static partial Regex CardIdRegex();
 
-    [GeneratedRegex(@"^[0-9]+\.[0-9]+\.[0-9]+$")]
+    [GeneratedRegex(@"^[0-9]+\.[0-9]+\.[0-9]+\z")]
     private static partial Regex VersionRegex();
 
     // Windows treats these names as devices whatever follows the dot, so a plugin called nul.tools would get a storage
