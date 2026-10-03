@@ -33,7 +33,7 @@ public sealed class FourFoldRankingClient : IDisposable, IPlayerProfileTransport
     public async Task<PlayerProgressSnapshot> GetProfileAsync(int playerId, CancellationToken cancellationToken)
     {
         if (playerId <= 0) throw new ArgumentOutOfRangeException(nameof(playerId));
-        return PlayerProfileHtmlParser.Parse(await GetPageAsync($"player.php?id={playerId}", cancellationToken));
+        return PlayerProfileHtmlParser.Parse(await GetPageAsync($"social_profile.php?id={playerId}", cancellationToken));
     }
 
     // Redirects are off, so a 3xx fails the success check. A page over MaxResponseContentBufferSize fails the

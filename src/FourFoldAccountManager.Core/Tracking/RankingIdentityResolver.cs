@@ -44,8 +44,7 @@ public static class RankingIdentityResolver
         if (!Uri.TryCreate(input, UriKind.Absolute, out var uri) ||
             uri.Scheme != Uri.UriSchemeHttps ||
             !string.Equals(uri.Host, "fourfoldonline.com", StringComparison.OrdinalIgnoreCase) ||
-            !uri.IsDefaultPort || uri.AbsolutePath != "/player.php" ||
-            uri.Fragment.Length > 0)
+            !uri.IsDefaultPort || !RankingHtmlParser.IsProfilePath(uri.AbsolutePath))
         {
             return null;
         }
