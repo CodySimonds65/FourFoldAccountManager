@@ -36,13 +36,17 @@ public sealed class PluginStorageTests : IDisposable
     {
         var storage = new PluginStorage(FilePath);
         await storage.SetAsync("kept", Json("\"safe\""));
-        var tooBig = Json("\"" + new string('x', PluginStorage.MaximumBytes) + "\"");
 
-        var error = await Assert.ThrowsAsync<PluginApiException>(() => storage.SetAsync("big", tooBig));
+        // Create a nested value with many numbers to make indentation matter and exceed the cap
+        var largeArray = Json("[" + string.Join(",", Enumerable.Range(1, 70000)) + "]");
+        var error = await Assert.ThrowsAsync<PluginApiException>(() => storage.SetAsync("big", largeArray));
 
         Assert.Equal("limit-exceeded", error.Code);
         Assert.Equal("safe", (await new PluginStorage(FilePath).GetAsync("kept"))!.Value.GetString());
         Assert.Null(await new PluginStorage(FilePath).GetAsync("big"));
+
+        // Verify the file size is actually within the cap
+        Assert.True(new FileInfo(FilePath).Length <= PluginStorage.MaximumBytes);
     }
 
     [Theory]
@@ -79,5 +83,39 @@ public sealed class PluginStorageTests : IDisposable
 
         Assert.Null(await new PluginStorage(FilePath).GetAsync("a"));
         Assert.Equal(2, (await new PluginStorage(FilePath).GetAsync("b"))!.Value.GetInt32());
+    }
+
+    [Fact]
+    public async Task ALockedStoreIsNotTreatedAsEmptyAndKeepsItsData()
+    {
+        // Write key "a" with one instance
+        var storage1 = new PluginStorage(FilePath);
+        await storage1.SetAsync("a", Json("1"));
+
+        // Lock the file to simulate a transient read failure
+        FileStream? lockStream = new FileStream(FilePath, FileMode.Open, FileAccess.Read, FileShare.None);
+        try
+        {
+            // With a NEW PluginStorage instance, GetAsync should throw "unavailable"
+            var storage2 = new PluginStorage(FilePath);
+            var error = await Assert.ThrowsAsync<PluginApiException>(() => storage2.GetAsync("a"));
+            Assert.Equal("unavailable", error.Code);
+
+            // Dispose the lock
+            lockStream.Dispose();
+            lockStream = null;
+
+            // With that same instance, SetAsync should now succeed
+            await storage2.SetAsync("b", Json("2"));
+
+            // A fresh instance should read both "a" and "b"
+            var storage3 = new PluginStorage(FilePath);
+            Assert.Equal(1, (await storage3.GetAsync("a"))!.Value.GetInt32());
+            Assert.Equal(2, (await storage3.GetAsync("b"))!.Value.GetInt32());
+        }
+        finally
+        {
+            lockStream?.Dispose();
+        }
     }
 }

@@ -36,7 +36,7 @@ public sealed class PluginStorage(string filePath)
         {
             var values = await LoadAsync();
             var next = new Dictionary<string, JsonElement>(values, StringComparer.Ordinal) { [key] = value.Clone() };
-            if (JsonSerializer.SerializeToUtf8Bytes(next).Length > MaximumBytes)
+            if (JsonSerializer.SerializeToUtf8Bytes(next, AtomicJsonFile.Options).Length > MaximumBytes)
             {
                 throw new PluginApiException("limit-exceeded", "Plugin storage is limited to 256 KB.");
             }
@@ -93,9 +93,21 @@ public sealed class PluginStorage(string filePath)
             await using var stream = File.OpenRead(filePath);
             _values = await JsonSerializer.DeserializeAsync<Dictionary<string, JsonElement>>(stream) ?? [];
         }
-        catch (Exception exception) when (exception is IOException or JsonException or UnauthorizedAccessException)
+        catch (FileNotFoundException)
         {
             _values = [];
+        }
+        catch (DirectoryNotFoundException)
+        {
+            _values = [];
+        }
+        catch (JsonException)
+        {
+            _values = [];
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new PluginApiException("unavailable", "Plugin storage couldn't be read right now.");
         }
 
         return _values;
