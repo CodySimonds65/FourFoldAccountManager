@@ -6,7 +6,6 @@ namespace FourFoldAccountManager.Core.Data;
 public sealed record XpStoredAccount(
     Guid AccountId,
     int PlayerId,
-    DateTimeOffset SampledAt,
     PlayerProgressSnapshot Snapshot,
     IReadOnlyList<XpGainInterval> Intervals);
 

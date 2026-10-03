@@ -170,7 +170,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         {
             foreach (var account in _active.Values)
             {
-                account.Session.MarkFetchFailed(DateTimeOffset.UtcNow);
+                account.Session.MarkFetchFailed();
                 account.Status = "Tracker unavailable; retry when a client is reopened";
             }
             NotifyChanged();
@@ -234,21 +234,17 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
                 {
                     account.Status = "Not in top 200; link a profile";
                 }
-                else if (result.Status == PlayerProfileReadStatus.MissingUsername)
-                {
-                    account.Status = "Add a ranking username";
-                }
                 else if (result.Status == PlayerProfileReadStatus.ProfileMismatch)
                 {
                     account.PlayerId = null;
                     account.Status = "Player name mismatch; check profile link";
-                    account.Session.MarkFetchFailed(DateTimeOffset.UtcNow);
+                    account.Session.MarkFetchFailed();
                 }
                 else
                 {
                     account.PlayerId = result.PlayerId;
                     account.Status = "Stale; could not refresh player data";
-                    account.Session.MarkFetchFailed(DateTimeOffset.UtcNow);
+                    account.Session.MarkFetchFailed();
                 }
 
                 NotifyChanged();
@@ -269,7 +265,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
                     : account.Session.InvalidClassNames.Count > 0
                         ? $"Could not compare XP for {account.Session.ActiveClassName}"
                         : account.Session.RatePerHour is null ? "Collecting baseline" : "Tracking";
-            _stored[account.Id] = new XpStoredAccount(account.Id, result.PlayerId!.Value, sampledAt, profile,
+            _stored[account.Id] = new XpStoredAccount(account.Id, result.PlayerId!.Value, profile,
                 account.Session.Intervals.ToArray());
             await _store.SaveAsync(_stored.Values.ToArray(), sampledAt, cancellationToken);
             NotifyChanged();
@@ -279,7 +275,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         }
         catch
         {
-            account.Session.MarkFetchFailed(DateTimeOffset.UtcNow);
+            account.Session.MarkFetchFailed();
             account.Status = "Stale; could not refresh player data";
             NotifyChanged();
         }
