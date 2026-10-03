@@ -12,7 +12,6 @@ using System.Windows.Threading;
 using FourFoldAccountManager.Core.Calculation;
 using FourFoldAccountManager.Core.Data;
 using FourFoldAccountManager.Core.Input;
-using FourFoldAccountManager.Core.Launch;
 using FourFoldAccountManager.Core.Leaderboard;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Overlay;
@@ -1726,12 +1725,8 @@ public partial class MainWindow : Window
     {
         var assignedAccountId = AccountIdFor(slot.SlotIndex);
         var isOpen = assignedAccountId is { } accountId && _openAccountIds.Contains(accountId);
-        var hasAssignedAccount = assignedAccountId is not null;
         var account = assignedAccountId is { } id ? _accounts.FirstOrDefault(item => item.Id == id) : null;
-        slot.RelaunchButton.Visibility = AssignedAccountLaunchPolicy.ShouldShowRelaunch(
-            hasAssignedAccount, isOpen)
-            ? Visibility.Visible
-            : Visibility.Collapsed;
+        slot.RelaunchButton.Visibility = isOpen ? Visibility.Visible : Visibility.Collapsed;
         slot.RelaunchButton.IsEnabled = _isReady && !_batchLaunchInProgress;
         slot.AccountLabel.Text = account?.Label ?? "Account view";
         slot.EmptyTitle.Text = account is null ? "An open spot in your party" : $"{account.Label} is ready";
@@ -1794,9 +1789,7 @@ public partial class MainWindow : Window
                     continue;
                 }
 
-                if (!AssignedAccountLaunchPolicy.ShouldStart(
-                        _openAccountIds.Contains(accountId),
-                        _failedAccountIds.Contains(accountId)))
+                if (_openAccountIds.Contains(accountId) && !_failedAccountIds.Contains(accountId))
                 {
                     outcomes.Add(AssignedAccountStartResult.AlreadyRunning);
                     continue;
@@ -3060,7 +3053,7 @@ public partial class MainWindow : Window
             var batchLaunchWasActive = _batchLaunchInProgress;
             Dispatcher.BeginInvoke(() =>
             {
-                if (!AssignedAccountLaunchPolicy.IsCurrentView(slot.View, view))
+                if (!ReferenceEquals(slot.View, view))
                 {
                     return;
                 }
@@ -3090,7 +3083,7 @@ public partial class MainWindow : Window
 
         slot.ProcessFailedHandler = (_, _) => Dispatcher.BeginInvoke(() =>
         {
-            if (!AssignedAccountLaunchPolicy.IsCurrentView(slot.View, view))
+            if (!ReferenceEquals(slot.View, view))
             {
                 return;
             }

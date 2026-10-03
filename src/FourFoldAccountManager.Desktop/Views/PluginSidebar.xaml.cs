@@ -2,7 +2,6 @@ using System.Collections;
 using System.Windows;
 using System.Windows.Controls;
 using FourFoldAccountManager.Core.Models;
-using FourFoldAccountManager.Core.Panel;
 using FourFoldAccountManager.Core.Tracking;
 using FourFoldAccountManager.Desktop.Services;
 
@@ -43,8 +42,8 @@ public partial class PluginSidebar : UserControl
     public bool UpdateHostVisibility(bool workspaceVisible, bool isFullScreen, bool expanded,
         IReadOnlyCollection<Guid> openAccountIds)
     {
-        var visible = workspaceVisible &&
-                      PluginSidebarPolicy.ShouldShow(isFullScreen, expanded, SelectedAccountId, openAccountIds);
+        var visible = workspaceVisible && expanded && !isFullScreen &&
+                      (SelectedAccountId.HasValue || openAccountIds.Count > 0);
         Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
         return visible;
     }
@@ -64,18 +63,6 @@ public partial class PluginSidebar : UserControl
     {
         ClassComparisonPanelView.SetAccounts(accounts);
         XpCalculatorPanelView.SetAccounts(accounts);
-    }
-
-    public void SetSelectedAccount(Guid? accountId)
-    {
-        SelectedAccountId = accountId;
-        _selectedAccount = null;
-        ClassComparisonPanelView.SetSelectedAccount(null);
-        XpCalculatorPanelView.SetSelectedAccount(null);
-        ClassComparisonPanelView.ClearSnapshot(accountId.HasValue
-            ? "Select Refresh to load the selected profile." : "Select an account to load its profile.");
-        XpCalculatorPanelView.ClearSnapshot(accountId.HasValue
-            ? "Select Refresh to load the selected profile." : "Select an account to load its profile.");
     }
 
     public void SetSelectedAccount(AccountProfile? account)
@@ -107,7 +94,7 @@ public partial class PluginSidebar : UserControl
 
     public void ShowPlugin(PluginKind plugin)
     {
-        ActivePlugin = FourFoldAccountManager.Core.Panel.PluginSelectionPolicy.Normalize(plugin);
+        ActivePlugin = Enum.IsDefined(plugin) ? plugin : PluginKind.XpTracker;
         UpdateActivePlugin();
     }
 
