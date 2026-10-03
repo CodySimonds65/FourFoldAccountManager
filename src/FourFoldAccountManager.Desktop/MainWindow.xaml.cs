@@ -131,7 +131,8 @@ public partial class MainWindow : Window
         _plugins.Stats.View.AccountSelectionRequested += SelectAccountFromPlugin;
         _plugins.XpCalc.View.AccountSelectionRequested += SelectAccountFromPlugin;
         _plugins.Timer.ShortcutChangeRequested += TimerPlugin_ShortcutChangeRequested;
-        PluginSidebar.SetPlugins(_plugins.All);
+        InitializeCommunityPlugins(paths);
+        RefreshPluginSidebar();
         PluginSidebar.OpenRequested += id =>
         {
             // The tools window always shows a plugin, so picking one there changes only which is open. Opening it
@@ -147,7 +148,7 @@ public partial class MainWindow : Window
             _ = ApplyPluginChangeAsync(PluginLayoutPolicy.WithClosed, refreshEffects: false);
         PluginSidebar.MoveRequested += (id, index) =>
             _ = ApplyPluginChangeAsync(
-                settings => PluginLayoutPolicy.WithMoved(settings, BuiltInPlugins.All, id, index), refreshEffects: false);
+                settings => PluginLayoutPolicy.WithMoved(settings, AllPluginDescriptors, id, index), refreshEffects: false);
         PluginSidebar.EnabledChangeRequested += (id, enabled) =>
             _ = ApplyPluginChangeAsync(
                 settings => PluginLayoutPolicy.WithEnabled(settings, id, enabled), refreshEffects: true);
@@ -321,6 +322,7 @@ public partial class MainWindow : Window
             UpdateTimerHotkeys();
             RefreshPlainKeyBindings();
             PluginSidebar.Render(_panelSettings);
+            await _communityPlugins.ApplyAsync(_panelSettings);
             foreach (var (accountId, size) in _panelSettings.GameViewportSizes)
             {
                 await _browserSessions.SetGameViewportSizeAsync(accountId, size);
@@ -745,7 +747,7 @@ public partial class MainWindow : Window
         var selectedAccount = AccountsListBox.SelectedItem as AccountProfile;
         CancelProfileRead();
         SetProfileAccount(selectedAccount);
-        var openPlugin = PluginLayoutPolicy.OpenPlugin(_panelSettings, BuiltInPlugins.All)?.Id;
+        var openPlugin = PluginLayoutPolicy.OpenPlugin(_panelSettings, AllPluginDescriptors)?.Id;
         if (selectedAccount is not null && (_toolsWindow is not null || _panelSettings.PluginsSidebarExpanded) &&
             openPlugin is BuiltInPlugins.StatsId or BuiltInPlugins.XpCalcId)
         {
@@ -857,6 +859,7 @@ public partial class MainWindow : Window
         PluginSidebar.Render(_panelSettings);
         if (refreshEffects)
         {
+            await _communityPlugins.ApplyAsync(_panelSettings);
             _shortcuts?.ApplyPluginStates(_panelSettings);
             RefreshPlainKeyBindings();
             UpdateTimerHotkeys();
@@ -1650,6 +1653,7 @@ public partial class MainWindow : Window
                 : [],
             _arrangingFloatingCards);
         FullscreenOverlayTray.SetRows(globalSwitches, accountRows);
+        NotifyPluginsOfDataChanges();
         UpdatePluginSidebarVisibility();
     }
 
@@ -3381,6 +3385,7 @@ public partial class MainWindow : Window
             // Flush a pending sidebar XP target save before the final settings save, so a target
             // typed just before closing reaches disk instead of being lost.
             _plugins.XpCalc.View.FlushPendingTargetSave();
+            _communityPlugins.Dispose();
 
             try
             {
