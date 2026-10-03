@@ -4,7 +4,8 @@ namespace FourFoldAccountManager.Core.Plugins;
 
 public static class PluginLayoutPolicy
 {
-    public const int MaximumIds = 64;
+    // Room for the built-in plugins plus every hub plugin a user is likely to install.
+    public const int MaximumIds = 256;
 
     // Known plugins in saved order; a known plugin missing from the saved order goes last, in the order given.
     public static IReadOnlyList<PluginDescriptor> Ordered(PanelSettings settings, IReadOnlyList<PluginDescriptor> known)
@@ -92,7 +93,7 @@ public static class PluginLayoutPolicy
     public static PanelSettings WithClosed(PanelSettings settings) =>
         settings.PluginsSidebarExpanded ? settings with { PluginsSidebarExpanded = false } : settings;
 
-    // Load-time cleanup: blank ids and repeats go (the first wins), and at most 64 ids stay.
+    // Load-time cleanup: blank ids and repeats go (the first wins), and at most 256 ids stay.
     public static IReadOnlyList<string> CleanIds(IReadOnlyList<string>? ids) =>
         Array.AsReadOnly((ids ?? Array.Empty<string>())
             .Where(id => !string.IsNullOrWhiteSpace(id))
