@@ -112,6 +112,8 @@ public partial class FullscreenOverlayTray : UserControl
     private void SecondMonitorButton_Click(object sender, RoutedEventArgs args) =>
         SecondMonitorRequested?.Invoke(this, EventArgs.Empty);
 
+    public void SetSecondMonitorLabel(string label) => SecondMonitorButton.Content = label;
+
     private void EdgeTab_MouseEnter(object sender, MouseEventArgs args)
     {
         if (!_ignoreEdgeTabMouseEnterUntilLeave)
