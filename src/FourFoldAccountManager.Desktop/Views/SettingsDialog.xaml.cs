@@ -7,10 +7,6 @@ namespace FourFoldAccountManager.Desktop.Views;
 
 public partial class SettingsDialog : Window
 {
-    private const string CapturePrompt = "Press a key, with or without Ctrl, Alt, or Shift. Esc cancels.";
-
-    private const string InvalidKeysMessage =
-        "Esc, Tab, Enter, Backspace, F5, the Windows key, and Ctrl, Alt, or Shift on their own can't be shortcuts.";
 
     private readonly IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> _initialShortcuts;
     private readonly IReadOnlySet<GlobalShortcutAction> _unavailableShortcuts;
@@ -48,8 +44,7 @@ public partial class SettingsDialog : Window
         BlockStorePagesOption.IsChecked = blockStorePages;
         _rows = new[]
         {
-            RevealShortcutRow, DividerShortcutRow, TimerSplitShortcutRow, TimerFinishShortcutRow, TimerResetShortcutRow,
-            NextTabShortcutRow, PreviousTabShortcutRow, TheatreShortcutRow
+            RevealShortcutRow, DividerShortcutRow, NextTabShortcutRow, PreviousTabShortcutRow, TheatreShortcutRow
         }.ToDictionary(row => row.Action);
         foreach (var (action, row) in _rows)
         {
@@ -103,43 +98,13 @@ public partial class SettingsDialog : Window
     {
         _capturingShortcut = action;
         _rows[action].SetKeysText("Press shortcut…");
-        _rows[action].SetStatus(CapturePrompt);
+        _rows[action].SetStatus(ShortcutCapture.Prompt);
         Activate();
         Keyboard.Focus(this);
     }
 
-    // Returns false, and explains why in the row, when the keys cannot be a global shortcut.
-    internal bool TryApplyCapturedKey(ushort virtualKey, GlobalHotkeyModifiers modifiers)
-    {
-        if (_capturingShortcut is not { } action)
-        {
-            return false;
-        }
-
-        if (!GlobalHotkeyChord.TryCreate(virtualKey, modifiers, out var chord))
-        {
-            _rows[action].SetStatus(InvalidKeysMessage);
-            return false;
-        }
-
-        _shortcuts[action] = chord;
-        _capturingShortcut = null;
-        _rows[action].SetKeysText(ShortcutText.Format(chord));
-        UpdateShortcutStatus(action);
-        return true;
-    }
-
-    internal string? DuplicateShortcutMessage()
-    {
-        if (GlobalShortcutActions.FindDuplicate(_shortcuts) is not { } duplicate)
-        {
-            return null;
-        }
-
-        return $"{GlobalShortcutActions.DisplayName(duplicate.First)} and " +
-            $"{GlobalShortcutActions.DisplayName(duplicate.Second)} use the same keys. " +
-            "Choose a different shortcut for one of them.";
-    }
+    internal string? DuplicateShortcutMessage() =>
+        ShortcutCapture.DuplicateMessage(_shortcuts);
 
     private void ResetLayoutSizes_Click(object sender, RoutedEventArgs e)
     {
@@ -163,33 +128,21 @@ public partial class SettingsDialog : Window
         }
 
         e.Handled = true;
-        var key = e.Key switch
+        switch (ShortcutCapture.Read(e, out var chord))
         {
-            Key.System => e.SystemKey,
-            Key.ImeProcessed => e.ImeProcessedKey,
-            Key.DeadCharProcessed => e.DeadCharProcessedKey,
-            _ => e.Key
-        };
-        if (key == Key.Escape)
-        {
-            CancelCapture();
-            return;
+            case ShortcutKeyResult.Cancelled:
+                CancelCapture();
+                break;
+            case ShortcutKeyResult.Invalid:
+                _rows[action].SetStatus(ShortcutCapture.InvalidKeysMessage);
+                break;
+            case ShortcutKeyResult.Captured:
+                _shortcuts[action] = chord!;
+                _capturingShortcut = null;
+                _rows[action].SetKeysText(ShortcutText.Format(chord!));
+                UpdateShortcutStatus(action);
+                break;
         }
-
-        // Pressing Ctrl, Alt, or Shift first is how a chord starts; keep waiting for its main key.
-        if (key is Key.LeftCtrl or Key.RightCtrl or Key.LeftAlt or Key.RightAlt or Key.LeftShift or Key.RightShift)
-        {
-            return;
-        }
-
-        // Without this, Win+F would be recorded as a plain F.
-        if (key is Key.LWin or Key.RWin || (Keyboard.Modifiers & ModifierKeys.Windows) != 0)
-        {
-            _rows[action].SetStatus(InvalidKeysMessage);
-            return;
-        }
-
-        TryApplyCapturedKey((ushort)KeyInterop.VirtualKeyFromKey(key), MapSupportedModifiers(Keyboard.Modifiers));
     }
 
     private void CancelCapture()
@@ -233,29 +186,4 @@ public partial class SettingsDialog : Window
                 : string.Empty);
     }
 
-    private static GlobalHotkeyModifiers MapSupportedModifiers(ModifierKeys modifiers)
-    {
-        if ((modifiers & ModifierKeys.Windows) != 0)
-        {
-            return GlobalHotkeyModifiers.None;
-        }
-
-        var result = GlobalHotkeyModifiers.None;
-        if ((modifiers & ModifierKeys.Control) != 0)
-        {
-            result |= GlobalHotkeyModifiers.Control;
-        }
-
-        if ((modifiers & ModifierKeys.Alt) != 0)
-        {
-            result |= GlobalHotkeyModifiers.Alt;
-        }
-
-        if ((modifiers & ModifierKeys.Shift) != 0)
-        {
-            result |= GlobalHotkeyModifiers.Shift;
-        }
-
-        return result;
-    }
 }
