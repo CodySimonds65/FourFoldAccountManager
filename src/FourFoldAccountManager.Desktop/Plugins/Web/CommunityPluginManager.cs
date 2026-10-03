@@ -33,9 +33,13 @@ public sealed class CommunityPluginManager : IDisposable
     private IReadOnlyList<HubLoad> _hubLoads = [];
     private FileSystemWatcher? _watcher;
     private bool _disposed;
+    private bool _changedQueued;
     private string? _folderError;
     private string? _startError;
     private PanelSettings _settings = PanelSettings.Default;
+
+    // False until the first ApplyAsync: before that _settings is only the default, which switches everything on.
+    private bool _settingsGiven;
 
     public CommunityPluginManager(LocalDataPaths paths, IPluginHostData host, Panel parkingHost, PluginCardStore cards)
     {
@@ -80,6 +84,7 @@ public sealed class CommunityPluginManager : IDisposable
         }
 
         _settings = settings;
+        _settingsGiven = true;
         if (!settings.PluginDeveloperMode)
         {
             if (_dev.Count > 0 || _rejected.Count > 0 || _watcher is not null || _folderError is not null)
@@ -150,8 +155,17 @@ public sealed class CommunityPluginManager : IDisposable
     // After an uninstall deleted the plugin's settings file: the store that cached it must not write it back.
     public void Forget(string id) => _storages.Remove(id);
 
-    public Task ClearBrowserDataAsync(string id) =>
-        _browser.ClearOriginAsync(_parkingHost, PluginNetworkPolicy.Origin(id));
+    // Best effort, and bounded: an uninstall that awaits this must not hang if the borrowed web view never starts.
+    public async Task ClearBrowserDataAsync(string id)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        await Task.WhenAny(
+            _browser.ClearOriginAsync(_parkingHost, PluginNetworkPolicy.Origin(id)), Task.Delay(TimeSpan.FromSeconds(10)));
+    }
 
     public void PostEvent(string name, object? data)
     {
@@ -214,6 +228,12 @@ public sealed class CommunityPluginManager : IDisposable
                 // One plugin that can't be loaded must never take the others down.
             }
         }
+
+        // A replaced plugin was appended; the list keeps the order of the loads, so an update never moves a plugin.
+        var order = wanted.ToList();
+        var ordered = _hub.OrderBy(plugin => order.IndexOf(_hubLoadOf[plugin])).ToArray();
+        _hub.Clear();
+        _hub.AddRange(ordered);
     }
 
     private WebPlugin Create(PluginManifest manifest, PluginTrust trust)
@@ -226,14 +246,25 @@ public sealed class CommunityPluginManager : IDisposable
 
         var plugin = new WebPlugin(manifest, trust, _browser, _parkingHost, _host, _cards, storage);
         // A plugin stops or restarts by itself (a flood, a crash, its Reload button). That can happen inside a web view
-        // event or mid-start, and Changed re-renders the sidebar, so it is raised later.
-        plugin.RunningChanged += () => _dispatcher.BeginInvoke(() =>
+        // event or mid-start, and Changed re-renders the sidebar, so it is raised later, once for however many plugins
+        // changed in the meantime.
+        plugin.RunningChanged += () =>
         {
-            if (!_disposed)
+            if (_changedQueued)
             {
-                Changed?.Invoke();
+                return;
             }
-        });
+
+            _changedQueued = true;
+            _dispatcher.BeginInvoke(() =>
+            {
+                _changedQueued = false;
+                if (!_disposed)
+                {
+                    Changed?.Invoke();
+                }
+            });
+        };
         return plugin;
     }
 
@@ -313,6 +344,12 @@ public sealed class CommunityPluginManager : IDisposable
     // Starts switched-on plugins and stops switched-off ones. Returns whether anything changed.
     private async Task<bool> SyncRunningAsync()
     {
+        // Until the user's settings are known, a plugin they switched off could be started; ApplyAsync starts them all.
+        if (!_settingsGiven)
+        {
+            return false;
+        }
+
         var changed = _startError is not null;
         _startError = null;
         var starts = new List<Task<bool>>();
