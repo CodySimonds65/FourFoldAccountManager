@@ -240,7 +240,7 @@ public static partial class PluginManifestReader
                 uri.Scheme != Uri.UriSchemeHttps || uri.AbsolutePath != "/" || uri.Query.Length > 0 ||
                 uri.Fragment.Length > 0 || uri.UserInfo.Length > 0 || uri.HostNameType != UriHostNameType.Dns ||
                 PluginNetworkHosts.IsLocalName(uri.IdnHost) || uri.IdnHost.EndsWith('.') ||
-                IsIpLikeHost(uri.IdnHost) || PluginNetworkPolicy.IsPluginHost(uri.IdnHost))
+                IsIpLikeHost(uri.IdnHost) || !IsPlainHost(uri.IdnHost) || PluginNetworkPolicy.IsPluginHost(uri.IdnHost))
             {
                 return false;
             }
@@ -257,6 +257,12 @@ public static partial class PluginManifestReader
         sites = Array.AsReadOnly(result.Distinct().ToArray());
         return true;
     }
+
+    // What a real host name is once converted: letters, digits, dots and dashes (a name with an umlaut becomes an xn--
+    // name). Uri's conversion also turns look-alike characters into punctuation (U+FE64 becomes "<", U+FF5C becomes
+    // "|"), and a site named like that would rearrange the review summary and every other place a site is shown.
+    private static bool IsPlainHost(string host) =>
+        host.All(c => c is (>= 'a' and <= 'z') or (>= '0' and <= '9') or '.' or '-');
 
     private static bool IsIpLikeHost(string host)
     {

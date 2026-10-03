@@ -126,6 +126,11 @@ public sealed class PluginManifestReaderTests : IDisposable
     [InlineData("\"name\": \"Goal\\u202Etracker\"")]
     // A zero-width joiner in a host makes Uri.IdnHost throw rather than return a name.
     [InlineData("\"sites\": [\"https://a\u200Db.example\"]")]
+    // Uri's conversion turns look-alike characters into punctuation (U+FE64 into "<", U+FF5C into "|"), and "_" isn't a
+    // host name character, so a site must be plain letters, digits, dots and dashes once converted.
+    [InlineData("\"sites\": [\"https://a\uFE64b.example.com\"]")]
+    [InlineData("\"sites\": [\"https://x\uFF5Cy.example.com\"]")]
+    [InlineData("\"sites\": [\"https://a_b.example.com\"]")]
     [InlineData("\"cards\": [{ \"id\": \"Goal\", \"name\": \"Goal\", \"scope\": \"account\" }]")]
     [InlineData("\"cards\": [{ \"id\": \"goal\", \"name\": \"Goal\", \"scope\": \"panel\" }]")]
     [InlineData("\"cards\": [{ \"id\": \"a\", \"name\": \"A\", \"scope\": \"global\" }, { \"id\": \"a\", \"name\": \"B\", \"scope\": \"global\" }]")]
@@ -136,6 +141,18 @@ public sealed class PluginManifestReaderTests : IDisposable
 
         Assert.Null(result.Manifest);
         Assert.False(string.IsNullOrWhiteSpace(result.Error));
+    }
+
+    [Theory]
+    [InlineData("https://b\u00FCcher.example", "xn--bcher-kva.example")]
+    [InlineData("https://xn--bcher-kva.example", "xn--bcher-kva.example")]
+    [InlineData("https://Wiki.Example.com:8443", "wiki.example.com")]
+    public void ASiteThatIsAPlainHostNameIsAccepted(string site, string host)
+    {
+        var result = Read(Manifest(", \"sites\": [\"" + site + "\"]"));
+
+        Assert.Null(result.Error);
+        Assert.Equal(host, Assert.Single(result.Manifest!.Sites).IdnHost);
     }
 
     [Fact]

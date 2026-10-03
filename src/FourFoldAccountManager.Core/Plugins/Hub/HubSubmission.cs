@@ -217,7 +217,7 @@ public static class HubSubmission
 
         var contact = plugin.AnySite ? "any website (requested by this entry)"
             : plugin.Sites.Count == 0 ? "no websites"
-            : string.Join(", ", plugin.Sites.Select(PluginNetworkPolicy.SiteLabel));
+            : string.Join(", ", plugin.Sites.Select(site => Site(PluginNetworkPolicy.SiteLabel(site))));
         var cards = plugin.Cards.Count == 0
             ? "none"
             : string.Join(", ", plugin.Cards.Select(card =>
@@ -253,12 +253,12 @@ public static class HubSubmission
 
             if (shown.Except(before).ToArray() is { Length: > 0 } added)
             {
-                changes.Add("Sites added: " + string.Join(", ", added) + ".");
+                changes.Add("Sites added: " + string.Join(", ", added.Select(Site)) + ".");
             }
 
             if (before.Except(shown).ToArray() is { Length: > 0 } removed)
             {
-                changes.Add("Sites removed: " + string.Join(", ", removed) + ".");
+                changes.Add("Sites removed: " + string.Join(", ", removed.Select(Site)) + ".");
             }
 
             if (listed.Repository != plugin.Repository)
@@ -290,7 +290,7 @@ public static class HubSubmission
         using var archive = new ZipArchive(new MemoryStream(package));
         foreach (var file in archive.Entries.Take(MaximumListedFiles))
         {
-            text.AppendLine($"- {Plain(file.FullName)} ({file.Length} bytes)");
+            text.AppendLine($"- File: {Plain(file.FullName)} ({file.Length} bytes)");
         }
 
         if (archive.Entries.Count > MaximumListedFiles)
@@ -301,10 +301,13 @@ public static class HubSubmission
         return text.ToString();
     }
 
+    // A site's label is a host name, but it comes from a stranger's plugin.json, so it is text like the rest.
+    private static string Site(string label) => Plain(label, 300);
+
     // Text from a plugin, an entry or a repository, made safe to put in the summary, which GitHub draws as Markdown:
     // anything that could start a new line or hide text (control, formatting and separator characters) becomes "?",
     // every character Markdown could act on gets a backslash, and a long value is cut and ends in "...".
-    private static string Plain(string value, int maximum = 100)
+    public static string Plain(string value, int maximum = 100)
     {
         var result = new StringBuilder();
         foreach (var rune in value.EnumerateRunes())
