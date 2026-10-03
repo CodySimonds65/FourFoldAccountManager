@@ -31,7 +31,8 @@ public sealed class FloatingCardHost
             var card = cards[index];
             if (!_windows.TryGetValue(card.Key, out var window))
             {
-                window = new FloatingCardWindow(card.Key, card.Definition, index);
+                // The default spot cascades by how many cards already float, so a new card never lands on an older one.
+                window = new FloatingCardWindow(card.Key, card.Definition, _windows.Count);
                 window.Place(card.Bounds);
                 window.BoundsCommitted += Window_BoundsCommitted;
                 _windows.Add(card.Key, window);

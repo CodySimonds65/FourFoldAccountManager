@@ -136,6 +136,7 @@ public partial class MainWindow : Window
         AccountsListBox.ItemsSource = _accounts;
         AddAccountButton.IsEnabled = false;
         SettingsButton.IsEnabled = false;
+        SecondMonitorButton.IsEnabled = false;
         LayoutPicker.IsEnabled = false;
         LaunchVisibleButton.IsEnabled = false;
         LayoutPicker.ItemsSource = new[]
@@ -319,6 +320,7 @@ public partial class MainWindow : Window
             _isReady = true;
             AddAccountButton.IsEnabled = true;
             SettingsButton.IsEnabled = true;
+            SecondMonitorButton.IsEnabled = true;
             LayoutPicker.IsEnabled = true;
             LaunchVisibleButton.IsEnabled = true;
             TogglePluginsButton.IsEnabled = true;
@@ -340,6 +342,7 @@ public partial class MainWindow : Window
         {
             AddAccountButton.IsEnabled = false;
             SettingsButton.IsEnabled = false;
+            SecondMonitorButton.IsEnabled = false;
             LayoutPicker.IsEnabled = false;
             LaunchVisibleButton.IsEnabled = false;
             TogglePluginsButton.IsEnabled = false;
@@ -351,6 +354,7 @@ public partial class MainWindow : Window
         {
             AddAccountButton.IsEnabled = false;
             SettingsButton.IsEnabled = false;
+            SecondMonitorButton.IsEnabled = false;
             LayoutPicker.IsEnabled = false;
             LaunchVisibleButton.IsEnabled = false;
             TogglePluginsButton.IsEnabled = false;
@@ -1220,7 +1224,10 @@ public partial class MainWindow : Window
             Focusable = false
         };
         checkBox.SetResourceReference(Control.ForegroundProperty, "Brush.TextPrimary");
-        var menuItem = new MenuItem { Header = checkBox };
+        // Checkable with a name, so screen readers announce each item and its state; the themed template draws no
+        // check mark of its own, so this changes nothing visually.
+        var menuItem = new MenuItem { Header = checkBox, IsCheckable = true, IsChecked = isChecked };
+        System.Windows.Automation.AutomationProperties.SetName(menuItem, label);
         menuItem.Click += (_, _) => onClick();
         return menuItem;
     }
@@ -1296,7 +1303,8 @@ public partial class MainWindow : Window
         {
             if (open.WindowState == WindowState.Minimized)
             {
-                open.WindowState = WindowState.Normal;
+                // Back to how it was before it was minimized, maximized included.
+                SystemCommands.RestoreWindow(open);
             }
 
             open.Activate();
@@ -3386,10 +3394,7 @@ public partial class MainWindow : Window
         LeaderboardPanelView.Disconnect();
         try
         {
-            CancelProfileRead();
-            // Flush a pending sidebar XP target save before the final settings save, so a target
-            // typed just before closing reaches disk instead of being lost.
-            PluginSidebar.FlushPendingXpTarget();
+            // Close the extra windows first: a leftover one would keep the app running after the main window closes.
             _arrangingFloatingCards = false;
             _floatingCards.CloseAll();
             // Keep the tools window marked open, with its current spot, so it reopens there next launch.
@@ -3399,6 +3404,11 @@ public partial class MainWindow : Window
                 toolsPlacement = toolsWindow.CapturePlacement(isOpen: true);
                 CloseToolsWindowFromApp(toolsWindow);
             }
+
+            CancelProfileRead();
+            // Flush a pending sidebar XP target save before the final settings save, so a target
+            // typed just before closing reaches disk instead of being lost.
+            PluginSidebar.FlushPendingXpTarget();
 
             try
             {

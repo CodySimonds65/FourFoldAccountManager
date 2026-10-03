@@ -128,6 +128,10 @@ public sealed class SettingsStoreOverlayTests : IDisposable
         await WriteSettingsAsync(Guid.NewGuid(), json => json["toolsWindow"] = "not an object");
         Assert.Null((await _store.LoadAsync()).ToolsWindow);
 
+        // A field of the wrong JSON kind.
+        await WriteSettingsAsync(Guid.NewGuid(), json => json["toolsWindow"] = new JsonObject { ["width"] = "wide" });
+        Assert.Null((await _store.LoadAsync()).ToolsWindow);
+
         // Smaller than the tools window's minimum size.
         await WriteSettingsAsync(Guid.NewGuid(), json => json["toolsWindow"] = new JsonObject
         {
