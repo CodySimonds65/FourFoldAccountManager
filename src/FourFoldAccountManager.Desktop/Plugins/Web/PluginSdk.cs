@@ -16,6 +16,10 @@ internal static class PluginSdk
               Object.defineProperty(window, name, { value: undefined, configurable: false, writable: false });
             } catch {}
           }
+          // A page can't close FourFold's window or raise the print dialog. WebPlugin also removes the web view's own
+          // window.close() handler, so a close request that gets around this is ignored too.
+          try { Object.defineProperty(window, 'close', { value: () => {}, configurable: false, writable: false }); } catch {}
+          try { Object.defineProperty(window, 'print', { value: () => {}, configurable: false, writable: false }); } catch {}
           const info = __FOURFOLD_INFO__;
           const pending = new Map();
           const listeners = new Map();

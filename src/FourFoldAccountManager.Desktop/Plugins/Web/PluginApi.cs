@@ -263,10 +263,13 @@ internal sealed class PluginApi(
                 "limit-exceeded", "A card takes a summary of up to 40 characters and up to 8 rows of up to 40 characters.");
         }
 
-        // A line break or other control character would let a card's text pose as a different row or hide its end.
-        if (summary.Any(char.IsControl) || rows.Any(row => row.Label.Any(char.IsControl) || row.Value.Any(char.IsControl)))
+        // A line break, a direction override or an invisible separator would let a card's text pose as a different row or
+        // hide its end.
+        if (PluginText.HasUnsafeCharacter(summary) ||
+            rows.Any(row => PluginText.HasUnsafeCharacter(row.Label) || PluginText.HasUnsafeCharacter(row.Value)))
         {
-            throw new PluginApiException("invalid-argument", "A card's text can't contain control characters.");
+            throw new PluginApiException(
+                "invalid-argument", "A card's text can't contain control characters or invisible formatting characters.");
         }
 
         return new PluginCardContent(summary, rows);
