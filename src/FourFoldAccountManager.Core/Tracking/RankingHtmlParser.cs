@@ -23,7 +23,7 @@ public static class RankingHtmlParser
             var href = link?.GetAttribute("href");
             if (string.IsNullOrWhiteSpace(username) || href is null ||
                 !Uri.TryCreate(new Uri("https://fourfoldonline.com/"), href, out var uri) ||
-                uri.Host != "fourfoldonline.com" || uri.AbsolutePath != "/player.php" ||
+                uri.Host != "fourfoldonline.com" || !IsProfilePath(uri.AbsolutePath) ||
                 !TryReadPlayerId(uri.Query, out var playerId))
             {
                 throw new InvalidDataException("An EXP ranking row has no valid player link.");
@@ -34,6 +34,9 @@ public static class RankingHtmlParser
 
         return entries;
     }
+
+    // player.php is the old profile page; it now redirects to social_profile.php but the ranking still links it.
+    internal static bool IsProfilePath(string path) => path is "/social_profile.php" or "/player.php";
 
     internal static bool TryReadPlayerId(string query, out int playerId)
     {
