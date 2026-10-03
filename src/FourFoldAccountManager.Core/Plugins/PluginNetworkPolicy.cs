@@ -27,6 +27,9 @@ public static class PluginNetworkPolicy
                name.EndsWith("." + OriginSuffix, StringComparison.OrdinalIgnoreCase);
     }
 
+    // How a site is shown to a user or a reviewer: its real (xn--) host name, with the port when it isn't 443.
+    public static string SiteLabel(Uri site) => site.IsDefaultPort ? site.IdnHost : $"{site.IdnHost}:{site.Port}";
+
     public static bool AllowsAnySite(PluginManifest manifest, PluginTrust trust) =>
         manifest.AnySite && trust is (PluginTrust.Developer or PluginTrust.Verified);
 
