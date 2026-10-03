@@ -25,7 +25,6 @@ public interface ILeaderboardStore
     static readonly TimeSpan ActiveLeaseDuration = TimeSpan.FromMinutes(3);
 
     Task ApplyHeartbeatAsync(ParticipationHeartbeat heartbeat, DateTimeOffset receivedAtUtc, CancellationToken ct);
-    Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct);
     // Active profiles awaiting a baseline first, then those last sampled at or before sampledBeforeUtc, oldest first.
     Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
         DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct);

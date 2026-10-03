@@ -113,22 +113,6 @@ public sealed class EfLeaderboardStore(LeaderboardDbContext db, LeaderboardCapac
         await transaction.CommitAsync(ct);
     }
 
-    public async Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(
-        DateTimeOffset activeAfterUtc, CancellationToken ct)
-    {
-        var cutoff = activeAfterUtc.ToUniversalTime();
-        var active = await db.InstallationProfiles.AsNoTracking()
-            .Where(x => x.Installation.SharingEnabled && x.IsActive && x.LastActiveAtUtc > cutoff)
-            .Select(x => new { x.PlayerId, x.Username, x.LastActiveAtUtc })
-            .ToListAsync(ct);
-        return active.GroupBy(x => x.PlayerId)
-            .Select(group => group.OrderByDescending(x => x.LastActiveAtUtc)
-                .ThenBy(x => x.Username, StringComparer.OrdinalIgnoreCase).First())
-            .OrderBy(x => x.PlayerId)
-            .Select(x => new ActiveLeaderboardProfile(x.PlayerId, x.Username))
-            .ToArray();
-    }
-
     public async Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
         DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct)
     {

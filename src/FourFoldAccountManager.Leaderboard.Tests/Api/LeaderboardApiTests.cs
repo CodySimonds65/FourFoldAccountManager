@@ -212,8 +212,6 @@ public sealed class LeaderboardApiTests
                 page, pageSize, 0, nowUtc, []));
         }
 
-        public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([]);
         public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
             DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([]);

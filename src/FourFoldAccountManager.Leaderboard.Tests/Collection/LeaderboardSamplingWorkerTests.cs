@@ -48,8 +48,6 @@ public sealed class LeaderboardSamplingWorkerTests
 
     private sealed class ActiveStore : ILeaderboardStore
     {
-        public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
-            Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([new(1, "Alice")]);
         public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
             DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct) =>
             Task.FromResult<IReadOnlyList<ActiveLeaderboardProfile>>([new(1, "Alice")]);
