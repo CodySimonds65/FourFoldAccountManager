@@ -401,9 +401,9 @@ The hub is a GitHub repository:
 [FourFoldAccountManager-plugin-hub](https://github.com/CodySimonds65/FourFoldAccountManager-plugin-hub).
 
 1. Put your plugin in a public GitHub repository, at the root or in a folder.
-2. Test the exact commit you want listed, with developer mode on. The check runs on Linux, where names are
-   case-sensitive. `panel`, `icon` and `path` must match the real file and folder names letter for letter, even
-   though Windows lets a mismatch work in the dev folder.
+2. Test the exact commit you want listed, with developer mode on. The hub's check (step 4) runs on Linux, where
+   names are case-sensitive. `panel`, `icon` and `path` must match the real file and folder names letter for
+   letter, even though Windows lets a mismatch work in the dev folder.
 3. Open a pull request on the hub that adds your entry file, `plugins/<your plugin id>.json`:
 
    ```json
@@ -415,16 +415,16 @@ The hub is a GitHub repository:
 
    `repository` must be exactly `https://github.com/owner/repo`, with no trailing slash or `/tree/...`. `commit` is
    the full 40-character commit in lowercase. Add `"path"` when the plugin is in a folder. `path` is written with
-   forward slashes, uses only letters, digits, `.`, `_` and `-`, and has no trailing slash. The pull request changes
-   only that one file.
+   forward slashes, uses only letters, digits, `.`, `_` and `-`, has no trailing slash, no `.` or `..` parts, and at
+   most 200 characters. The pull request changes only that one file.
 4. A check validates your `plugin.json` with the same rules FourFold uses, builds the package (the zip that users
-   install), and scans the files in your repository at that commit for secrets. Then a maintainer reads the code.
-   When they merge, the plugin is on the hub. If the check fails, fix it in your plugin's repository, then put the
-   new commit in your entry file.
+   install), and scans the files in your repository at that commit for secrets. If the check fails, its summary page
+   says why. Fix it in your plugin's repository (then put the new commit in your entry file), or in the entry file
+   itself. Then a maintainer reads the code. When they merge, the plugin is on the hub.
 
 The check downloads your whole repository at that commit, not only the plugin's folder. It must be public, under
-50 MB as a download, and hold at most 20,000 files. No path in your repository can have more than 63 parts,
-counting the folders from the repository root and the file's name.
+50 MB as a download, at most 200 MB once unpacked, and hold at most 20,000 files. No path in your repository can
+have more than 63 parts, counting the folders from the repository root and the file's name.
 
 To update, raise `version` in `plugin.json` and open a pull request that changes `commit` in your entry file. Users
 get the new version automatically once it is merged: FourFold checks the hub when it starts and every 6 hours.
@@ -435,8 +435,9 @@ refuses a version it can't compare, and an update must raise it, comparing numbe
 
 What goes into the package: `plugin.json` and every file of a type FourFold serves (see
 [Where your page runs](#where-your-page-runs)) in the plugin's folder (the repository root, or `path`). At most 500
-files and 5 MB in all. Every such file goes in, whether or not your page loads it, so keep tests and screenshots in
-another folder. Everything else is left out, such as `README.md` and `LICENSE`, and so is any file or folder whose
+files and 5 MB in all. Every such file goes in, whether or not your page loads it, so keep tests and screenshots
+outside the plugin's folder (put the plugin in a folder and set `path`), or in a folder whose name starts with a
+dot. Everything else is left out, such as `README.md` and `LICENSE`, and so is any file or folder whose
 name starts with a dot. Your panel page, and everything it loads, must be in the package, so none of them can start
 with a dot. The files that go in must also unpack on Windows:
 
@@ -452,7 +453,7 @@ data is kept until they uninstall it.
 needs a secret key can't be listed.
 
 A plugin gets access to any website only when it asks for it in `plugin.json` **and** a maintainer approves it on the
-hub. Ask in your pull request and say why. Users see "Can contact any website" next to an approved plugin in the hub
+hub. Ask in your pull request and say why. Users see "Can contact any website" next to a plugin that has it in the hub
 before they install it. For every other plugin, the hub's **Details** list the sites it declares.
 
 The hub's [README](https://github.com/CodySimonds65/FourFoldAccountManager-plugin-hub#readme) has the rest of the

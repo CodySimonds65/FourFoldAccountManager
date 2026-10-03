@@ -164,6 +164,10 @@ public sealed class PluginPackageTests : IDisposable
         Assert.NotNull(PluginPackage.UnpackableReason(["trail.png."]));
         Assert.NotNull(PluginPackage.UnpackableReason(["dir /a.png"]));
         Assert.NotNull(PluginPackage.UnpackableReason(["A.png", "a.png"]));
+        Assert.NotNull(PluginPackage.UnpackableReason(["aux.js"]));
+        Assert.NotNull(PluginPackage.UnpackableReason(["nul"]));
+        // Only the device names themselves, not names that start with the same letters.
+        Assert.Null(PluginPackage.UnpackableReason(["console.js", "auxiliary.png", "com10.png"]));
     }
 
     [Fact]

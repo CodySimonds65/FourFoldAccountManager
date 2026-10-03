@@ -45,6 +45,7 @@ public sealed class HubSubmissionTests : IDisposable
     [InlineData("cody.goal-tracker.json", "not json")]
     [InlineData("cody.goal-tracker.json", "[]")]
     [InlineData("cody.goal-tracker.json", "{\"repository\":\"https://gitlab.com/cody/goal-tracker\",\"commit\":\"" + CommitA + "\"}")]
+    [InlineData("cody.goal-tracker.json", "{\"repository\":\"https://github.com/cody/goal-tracker.git\",\"commit\":\"" + CommitA + "\"}")]
     [InlineData("cody.goal-tracker.json", "{\"repository\":\"https://github.com/cody/goal-tracker\",\"commit\":\"main\"}")]
     [InlineData("cody.goal-tracker.json", "{\"repository\":\"https://github.com/cody/goal-tracker\",\"commit\":\"aaaaaaa\"}")]
     [InlineData("cody.goal-tracker.json", "{\"repository\":\"https://github.com/cody/goal-tracker\",\"commit\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}")]

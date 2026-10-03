@@ -76,7 +76,8 @@ public partial class MainWindow : IPluginHostData
     }
 
     // Uninstalling deletes the plugin's saved data, so it asks first, and No is the answer Enter gives. The name comes from
-    // the catalog or the plugin, so it only ever goes into the message as it is.
+    // the catalog or the plugin, so it only ever goes into the message as it is. The sidebar can be in the separate
+    // tools window, so the box belongs to whichever window the user clicked in.
     private void ConfirmPluginUninstall(string id)
     {
         var state = _pluginHub.ViewState;
@@ -84,7 +85,7 @@ public partial class MainWindow : IPluginHostData
                    ?? state.Pulled.FirstOrDefault(plugin => plugin.Id == id)?.Name
                    ?? id;
         var answer = MessageBox.Show(
-            this,
+            Window.GetWindow(PluginSidebar) ?? this,
             $"Uninstall {name}? Its saved data on this computer will be deleted.",
             "Uninstall plugin",
             MessageBoxButton.YesNo,
