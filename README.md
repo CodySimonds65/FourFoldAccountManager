@@ -18,7 +18,7 @@ A Windows client for running several FourFold accounts side by side, each in its
 - **Accounts**: saved logins (stored in Windows Credential Manager), favorites and custom order.
 - **Layouts**: run up to five games in a grid, or give each account its own tab.
 - **Theatre mode and full screen**: hide everything but the games.
-- **Plugins**: XP tracker, stats, XP calculator and a speedrun timer in a RuneLite-style strip. Click an icon to open its panel, drag icons to reorder them, and use the wrench to switch plugins off or change the Timer's keys.
+- **Plugins**: XP tracker, stats, XP calculator and a speedrun timer in a RuneLite-style strip. Click an icon to open its panel, drag icons to reorder them, and use the wrench to switch plugins off or change the Timer's keys. The button at the right of the toolbar hides or shows the strip.
 - **Overlays**: drag XP/hr, stats, XP calc and timer cards anywhere over the game.
 - **Second monitor**: pop the tools panel into its own window, or float individual cards on any screen.
 - **Shared XP leaderboard**: daily, weekly and monthly XP gains across opted-in players.

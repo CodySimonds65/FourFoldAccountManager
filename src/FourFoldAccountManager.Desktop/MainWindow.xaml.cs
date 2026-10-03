@@ -133,7 +133,16 @@ public partial class MainWindow : Window
         _plugins.Timer.ShortcutChangeRequested += TimerPlugin_ShortcutChangeRequested;
         PluginSidebar.SetPlugins(_plugins.All);
         PluginSidebar.OpenRequested += id =>
-            _ = ApplyPluginChangeAsync(settings => PluginLayoutPolicy.WithOpened(settings, id), refreshEffects: false);
+        {
+            // The tools window always shows a plugin, so picking one there changes only which is open. Opening it
+            // there must not leave the main window's panel open when the tools window is closed again.
+            var inToolsWindow = _toolsWindow is not null;
+            _ = ApplyPluginChangeAsync(
+                settings => inToolsWindow
+                    ? settings.OpenPlugin == id ? settings : settings with { OpenPlugin = id }
+                    : PluginLayoutPolicy.WithOpened(settings, id),
+                refreshEffects: false);
+        };
         PluginSidebar.CloseRequested += () =>
             _ = ApplyPluginChangeAsync(PluginLayoutPolicy.WithClosed, refreshEffects: false);
         PluginSidebar.MoveRequested += (id, index) =>
@@ -355,6 +364,7 @@ public partial class MainWindow : Window
         SecondMonitorButton.IsEnabled = enabled;
         LayoutPicker.IsEnabled = enabled;
         LaunchVisibleButton.IsEnabled = enabled;
+        TogglePluginsButton.IsEnabled = enabled;
     }
 
     private async Task CheckForUpdatesAsync()
@@ -736,7 +746,7 @@ public partial class MainWindow : Window
         CancelProfileRead();
         SetProfileAccount(selectedAccount);
         var openPlugin = PluginLayoutPolicy.OpenPlugin(_panelSettings, BuiltInPlugins.All)?.Id;
-        if (selectedAccount is not null && _panelSettings.PluginsSidebarExpanded &&
+        if (selectedAccount is not null && (_toolsWindow is not null || _panelSettings.PluginsSidebarExpanded) &&
             openPlugin is BuiltInPlugins.StatsId or BuiltInPlugins.XpCalcId)
         {
             _ = RefreshSelectedProfileAsync();
@@ -948,6 +958,22 @@ public partial class MainWindow : Window
         ToggleAccountsButton.ToolTip = _accountsPanelVisible
             ? "Hide the accounts rail to expand the multi-box panel."
             : "Show account profiles and slot assignments.";
+    }
+
+    // Hides or shows the whole strip and its panel; the choice is saved so it reopens the way the user left it.
+    private async void TogglePluginsPanel_Click(object sender, RoutedEventArgs e)
+    {
+        if (_showingLeaderboard) return;
+        try
+        {
+            await UpdateSettingsAsync(settings => settings with { PluginStripVisible = !settings.PluginStripVisible });
+        }
+        catch
+        {
+            GlobalStatusText.Text = "The plugin strip setting could not be saved.";
+        }
+
+        UpdatePluginSidebarVisibility();
     }
 
     private void WorkspaceView_Click(object sender, RoutedEventArgs e) => ShowWorkspaceView();
@@ -1696,11 +1722,18 @@ public partial class MainWindow : Window
     private void UpdatePluginSidebarVisibility()
     {
         // Popped out, the strip and panel always show in the tools window and the main window's column stays closed.
-        var shown = _toolsWindow is not null || (!_showingLeaderboard && !ClutterHidden);
+        var shown = _toolsWindow is not null ||
+                    (!_showingLeaderboard && !ClutterHidden && _panelSettings.PluginStripVisible);
         PluginSidebar.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
         var inMainWindow = shown && _toolsWindow is null;
         TrackerGapColumn.Width = new GridLength(inMainWindow ? 6 : 0);
         TrackerColumn.Width = inMainWindow ? GridLength.Auto : new GridLength(0);
+
+        // The toolbar button belongs to the main window's strip, so it goes while the tools window has it.
+        TogglePluginsButton.Visibility = _toolsWindow is null ? Visibility.Visible : Visibility.Collapsed;
+        TogglePluginsButton.ToolTip = _panelSettings.PluginStripVisible
+            ? "Hide the plugin strip to expand the multi-box panel."
+            : "Show the plugin strip.";
     }
 
     private async void FullscreenOverlayTray_CardToggleRequested(object? sender, OverlayCardToggleRequestedEventArgs args)
