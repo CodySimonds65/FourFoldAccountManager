@@ -1,5 +1,3 @@
-using System.IO;
-
 namespace FourFoldAccountManager.Desktop.Updates;
 
 public sealed class UpdateCoordinator
@@ -66,7 +64,7 @@ public sealed class UpdateCoordinator
             var result = _installer.TryStart(downloadedPath, _currentExecutablePath, _currentProcessId);
             if (result != UpdateInstallResult.Started)
             {
-                DeleteIfPresent(downloadedPath);
+                UpdateFiles.TryDelete(downloadedPath);
                 _failureNotice?.Invoke("The update could not be started. You can download the latest release manually.");
                 return;
             }
@@ -79,23 +77,6 @@ public sealed class UpdateCoordinator
         catch (Exception)
         {
             _failureNotice?.Invoke("The update could not be installed. You can download the latest release manually.");
-        }
-    }
-
-    private static void DeleteIfPresent(string path)
-    {
-        try
-        {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
         }
     }
 }

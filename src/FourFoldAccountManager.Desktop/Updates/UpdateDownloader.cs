@@ -72,19 +72,11 @@ public sealed class UpdateDownloader : IUpdateDownloader
             {
                 if (!keepDownloadedFile)
                 {
-                    DeleteIfPresent(downloadPath);
+                    UpdateFiles.TryDelete(downloadPath);
                 }
             }
         }
-        catch (HttpRequestException)
-        {
-            return null;
-        }
-        catch (IOException)
-        {
-            return null;
-        }
-        catch (UnauthorizedAccessException)
+        catch (Exception exception) when (exception is HttpRequestException or IOException or UnauthorizedAccessException)
         {
             return null;
         }
@@ -191,21 +183,4 @@ public sealed class UpdateDownloader : IUpdateDownloader
     }
 
     private static bool IsHttps(Uri uri) => uri.IsAbsoluteUri && uri.Scheme == Uri.UriSchemeHttps;
-
-    private static void DeleteIfPresent(string path)
-    {
-        try
-        {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
-        }
-    }
 }
