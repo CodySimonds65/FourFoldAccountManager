@@ -21,6 +21,11 @@ public sealed class TimerCoordinator : IDisposable
 
     public TimerDisplay Display { get; } = new();
 
+    // Raised on start, split, finish and reset (not on every tick).
+    public event Action? StateChanged;
+
+    public TimerSnapshot Snapshot() => _timer.Snapshot();
+
     public void Split()
     {
         if (_timer.Split())
@@ -71,5 +76,6 @@ public sealed class TimerCoordinator : IDisposable
     {
         Refresh();
         _ticker.IsEnabled = _timer.State == SpeedrunTimerState.Running;
+        StateChanged?.Invoke();
     }
 }

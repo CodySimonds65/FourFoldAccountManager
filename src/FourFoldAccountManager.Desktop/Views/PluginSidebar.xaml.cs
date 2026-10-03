@@ -1,11 +1,14 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Plugins;
 using FourFoldAccountManager.Desktop.Plugins;
+using FourFoldAccountManager.Desktop.Plugins.Web;
 
 namespace FourFoldAccountManager.Desktop.Views;
 
@@ -24,6 +27,8 @@ public partial class PluginSidebar : UserControl
     private bool _stayOpen;
     private Point _pressPoint;
     private string? _pressedId;
+    private IReadOnlyList<RejectedPlugin> _rejected = [];
+    private string? _communityError;
 
     public PluginSidebar()
     {
@@ -35,6 +40,10 @@ public partial class PluginSidebar : UserControl
     public event Action? CloseRequested;
     public event Action<string, int>? MoveRequested;
     public event Action<string, bool>? EnabledChangeRequested;
+    public event Action<bool>? DeveloperModeChangeRequested;
+    public event Action? OpenDevFolderRequested;
+    // Opening the plugin list from a closed panel counts as opening the panel.
+    public event Action? PanelOpenRequested;
 
     // In the tools window the panel never closes, since a window that's just a strip would be odd. Moving between the
     // main window and the tools window starts from the plugin view, not the plugin list or a settings page.
@@ -59,6 +68,17 @@ public partial class PluginSidebar : UserControl
         _plugins = plugins;
         Render(_settings);
     }
+
+    public void SetCommunityState(IReadOnlyList<RejectedPlugin> rejected, string? startupError)
+    {
+        _rejected = rejected;
+        _communityError = startupError;
+        Render(_settings);
+    }
+
+    // True while this plugin's panel is the page on screen.
+    public bool IsShowing(string pluginId) =>
+        IsVisible && !_showingList && ShownPlugin()?.Descriptor.Id == pluginId;
 
     public void Render(PanelSettings settings)
     {
@@ -115,7 +135,7 @@ public partial class PluginSidebar : UserControl
             var button = new Button
             {
                 Style = (Style)FindResource("StripButtonStyle"),
-                Content = CreateIconContent(descriptor.Icon, descriptor.ShortLabel),
+                Content = CreateIconContent(descriptor, descriptor.ShortLabel),
                 ToolTip = descriptor.Name,
                 Tag = ReferenceEquals(plugin, shown) ? "lit" : null,
                 DataContext = descriptor.Id
@@ -194,7 +214,7 @@ public partial class PluginSidebar : UserControl
 
             var name = new TextBlock { Text = descriptor.Name, VerticalAlignment = VerticalAlignment.Center };
             name.SetResourceReference(TextBlock.ForegroundProperty, enabled ? "Brush.TextPrimary" : "Brush.TextMuted");
-            row.Children.Add(name);
+            row.Children.Add(CreateNameBlock(name, descriptor.Badge, descriptor.Detail, detailBrush: "Brush.TextMuted"));
 
             if (plugin.SettingsPage is not null)
             {
@@ -231,6 +251,30 @@ public partial class PluginSidebar : UserControl
             list.Children.Add(border);
         }
 
+        foreach (var rejected in _rejected)
+        {
+            var name = new TextBlock { Text = rejected.FolderName, VerticalAlignment = VerticalAlignment.Center };
+            name.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextMuted");
+            var border = new Border
+            {
+                Padding = new Thickness(10, 8, 10, 8),
+                Margin = new Thickness(0, 0, 0, 6),
+                CornerRadius = new CornerRadius(6),
+                BorderThickness = new Thickness(1),
+                Child = CreateNameBlock(name, "DEV", rejected.Reason, detailBrush: "Brush.Danger")
+            };
+            border.SetResourceReference(Border.BackgroundProperty, "Brush.SurfaceRaised");
+            border.SetResourceReference(Border.BorderBrushProperty, "Brush.Border");
+            list.Children.Add(border);
+        }
+
+        if (_communityError is not null)
+        {
+            var error = new TextBlock { Text = _communityError, FontSize = 11, TextWrapping = TextWrapping.Wrap };
+            error.SetResourceReference(TextBlock.ForegroundProperty, "Brush.Danger");
+            list.Children.Add(error);
+        }
+
         var note = new TextBlock
         {
             Text = "Drag icons in the strip to reorder them.",
@@ -240,12 +284,125 @@ public partial class PluginSidebar : UserControl
         };
         note.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextMuted");
         list.Children.Add(note);
+
+        var developerRow = new Grid { Margin = new Thickness(2, 16, 0, 0) };
+        developerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        developerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var developerLabel = new TextBlock { Text = "Developer mode", VerticalAlignment = VerticalAlignment.Center };
+        developerRow.Children.Add(developerLabel);
+        var developerToggle = new CheckBox
+        {
+            IsChecked = _settings.PluginDeveloperMode,
+            VerticalAlignment = VerticalAlignment.Center,
+            Style = (Style)FindResource("PluginSwitchStyle")
+        };
+        AutomationProperties.SetName(developerToggle, "Developer mode");
+        developerToggle.Click += (_, _) => DeveloperModeChangeRequested?.Invoke(developerToggle.IsChecked == true);
+        Grid.SetColumn(developerToggle, 1);
+        developerRow.Children.Add(developerToggle);
+        list.Children.Add(developerRow);
+
+        var developerNote = new TextBlock
+        {
+            Text = "Loads your own plugins from the dev plugins folder. They aren't reviewed.",
+            FontSize = 11,
+            Margin = new Thickness(2, 4, 0, 0),
+            TextWrapping = TextWrapping.Wrap
+        };
+        developerNote.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextMuted");
+        list.Children.Add(developerNote);
+        if (_settings.PluginDeveloperMode)
+        {
+            var openFolder = new Button
+            {
+                Content = "Open dev plugins folder",
+                Height = 30,
+                Margin = new Thickness(0, 8, 0, 0),
+                Style = (Style)FindResource("AppButtonStyle")
+            };
+            openFolder.Click += (_, _) => OpenDevFolderRequested?.Invoke();
+            list.Children.Add(openFolder);
+        }
+
         return new ScrollViewer
         {
             Content = list,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
         };
+    }
+
+    // A plugin list row's text: the name with an optional small tag beside it, and an optional line underneath.
+    private static StackPanel CreateNameBlock(TextBlock name, string? badge, string? detail, string detailBrush)
+    {
+        var nameLine = new StackPanel { Orientation = Orientation.Horizontal };
+        nameLine.Children.Add(name);
+        if (badge is not null)
+        {
+            var tagText = new TextBlock { Text = badge, FontSize = 9, FontWeight = FontWeights.Bold };
+            tagText.SetResourceReference(TextBlock.ForegroundProperty, "Brush.AccentGold");
+            var tag = new Border
+            {
+                Margin = new Thickness(6, 0, 0, 0),
+                Padding = new Thickness(4, 1, 4, 1),
+                CornerRadius = new CornerRadius(3),
+                BorderThickness = new Thickness(1),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = tagText
+            };
+            tag.SetResourceReference(Border.BorderBrushProperty, "Brush.AccentGold");
+            nameLine.Children.Add(tag);
+        }
+
+        var block = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        block.Children.Add(nameLine);
+        if (!string.IsNullOrEmpty(detail))
+        {
+            var detailText = new TextBlock
+            {
+                Text = detail,
+                FontSize = 11,
+                Margin = new Thickness(0, 3, 0, 0),
+                TextWrapping = TextWrapping.Wrap
+            };
+            detailText.SetResourceReference(TextBlock.ForegroundProperty, detailBrush);
+            block.Children.Add(detailText);
+        }
+
+        return block;
+    }
+
+    // A community plugin's icon image, or the glyph when it has none or the image can't be read.
+    private static StackPanel CreateIconContent(PluginDescriptor descriptor, string label)
+    {
+        if (descriptor.IconPath is { } path)
+        {
+            try
+            {
+                var bitmap = new BitmapImage();
+                bitmap.BeginInit();
+                bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                bitmap.UriSource = new Uri(path);
+                bitmap.DecodePixelWidth = 40;
+                bitmap.EndInit();
+                bitmap.Freeze();
+                var content = CreateIconContent(string.Empty, label);
+                content.Children[0] = new Image
+                {
+                    Source = bitmap,
+                    Width = 20,
+                    Height = 20,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                };
+                return content;
+            }
+            catch (Exception)
+            {
+                // Any unreadable image (missing, locked, corrupt, not an image) falls back to the glyph.
+            }
+        }
+
+        return CreateIconContent(descriptor.Icon, label);
     }
 
     private static StackPanel CreateIconContent(string glyph, string label)
@@ -294,6 +451,11 @@ public partial class PluginSidebar : UserControl
         {
             _showingList = true;
             Render(_settings);
+            if (!_settings.PluginsSidebarExpanded && !_stayOpen)
+            {
+                PanelOpenRequested?.Invoke();
+            }
+
             return;
         }
 
