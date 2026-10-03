@@ -3367,9 +3367,9 @@ public partial class MainWindow : Window
         _ => "This account view could not be opened. Other slots remain available."
     };
 
-    private void BrowserSessions_NavigationBlocked(object? sender, NavigationBlockedEventArgs e)
+    private void BrowserSessions_NavigationBlocked(Guid accountId)
     {
-        var slot = _slotCards.FirstOrDefault(item => AccountIdFor(item.SlotIndex) == e.AccountId);
+        var slot = _slotCards.FirstOrDefault(item => AccountIdFor(item.SlotIndex) == accountId);
         if (slot is not null)
         {
             SetSlotStatus(slot, "Blocked navigation outside FourFold Online.", StatusTone.Warning);
