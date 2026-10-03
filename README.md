@@ -31,7 +31,7 @@ Choose an account directly from the dropdown on the **Stats** or **XP Calculator
 
 ## XP Tracker
 
-The tracker polls every minute and measures the active class for XP/hour and session XP. It also shows XP to next level and time-to-level estimates. Right-click a row to reset its XP/hour rate or all tracking data. Tracker behavior remains available inside the Plugins sidebar. In full screen, open the edge tab (or press the reveal shortcut) to show the Overlays panel, switch each account's XP/hr, Stats, and XP calc cards on or off, and drag cards into place. The Stats card shows the active class's full stat comparison, and the XP calc card shows the XP and levels left to the target saved in the sidebar XP calc (or the next level). Both use the XP tracker's once-a-minute profile reads, so they add no extra requests. The button at the right of the toolbar collapses the Plugins sidebar; FourFold remembers the choice.
+The tracker polls every minute and measures the active class for XP/hour and session XP. It also shows XP to next level and time-to-level estimates. Right-click a row to reset its XP/hour rate or all tracking data. Tracker behavior remains available inside the Plugins sidebar. In full screen, open the edge tab (or press the reveal shortcut) to show the Overlays panel, switch each account's XP/hr, Stats, and XP calc cards on or off, and drag cards anywhere in the window, including the header in theatre mode. In the Tabs layout only the active tab's account shows its cards. The Stats card shows the active class's full stat comparison, and the XP calc card shows the XP and levels left to the target saved in the sidebar XP calc (or the next level). Both use the XP tracker's once-a-minute profile reads, so they add no extra requests. The button at the right of the toolbar collapses the Plugins sidebar; FourFold remembers the choice.
 
 The **Timer** plugin is a speedrun stopwatch. Press the split shortcut to start a run and again to record each lap, the finish shortcut to stop, and the reset shortcut (or **Reset**) to clear it. The shortcuts default to Ctrl+Alt+Shift+S, F, and R and can be changed on the **Shortcuts** tab in Settings to any key, with or without Ctrl, Alt, or Shift, including F1–F12. A key bound on its own still reaches the game and other apps, and it fires even while Ctrl, Alt, or Shift is held, unless that exact combination is another shortcut. Because it isn't blocked, it also fires while you type it, for example in game chat, but not while you type in FourFold's own boxes. F5 can't be a shortcut, because it reloads a game panel whose browser misbehaves. In full screen, switch the Timer card on in the Overlays panel and drag it anywhere. Runs are not saved when the app closes.
 
@@ -42,6 +42,15 @@ Choose **Tabs** in the layout picker to give each account its own full-size tab.
 ## Theatre mode
 
 Press **Theatre** in the header, or the Toggle theatre mode shortcut (Ctrl+Alt+Shift+T by default), to hide the accounts panel, the Plugins sidebar, the toolbar, the tab strip, and each panel's header without leaving the window. The header row stays, and **Esc** or **Exit theatre** returns to the normal view. Your overlay cards and the edge tab work in theatre mode the same as in full screen; turn that off with **Show overlays in theatre mode** in Settings. You can go full screen from theatre mode, and Esc then returns you to theatre mode.
+
+## Second monitor
+
+Choose how to use a second monitor in **Settings → Display → Second monitor**.
+
+- **Account tools window** (the default): press **Pop out tools** in the header, or in the Overlays panel in theatre mode and full screen, to move the Account tools panel into its own window, then drag it to another monitor. Close that window to put the panel back. FourFold remembers whether it was open and where, and reopens it there; if that monitor is gone, it opens on the main monitor.
+- **Floating cards**: press **Floating cards** to choose which overlay cards float. A floating card stays on top of every window on any monitor, never takes focus, and lets clicks pass through to whatever is underneath. Tick **Arrange floating cards** in the same menu to drag and resize them, and untick it to lock them again. A card is either over the game or floating: switching it on in the Overlays panel moves it back over the game, each to its own saved spot. Floating cards hide while FourFold is minimized.
+
+Switching modes closes the tools window or puts floating cards back over the game; saved positions are kept.
 
 ## Requirements
 
