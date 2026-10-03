@@ -19,20 +19,24 @@ public sealed class PluginApiTests : IDisposable
     private readonly FakeHost _host = new();
     private readonly ManualTimeProvider _clock = new();
     private readonly PluginCardStore _cards = new();
+    private readonly PluginManifest _manifest;
     private readonly PluginHttpFetcher _http;
     private readonly PluginApi _api;
 
     public PluginApiTests()
     {
-        var manifest = new PluginManifest(
-            PluginId, "Goal tracker", "Goals", "1.0.0", "Cody", "Tracks goals.", 1, "index.html", null, [], false,
+        _manifest = new PluginManifest(
+            PluginId, "Goal tracker", "Goals", "1.0.0", "Cody", "Tracks goals.", 1, "index.html", null,
+            [new Uri("https://example.com")], false,
             [
                 new PluginCardManifest("goal", "Goal", OverlayAddOnScope.Account),
                 new PluginCardManifest("summary", "Summary", OverlayAddOnScope.Global)
             ]) { Folder = _folder };
         _host.Accounts = [new PluginAccountInfo(KnownAccount, "Main", "Cody", true)];
-        _http = new PluginHttpFetcher(manifest, PluginTrust.Standard);
-        _api = new PluginApi(manifest, _host, new PluginStorage(Path.Combine(_folder, "storage.json")), _http, _cards, _clock);
+        _http = new PluginHttpFetcher(_manifest, PluginTrust.Standard);
+        _api = new PluginApi(
+            _manifest, PluginTrust.Standard, _host, new PluginStorage(Path.Combine(_folder, "storage.json")), _http,
+            _cards, _clock);
     }
 
     public void Dispose()
@@ -45,7 +49,7 @@ public sealed class PluginApiTests : IDisposable
     }
 
     [Fact]
-    public async Task OpenExternalOnlyOpensPublicHttpsLinks()
+    public async Task OpenExternalOnlyOpensPublicHttpsLinksOnDeclaredSites()
     {
         _host.PanelShowing = true;
 
@@ -60,12 +64,42 @@ public sealed class PluginApiTests : IDisposable
             Assert.Equal("invalid-argument", ErrorCode(await Call("openExternal", new { url })));
         }
 
+        // The plugin declares example.com and nothing else. Its own address, and another plugin's, are never sites.
+        foreach (var url in new[]
+                 {
+                     "https://example.org/", "https://sub.example.com/", "https://example.com:8443/",
+                     "https://cody--goal-tracker.fourfoldplugin/", "https://other--plugin.fourfoldplugin/"
+                 })
+        {
+            Assert.Equal("site-not-allowed", ErrorCode(await Call("openExternal", new { url })));
+        }
+
         Assert.Empty(_host.Opened);
 
         var opened = await Call("openExternal", new { url = "https://example.com/page" });
 
         Assert.Null(ErrorCode(opened));
         Assert.Equal(new Uri("https://example.com/page"), Assert.Single(_host.Opened));
+    }
+
+    [Fact]
+    public async Task OnlyAPluginClearedForAnyWebsiteCanOpenLinksAnywhere()
+    {
+        _host.PanelShowing = true;
+        var asking = _manifest with { AnySite = true };
+        var notCleared = new PluginApi(
+            asking, PluginTrust.Standard, _host, new PluginStorage(Path.Combine(_folder, "a.json")), _http, _cards, _clock);
+        var cleared = new PluginApi(
+            asking, PluginTrust.Verified, _host, new PluginStorage(Path.Combine(_folder, "b.json")), _http, _cards, _clock);
+        var link = new { url = "https://example.org/" };
+
+        // Asking for any website in plugin.json isn't enough; the hub must have cleared it.
+        Assert.Equal("site-not-allowed", ErrorCode(await Call(notCleared, "openExternal", link)));
+        Assert.Empty(_host.Opened);
+
+        Assert.Null(ErrorCode(await Call(cleared, "openExternal", link)));
+        Assert.Equal(new Uri("https://example.org/"), Assert.Single(_host.Opened));
+        Assert.Equal("invalid-argument", ErrorCode(await Call(cleared, "openExternal", new { url = "https://localhost/" })));
     }
 
     [Fact]
@@ -203,9 +237,11 @@ public sealed class PluginApiTests : IDisposable
         Assert.Null(ErrorCode(await Call("storage.set", new { key = "k", value = 1 })));
     }
 
-    private async Task<JsonElement> Call(string method, object parameters)
+    private Task<JsonElement> Call(string method, object parameters) => Call(_api, method, parameters);
+
+    private static async Task<JsonElement> Call(PluginApi api, string method, object parameters)
     {
-        var reply = await _api.HandleAsync(JsonSerializer.Serialize(new { id = 1, method, @params = parameters }));
+        var reply = await api.HandleAsync(JsonSerializer.Serialize(new { id = 1, method, @params = parameters }));
         Assert.NotNull(reply);
         return JsonDocument.Parse(reply).RootElement;
     }

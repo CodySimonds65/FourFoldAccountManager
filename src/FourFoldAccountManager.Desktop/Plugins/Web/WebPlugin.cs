@@ -3,7 +3,6 @@ using System.Reflection;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
-using FourFoldAccountManager.Core.Data;
 using FourFoldAccountManager.Core.Plugins;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
@@ -71,16 +70,14 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         Panel parkingHost,
         IPluginHostData host,
         PluginCardStore cards,
-        LocalDataPaths paths)
+        PluginStorage storage)
     {
         Manifest = manifest;
         _trust = trust;
         _browser = browser;
         _parkingHost = parkingHost;
         _http = new PluginHttpFetcher(manifest, trust);
-        _api = new PluginApi(
-            manifest, host, new PluginStorage(Path.Combine(paths.PluginDataRoot, manifest.Id + ".json")), _http, cards,
-            TimeProvider.System);
+        _api = new PluginApi(manifest, trust, host, storage, _http, cards, TimeProvider.System);
         _contentSecurityPolicy = PluginNetworkPolicy.BuildContentSecurityPolicy(manifest, trust);
         // A plugin with no icon image shows the default Segoe glyph, a puzzle piece.
         Descriptor = new PluginDescriptor(manifest.Id, manifest.Name, manifest.ShortLabel, "\uEA86", [], [])
@@ -88,11 +85,10 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             Cards = manifest.Cards.Select(card => new PluginCardDescriptor(card.Id, card.Name, card.Scope)).ToArray(),
             IconPath = manifest.Icon is null ? null : Path.Combine(manifest.Folder, manifest.Icon),
             Badge = trust == PluginTrust.Developer ? "DEV" : null,
-            // IdnHost, so a look-alike Unicode host name shows as its real xn-- form.
-            Detail = PluginNetworkPolicy.AllowsAnySite(manifest, trust) ? "Can contact: any website"
-                : manifest.Sites.Count == 0 ? "Can contact: no websites"
-                : "Can contact: " + string.Join(", ", manifest.Sites.Select(site =>
-                    site.IsDefaultPort ? site.IdnHost : $"{site.IdnHost}:{site.Port}"))
+            Detail = $"by {manifest.Author}\n" +
+                     (PluginNetworkPolicy.AllowsAnySite(manifest, trust) ? "Can contact: any website"
+                         : manifest.Sites.Count == 0 ? "Can contact: no websites"
+                         : "Can contact: " + string.Join(", ", manifest.Sites.Select(PluginNetworkPolicy.SiteLabel)))
         };
 
         var reload = new Button { Content = "Reload", Height = 30, Padding = new Thickness(12, 0, 12, 0) };
@@ -110,7 +106,60 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             }
         };
         _viewHost.Children.Add(_stoppedNotice);
-        _root = new Border { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(9), Child = _viewHost };
+        // Everything in the page below is drawn by the plugin, so this bar, drawn by FourFold, says whose page it is.
+        var barName = new TextBlock
+        {
+            Text = manifest.Name,
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        var barAuthor = new TextBlock
+        {
+            Text = "by " + manifest.Author,
+            FontSize = 11,
+            Margin = new Thickness(6, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        barAuthor.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextMuted");
+        var barTagText = new TextBlock
+        {
+            Text = trust == PluginTrust.Developer ? "DEV" : "COMMUNITY",
+            FontSize = 9,
+            FontWeight = FontWeights.Bold
+        };
+        barTagText.SetResourceReference(TextBlock.ForegroundProperty, "Brush.TextMuted");
+        var barTag = new Border
+        {
+            Child = barTagText,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(3),
+            Padding = new Thickness(5, 0, 5, 0),
+            Margin = new Thickness(8, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        barTag.SetResourceReference(Border.BorderBrushProperty, "Brush.BorderStrong");
+        DockPanel.SetDock(barTag, Dock.Right);
+        DockPanel.SetDock(barName, Dock.Left);
+        var bar = new Border
+        {
+            Height = 24,
+            Padding = new Thickness(9, 0, 9, 0),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            CornerRadius = new CornerRadius(8, 8, 0, 0),
+            Child = new DockPanel { Children = { barTag, barName, barAuthor } }
+        };
+        bar.SetResourceReference(Border.BackgroundProperty, "Brush.SurfaceRaised");
+        bar.SetResourceReference(Border.BorderBrushProperty, "Brush.Border");
+        var layout = new Grid();
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition());
+        layout.Children.Add(bar);
+        Grid.SetRow(_viewHost, 1);
+        layout.Children.Add(_viewHost);
+        _root = new Border { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(9), Child = layout };
         _root.SetResourceReference(Border.BackgroundProperty, "Brush.Surface");
         _root.SetResourceReference(Border.BorderBrushProperty, "Brush.Border");
         // The view lives in the panel while the panel is on screen, and in the parking host the rest of the time. A web

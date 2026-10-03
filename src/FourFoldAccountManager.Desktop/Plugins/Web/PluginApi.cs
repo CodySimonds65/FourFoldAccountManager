@@ -9,6 +9,7 @@ namespace FourFoldAccountManager.Desktop.Plugins.Web;
 // message gets an error reply (or none) and never throws into the app.
 internal sealed class PluginApi(
     PluginManifest manifest,
+    PluginTrust trust,
     IPluginHostData host,
     PluginStorage storage,
     PluginHttpFetcher http,
@@ -282,6 +283,13 @@ internal sealed class PluginApi(
             uri.UserInfo.Length > 0 || PluginNetworkPolicy.IsLocalHost(uri.IdnHost))
         {
             throw new PluginApiException("invalid-argument", "Only https links can be opened.");
+        }
+
+        // A plugin can send the user only where it may go itself: the sites it declared, or anywhere once the hub has
+        // cleared it for any website. That list is what the hub shows and what was reviewed.
+        if (PluginNetworkPolicy.IsPluginHost(uri.IdnHost) || !PluginNetworkPolicy.IsAllowed(uri, manifest, trust))
+        {
+            throw new PluginApiException("site-not-allowed", "A plugin can only open links on the sites it declares.");
         }
 
         if (!host.IsPanelShowing(manifest.Id))
