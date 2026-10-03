@@ -45,10 +45,11 @@ public sealed class PluginBrowser(LocalDataPaths paths)
             return;
         }
 
-        var view = new WebView2CompositionControl();
-        parkingHost.Children.Add(view);
+        WebView2CompositionControl? view = null;
         try
         {
+            view = new WebView2CompositionControl();
+            parkingHost.Children.Add(view);
             await view.EnsureCoreWebView2Async(await GetEnvironmentAsync());
             await view.CoreWebView2.CallDevToolsProtocolMethodAsync(
                 "Storage.clearDataForOrigin",
@@ -60,8 +61,12 @@ public sealed class PluginBrowser(LocalDataPaths paths)
         }
         finally
         {
-            parkingHost.Children.Remove(view);
-            view.Dispose();
+            // Null when the control could not even be created.
+            if (view is not null)
+            {
+                parkingHost.Children.Remove(view);
+                view.Dispose();
+            }
         }
     }
 }
