@@ -12,7 +12,7 @@ public sealed record ToolsWindowPlacement(
     double Height,
     bool IsMaximized)
 {
-    public const double DefaultWidth = 300;
+    public const double DefaultWidth = 360;
     public const double DefaultHeight = 640;
     public const double MinimumWidth = 260;
     public const double MinimumHeight = 400;

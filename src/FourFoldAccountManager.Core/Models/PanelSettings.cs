@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using FourFoldAccountManager.Core.Plugins;
 
 namespace FourFoldAccountManager.Core.Models;
 
@@ -22,7 +23,23 @@ public sealed record PanelSettings
 
     public bool ShowFullScreenExitButton { get; init; } = true;
 
+    // Whether the plugin panel is open beside the strip. The name and JSON key predate the strip, so existing settings
+    // files keep their shown-or-hidden choice.
     public bool PluginsSidebarExpanded { get; init; } = true;
+
+    // Whether the whole plugin strip and its panel show in the main window; the toolbar button toggles it.
+    public bool PluginStripVisible { get; init; } = true;
+
+    // Plugin ids in strip order. Empty means the built-in order. Unknown ids are kept for plugins that may return.
+    [JsonConverter(typeof(LenientListJsonConverter<string>))]
+    public IReadOnlyList<string> PluginOrder { get; init; } = Array.Empty<string>();
+
+    [JsonConverter(typeof(LenientListJsonConverter<string>))]
+    public IReadOnlyList<string> DisabledPlugins { get; init; } = Array.Empty<string>();
+
+    // The plugin last opened; the panel shows it when PluginsSidebarExpanded is true.
+    [JsonConverter(typeof(LenientStringJsonConverter))]
+    public string? OpenPlugin { get; init; } = BuiltInPlugins.XpTrackerId;
 
     public bool ShowOverlaysInTheatreMode { get; init; } = true;
 

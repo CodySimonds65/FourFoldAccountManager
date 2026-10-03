@@ -16,6 +16,8 @@ using FourFoldAccountManager.Core.Leaderboard;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Overlay;
 using FourFoldAccountManager.Core.Panel;
+using FourFoldAccountManager.Core.Plugins;
+using FourFoldAccountManager.Desktop.Plugins;
 using FourFoldAccountManager.Desktop.Services;
 using FourFoldAccountManager.Desktop.Updates;
 using FourFoldAccountManager.Desktop.Views;
@@ -47,6 +49,8 @@ public partial class MainWindow : Window
     private readonly SemaphoreSlim _viewportSaveGate = new(1, 1);
     private readonly DispatcherTimer _leaderboardRefreshTimer = new() { Interval = TimeSpan.FromMinutes(1) };
     private readonly TimerCoordinator _timer = new();
+    // Assigned in the constructor: a field initializer can't read _timer.
+    private readonly BuiltInPluginSet _plugins;
     private HwndSource? _windowSource;
     private GlobalShortcutRegistry? _shortcuts;
     private RawKeyboardListener? _rawKeyboard;
@@ -101,35 +105,52 @@ public partial class MainWindow : Window
         // Floating cards hide while FourFold is minimized and come back when it is restored.
         StateChanged += (_, _) => _floatingCards.SetHidden(WindowState == WindowState.Minimized);
         GlobalOverlayLayer.BoundsCommitted += OverlayLayer_BoundsCommitted;
-        PluginSidebar.SetTrackerItemsSource(_xpTrackerRows);
-        PluginSidebar.AttachTimer(_timer);
-        PluginSidebar.SetAccounts(_accounts);
-        PluginSidebar.LinkRequested += accountId =>
+        _plugins = new BuiltInPluginSet(_timer);
+        _plugins.XpTracker.View.ItemsSource = _xpTrackerRows;
+        _plugins.Stats.View.SetAccounts(_accounts);
+        _plugins.XpCalc.View.SetAccounts(_accounts);
+        _plugins.XpTracker.View.LinkRequested += accountId =>
         {
             AccountsListBox.SelectedItem = _accounts.FirstOrDefault(account => account.Id == accountId);
             RenameAccount_Click(PluginSidebar, new RoutedEventArgs());
         };
-        PluginSidebar.ResetRateRequested += accountId =>
+        _plugins.XpTracker.View.ResetRateRequested += accountId =>
         {
             _xpTracker.ResetRate(accountId);
             RefreshTrackerRows();
         };
-        PluginSidebar.ResetAllRequested += accountId =>
+        _plugins.XpTracker.View.ResetAllRequested += accountId =>
         {
             _xpTracker.ResetAll(accountId);
             RefreshTrackerRows();
         };
-        PluginSidebar.RefreshRequested += (_, _) => _ = RefreshSelectedProfileAsync();
-        PluginSidebar.XpTargetLevelChanged += (accountId, targetLevel) =>
+        _plugins.Stats.RefreshRequested += () => _ = RefreshSelectedProfileAsync();
+        _plugins.XpCalc.RefreshRequested += () => _ = RefreshSelectedProfileAsync();
+        _plugins.XpCalc.View.TargetLevelChanged += (accountId, targetLevel) =>
             _ = SaveXpTargetLevelAsync(accountId, targetLevel);
-        PluginSidebar.AccountSelectionRequested += accountId =>
+        _plugins.Stats.View.AccountSelectionRequested += SelectAccountFromPlugin;
+        _plugins.XpCalc.View.AccountSelectionRequested += SelectAccountFromPlugin;
+        _plugins.Timer.ShortcutChangeRequested += TimerPlugin_ShortcutChangeRequested;
+        PluginSidebar.SetPlugins(_plugins.All);
+        PluginSidebar.OpenRequested += id =>
         {
-            var account = _accounts.FirstOrDefault(candidate => candidate.Id == accountId);
-            if (account is not null && SelectedAccount?.Id != account.Id)
-            {
-                AccountsListBox.SelectedItem = account;
-            }
+            // The tools window always shows a plugin, so picking one there changes only which is open. Opening it
+            // there must not leave the main window's panel open when the tools window is closed again.
+            var inToolsWindow = _toolsWindow is not null;
+            _ = ApplyPluginChangeAsync(
+                settings => inToolsWindow
+                    ? settings.OpenPlugin == id ? settings : settings with { OpenPlugin = id }
+                    : PluginLayoutPolicy.WithOpened(settings, id),
+                refreshEffects: false);
         };
+        PluginSidebar.CloseRequested += () =>
+            _ = ApplyPluginChangeAsync(PluginLayoutPolicy.WithClosed, refreshEffects: false);
+        PluginSidebar.MoveRequested += (id, index) =>
+            _ = ApplyPluginChangeAsync(
+                settings => PluginLayoutPolicy.WithMoved(settings, BuiltInPlugins.All, id, index), refreshEffects: false);
+        PluginSidebar.EnabledChangeRequested += (id, enabled) =>
+            _ = ApplyPluginChangeAsync(
+                settings => PluginLayoutPolicy.WithEnabled(settings, id, enabled), refreshEffects: true);
         _browserSessions.NavigationBlocked += BrowserSessions_NavigationBlocked;
         _browserSessions.StorePageBlocked += BrowserSessions_StorePageBlocked;
 
@@ -202,7 +223,8 @@ public partial class MainWindow : Window
 
     private bool HandleGlobalShortcut(GlobalShortcutAction action)
     {
-        if (_settingsDialogOpen)
+        // While keys are being bound, pressing the old ones must not run them.
+        if (_settingsDialogOpen || _plugins.Timer.IsCapturingShortcut)
         {
             return true;
         }
@@ -264,13 +286,7 @@ public partial class MainWindow : Window
 
     private void UpdateTimerHotkeys()
     {
-        GlobalShortcutAction[] timerActions =
-            [GlobalShortcutAction.TimerSplit, GlobalShortcutAction.TimerFinish, GlobalShortcutAction.TimerReset];
-        PluginSidebar.SetTimerHotkeys(
-            ShortcutText.Format(_panelSettings.TimerSplitShortcut),
-            ShortcutText.Format(_panelSettings.TimerFinishShortcut),
-            ShortcutText.Format(_panelSettings.TimerResetShortcut),
-            timerActions.Any(action => _shortcuts?.IsAvailable(action) != true));
+        _plugins.Timer.ShowShortcuts(_panelSettings, action => _shortcuts?.IsAvailable(action) == true);
     }
 
     private AccountProfile? SelectedAccount => AccountsListBox.SelectedItem as AccountProfile;
@@ -304,6 +320,7 @@ public partial class MainWindow : Window
             _shortcuts?.Initialize(_panelSettings);
             UpdateTimerHotkeys();
             RefreshPlainKeyBindings();
+            PluginSidebar.Render(_panelSettings);
             foreach (var (accountId, size) in _panelSettings.GameViewportSizes)
             {
                 await _browserSessions.SetGameViewportSizeAsync(accountId, size);
@@ -727,9 +744,10 @@ public partial class MainWindow : Window
         UpdateAccountActions();
         var selectedAccount = AccountsListBox.SelectedItem as AccountProfile;
         CancelProfileRead();
-        PluginSidebar.SetSelectedAccount(selectedAccount);
-        UpdatePluginSidebarVisibility();
-        if (selectedAccount is not null && PluginSidebar.ActivePlugin is PluginKind.ClassComparison or PluginKind.XpCalculator)
+        SetProfileAccount(selectedAccount);
+        var openPlugin = PluginLayoutPolicy.OpenPlugin(_panelSettings, BuiltInPlugins.All)?.Id;
+        if (selectedAccount is not null && (_toolsWindow is not null || _panelSettings.PluginsSidebarExpanded) &&
+            openPlugin is BuiltInPlugins.StatsId or BuiltInPlugins.XpCalcId)
         {
             _ = RefreshSelectedProfileAsync();
         }
@@ -740,7 +758,7 @@ public partial class MainWindow : Window
         var account = SelectedAccount;
         if (account is null)
         {
-            PluginSidebar.SetProfileStatus("Select an account to load its profile.");
+            SetProfileStatus("Select an account to load its profile.");
             return;
         }
 
@@ -748,7 +766,7 @@ public partial class MainWindow : Window
         var cancellation = new CancellationTokenSource();
         _profileReadCancellation = cancellation;
         var generation = ++_profileReadGeneration;
-        PluginSidebar.SetProfileStatus("Loading public profile…");
+        SetProfileStatus("Loading public profile…");
 
         string? username = account.RankingUsername;
         if (username is null)
@@ -771,12 +789,14 @@ public partial class MainWindow : Window
 
             if (result.Snapshot is not null)
             {
-                PluginSidebar.SetProfileSnapshot(result.Snapshot, XpCalculatorTargets.Get(_panelSettings, account.Id));
+                _plugins.Stats.View.SetSnapshot(account, result.Snapshot);
+                _plugins.XpCalc.View.SetSnapshot(account, result.Snapshot,
+                    XpCalculatorTargets.Get(_panelSettings, account.Id));
             }
 
             if (!result.IsSuccess)
             {
-                PluginSidebar.SetProfileStatus(result.Message);
+                SetProfileStatus(result.Message);
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -789,6 +809,95 @@ public partial class MainWindow : Window
                 _profileReadCancellation = null;
             }
             cancellation.Dispose();
+        }
+    }
+
+    private void SelectAccountFromPlugin(Guid accountId)
+    {
+        var account = _accounts.FirstOrDefault(candidate => candidate.Id == accountId);
+        if (account is not null && SelectedAccount?.Id != account.Id)
+        {
+            AccountsListBox.SelectedItem = account;
+        }
+    }
+
+    // The Stats and XP calc panels share the selected account's profile.
+    private void SetProfileAccount(AccountProfile? account)
+    {
+        var message = account is null
+            ? "Select an account to load its profile."
+            : "Select Refresh to load the selected profile.";
+        _plugins.Stats.View.SetSelectedAccount(account);
+        _plugins.XpCalc.View.SetSelectedAccount(account);
+        _plugins.Stats.View.ClearSnapshot(message);
+        _plugins.XpCalc.View.ClearSnapshot(message);
+    }
+
+    private void SetProfileStatus(string status)
+    {
+        _plugins.Stats.View.SetProfileStatus(status);
+        _plugins.XpCalc.View.SetProfileStatus(status);
+    }
+
+    // Saves a strip change and re-renders from the saved settings, so a failed save puts the strip back.
+    private async Task ApplyPluginChangeAsync(Func<PanelSettings, PanelSettings> change, bool refreshEffects)
+    {
+        if (_isReady && !_shutdownStarted)
+        {
+            try
+            {
+                await UpdateSettingsIfChangedAsync(change);
+            }
+            catch
+            {
+                GlobalStatusText.Text = "The plugin change could not be saved.";
+            }
+        }
+
+        PluginSidebar.Render(_panelSettings);
+        if (refreshEffects)
+        {
+            _shortcuts?.ApplyPluginStates(_panelSettings);
+            RefreshPlainKeyBindings();
+            UpdateTimerHotkeys();
+            RefreshTrackerRows();
+        }
+    }
+
+    private async void TimerPlugin_ShortcutChangeRequested(GlobalShortcutAction action, GlobalHotkeyChord chord)
+    {
+        if (!_isReady || _shortcuts is not { } shortcuts)
+        {
+            UpdateTimerHotkeys();
+            return;
+        }
+
+        var next = GlobalShortcutActions.WithChord(_panelSettings, action, chord);
+        var chords = GlobalShortcutActions.All.ToDictionary(
+            candidate => candidate, candidate => GlobalShortcutActions.GetChord(next, candidate));
+        if (ShortcutCapture.DuplicateMessage(chords) is { } duplicate)
+        {
+            UpdateTimerHotkeys();
+            _plugins.Timer.ShowShortcutStatus(action, duplicate);
+            return;
+        }
+
+        try
+        {
+            var result = await shortcuts.ApplyAsync(_panelSettings, next,
+                async () => await UpdateSettingsAsync(current => GlobalShortcutActions.WithChord(current, action, chord)));
+            RefreshPlainKeyBindings();
+            UpdateTimerHotkeys();
+            if (!result.Saved)
+            {
+                _plugins.Timer.ShowShortcutStatus(action,
+                    "Windows couldn't register these keys. Your previous shortcut remains; choose a different combination.");
+            }
+        }
+        catch
+        {
+            UpdateTimerHotkeys();
+            GlobalStatusText.Text = "The Timer shortcut could not be saved.";
         }
     }
 
@@ -851,17 +960,17 @@ public partial class MainWindow : Window
             : "Show account profiles and slot assignments.";
     }
 
-    // The collapsed or expanded choice is saved so the sidebar reopens the way the user left it.
+    // Hides or shows the whole strip and its panel; the choice is saved so it reopens the way the user left it.
     private async void TogglePluginsPanel_Click(object sender, RoutedEventArgs e)
     {
         if (_showingLeaderboard) return;
         try
         {
-            await UpdateSettingsAsync(settings => settings with { PluginsSidebarExpanded = !settings.PluginsSidebarExpanded });
+            await UpdateSettingsAsync(settings => settings with { PluginStripVisible = !settings.PluginStripVisible });
         }
         catch
         {
-            GlobalStatusText.Text = "The plugins sidebar setting could not be saved.";
+            GlobalStatusText.Text = "The plugin strip setting could not be saved.";
         }
 
         UpdatePluginSidebarVisibility();
@@ -1314,6 +1423,7 @@ public partial class MainWindow : Window
         window.ApplyPlacement(_panelSettings.ToolsWindow);
         MainContentGrid.Children.Remove(PluginSidebar);
         window.Host(PluginSidebar);
+        PluginSidebar.StayOpen = true;
         window.ClosedByUser += ToolsWindow_ClosedByUser;
         _toolsWindow = window;
         window.Show();
@@ -1362,6 +1472,8 @@ public partial class MainWindow : Window
         {
             MainContentGrid.Children.Add(panel);
         }
+
+        PluginSidebar.StayOpen = false;
     }
 
     private void Theatre_Click(object sender, RoutedEventArgs e) => ToggleTheatreMode();
@@ -1485,7 +1597,8 @@ public partial class MainWindow : Window
         var build = new OverlayCardBuild();
         var globalSwitches = new List<OverlayTraySwitch>();
         foreach (var definition in OverlayAddOnCatalog.All.Where(
-                     definition => definition.Scope == OverlayAddOnScope.Global))
+                     definition => definition.Scope == OverlayAddOnScope.Global &&
+                                   !PluginLayoutPolicy.IsCardSuppressed(_panelSettings, definition.Kind)))
         {
             AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, null),
                 string.Empty, null, false, showOverGame: true, globalSwitches, build);
@@ -1515,7 +1628,8 @@ public partial class MainWindow : Window
                     var isStale = state?.IsStale == true;
                     var switches = new List<OverlayTraySwitch>();
                     foreach (var definition in OverlayAddOnCatalog.All.Where(
-                                 definition => definition.Scope == OverlayAddOnScope.Account))
+                                 definition => definition.Scope == OverlayAddOnScope.Account &&
+                                               !PluginLayoutPolicy.IsCardSuppressed(_panelSettings, definition.Kind)))
                     {
                         // A background tab's account shows no cards over the game; its floating cards still show.
                         AddOverlayAddOn(definition, new OverlayCardKey(definition.Kind, trackedAccountId),
@@ -1607,25 +1721,19 @@ public partial class MainWindow : Window
 
     private void UpdatePluginSidebarVisibility()
     {
-        // Popped out, the panel always shows in the tools window and the main window's column stays closed.
-        if (_toolsWindow is not null)
-        {
-            PluginSidebar.Visibility = Visibility.Visible;
-            TogglePluginsButton.Visibility = Visibility.Collapsed;
-            TrackerGapColumn.Width = new GridLength(0);
-            TrackerColumn.Width = new GridLength(0);
-            return;
-        }
+        // Popped out, the strip and panel always show in the tools window and the main window's column stays closed.
+        var shown = _toolsWindow is not null ||
+                    (!_showingLeaderboard && !ClutterHidden && _panelSettings.PluginStripVisible);
+        PluginSidebar.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+        var inMainWindow = shown && _toolsWindow is null;
+        TrackerGapColumn.Width = new GridLength(inMainWindow ? 6 : 0);
+        TrackerColumn.Width = inMainWindow ? GridLength.Auto : new GridLength(0);
 
-        TogglePluginsButton.Visibility = Visibility.Visible;
-        var expanded = _panelSettings.PluginsSidebarExpanded;
-        TogglePluginsButton.ToolTip = expanded
-            ? "Hide the plugins sidebar to expand the multi-box panel."
-            : "Show the plugins sidebar.";
-        var visible = PluginSidebar.UpdateHostVisibility(!_showingLeaderboard,
-            ClutterHidden, expanded, _openAccountIds);
-        TrackerGapColumn.Width = visible ? new GridLength(6) : new GridLength(0);
-        TrackerColumn.Width = visible ? new GridLength(250) : new GridLength(0);
+        // The toolbar button belongs to the main window's strip, so it goes while the tools window has it.
+        TogglePluginsButton.Visibility = _toolsWindow is null ? Visibility.Visible : Visibility.Collapsed;
+        TogglePluginsButton.ToolTip = _panelSettings.PluginStripVisible
+            ? "Hide the plugin strip to expand the multi-box panel."
+            : "Show the plugin strip.";
     }
 
     private async void FullscreenOverlayTray_CardToggleRequested(object? sender, OverlayCardToggleRequestedEventArgs args)
@@ -3272,7 +3380,7 @@ public partial class MainWindow : Window
             CancelProfileRead();
             // Flush a pending sidebar XP target save before the final settings save, so a target
             // typed just before closing reaches disk instead of being lost.
-            PluginSidebar.FlushPendingXpTarget();
+            _plugins.XpCalc.View.FlushPendingTargetSave();
 
             try
             {
