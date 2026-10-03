@@ -215,6 +215,12 @@ public sealed class CommunityPluginManager : IDisposable
                 try
                 {
                     await plugin.StartAsync();
+                    // The user may have switched it off while it was starting.
+                    if (plugin.IsRunning && !PluginLayoutPolicy.IsEnabled(_settings, plugin.Descriptor.Id))
+                    {
+                        plugin.Stop();
+                    }
+
                     // A start that was abandoned (the plugin was stopped meanwhile) returns normally, so ask the plugin.
                     changed |= plugin.IsRunning;
                 }

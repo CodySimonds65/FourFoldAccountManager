@@ -96,7 +96,7 @@ public sealed class PluginManifestReaderTests : IDisposable
     [InlineData("\"sites\": [\"https://app.localhost.\"]")]
     [InlineData("\"sites\": [\"https://x.fourfoldplugin\"]")]
     // A zero-width joiner in a host makes Uri.IdnHost throw rather than return a name.
-    [InlineData("\"sites\": [\"https://a‍b.example\"]")]
+    [InlineData("\"sites\": [\"https://a\u200Db.example\"]")]
     [InlineData("\"cards\": [{ \"id\": \"Goal\", \"name\": \"Goal\", \"scope\": \"account\" }]")]
     [InlineData("\"cards\": [{ \"id\": \"goal\", \"name\": \"Goal\", \"scope\": \"panel\" }]")]
     [InlineData("\"cards\": [{ \"id\": \"a\", \"name\": \"A\", \"scope\": \"global\" }, { \"id\": \"a\", \"name\": \"B\", \"scope\": \"global\" }]")]
