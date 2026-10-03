@@ -19,7 +19,6 @@ public sealed class AccountBrowserSessionService
 {
     private static readonly TimeSpan NavigationTimeout = TimeSpan.FromSeconds(30);
     private readonly LocalDataPaths _paths;
-    private readonly FourFoldNavigationPolicy _navigationPolicy = new(["fourfoldonline.com"]);
     private readonly Dispatcher _dispatcher;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly Dictionary<Guid, SessionView> _views = [];
@@ -123,7 +122,7 @@ public sealed class AccountBrowserSessionService
             }
             EventHandler<CoreWebView2NavigationStartingEventArgs> navigationStarting = (sender, args) =>
             {
-                if (TryApprove(args.Uri, out _))
+                if (IsApproved(args.Uri))
                 {
                     return;
                 }
@@ -135,9 +134,10 @@ public sealed class AccountBrowserSessionService
             EventHandler<CoreWebView2NewWindowRequestedEventArgs> newWindowRequested = (_, args) =>
             {
                 args.Handled = true;
-                if (TryApprove(args.Uri, out var approved))
+                if (Uri.TryCreate(args.Uri, UriKind.Absolute, out var target) &&
+                    FourFoldNavigationPolicy.IsAllowed(target))
                 {
-                    view.CoreWebView2.Navigate(approved.AbsoluteUri);
+                    view.CoreWebView2.Navigate(target.AbsoluteUri);
                     return;
                 }
 
@@ -175,7 +175,7 @@ public sealed class AccountBrowserSessionService
                 core.RemoveScriptToExecuteOnDocumentCreated(session.ScalingScriptId);
                 session.ScalingScriptId = replacementScriptId;
 
-                if (TryApprove(core.Source, out _))
+                if (IsApproved(core.Source))
                 {
                     core.Reload();
                 }
@@ -305,7 +305,7 @@ public sealed class AccountBrowserSessionService
             return BrowserNavigationResult.ViewNotOpen;
         }
 
-        if (!TryApprove(destination, out var approved))
+        if (!FourFoldNavigationPolicy.IsAllowed(destination))
         {
             RaiseNavigationBlocked(accountId, NavigationBlockedKind.RequestedNavigation);
             return BrowserNavigationResult.Blocked;
@@ -316,7 +316,7 @@ public sealed class AccountBrowserSessionService
         ulong? targetNavigationId = null;
         EventHandler<CoreWebView2NavigationStartingEventArgs> navigationStarting = (_, args) =>
         {
-            if (IsSamePage(args.Uri, approved))
+            if (IsSamePage(args.Uri, destination))
             {
                 targetNavigationId = args.NavigationId;
             }
@@ -333,7 +333,7 @@ public sealed class AccountBrowserSessionService
         core.NavigationCompleted += navigationCompleted;
         try
         {
-            core.Navigate(approved.AbsoluteUri);
+            core.Navigate(destination.AbsoluteUri);
             try
             {
                 var succeeded = await completion.Task.WaitAsync(NavigationTimeout, cancellationToken);
@@ -645,15 +645,8 @@ public sealed class AccountBrowserSessionService
         }
     }
 
-    private bool TryApprove(string value, out Uri approved)
-    {
-        approved = null!;
-        return Uri.TryCreate(value, UriKind.Absolute, out var candidate) &&
-            _navigationPolicy.TryValidate(candidate, out approved);
-    }
-
-    private bool TryApprove(Uri candidate, out Uri approved) =>
-        _navigationPolicy.TryValidate(candidate, out approved);
+    private static bool IsApproved(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var candidate) && FourFoldNavigationPolicy.IsAllowed(candidate);
 
     private void RaiseNavigationBlocked(Guid accountId, NavigationBlockedKind kind) =>
         NavigationBlocked?.Invoke(this, new NavigationBlockedEventArgs(accountId, kind));
