@@ -2272,42 +2272,12 @@ public partial class MainWindow : Window
         RefreshTrackerRows();
     }
 
-    private FrameworkElement BuildLayoutNode(PanelLayoutNode node) =>
-        BuildLayoutNode(
-            node,
-            _panelSettings,
-            BuildSlotElement,
-            async state =>
-            {
-                await UpdateSettingsAsync(currentSettings =>
-                    PanelLayoutPolicy.WithSplitState(currentSettings, state));
-                GlobalStatusText.Text = "The layout sizes were saved.";
-            },
-            () => ShowError("The row heights could not be saved."),
-            _layoutDividerResizeController);
-
-    internal static FrameworkElement BuildLayoutNode(
-        PanelLayoutNode node,
-        PanelSettings settings,
-        Func<int, FrameworkElement> buildSlot,
-        Func<PanelSplitState, Task> persistSplitState,
-        Action reportSaveFailure,
-        LayoutDividerResizeController? dividerResizeController = null)
+    private FrameworkElement BuildLayoutNode(PanelLayoutNode node) => node switch
     {
-        ArgumentNullException.ThrowIfNull(node);
-        ArgumentNullException.ThrowIfNull(settings);
-        ArgumentNullException.ThrowIfNull(buildSlot);
-        ArgumentNullException.ThrowIfNull(persistSplitState);
-        ArgumentNullException.ThrowIfNull(reportSaveFailure);
-
-        return node switch
-        {
-            PanelSlotNode slot => buildSlot(slot.SlotIndex),
-            PanelSplitNode split => BuildSplitElement(
-                split, settings, buildSlot, persistSplitState, reportSaveFailure, dividerResizeController),
-            _ => throw new ArgumentOutOfRangeException(nameof(node))
-        };
-    }
+        PanelSlotNode slot => BuildSlotElement(slot.SlotIndex),
+        PanelSplitNode split => BuildSplitElement(split),
+        _ => throw new ArgumentOutOfRangeException(nameof(node))
+    };
 
     private FrameworkElement BuildSlotElement(int slotIndex)
     {
@@ -2316,28 +2286,24 @@ public partial class MainWindow : Window
         return card.Root;
     }
 
-    private static Grid BuildSplitElement(
-        PanelSplitNode split,
-        PanelSettings settings,
-        Func<int, FrameworkElement> buildSlot,
-        Func<PanelSplitState, Task> persistSplitState,
-        Action reportSaveFailure,
-        LayoutDividerResizeController? dividerResizeController)
+    private Grid BuildSplitElement(PanelSplitNode split)
     {
         const double minimumWeight = 0.30;
         var group = new Grid();
         var weights = PanelSplitMath.ClampToMinimum(
-            PanelLayoutPolicy.GetSplitState(settings, split.Id).Weights,
+            PanelLayoutPolicy.GetSplitState(_panelSettings, split.Id).Weights,
             minimumWeight).ToArray();
 
         for (var index = 0; index < split.Children.Count; index++)
         {
+            var child = BuildLayoutNode(split.Children[index]);
             if (split.Orientation == PanelSplitOrientation.Horizontal)
             {
                 group.ColumnDefinitions.Add(new ColumnDefinition
                 {
                     Width = new GridLength(weights[index], GridUnitType.Star)
                 });
+                Grid.SetColumn(child, index);
             }
             else
             {
@@ -2345,17 +2311,6 @@ public partial class MainWindow : Window
                 {
                     Height = new GridLength(weights[index], GridUnitType.Star)
                 });
-            }
-
-            var child = BuildLayoutNode(
-                split.Children[index], settings, buildSlot, persistSplitState, reportSaveFailure,
-                dividerResizeController);
-            if (split.Orientation == PanelSplitOrientation.Horizontal)
-            {
-                Grid.SetColumn(child, index);
-            }
-            else
-            {
                 Grid.SetRow(child, index);
             }
 
@@ -2366,7 +2321,7 @@ public partial class MainWindow : Window
         for (var boundaryIndex = 0; boundaryIndex < split.Children.Count - 1; boundaryIndex++)
         {
             var splitter = CreateGridSplitter(split.Orientation, boundaryIndex);
-            dividerResizeController?.Track(splitter);
+            _layoutDividerResizeController.Track(splitter);
             splitters.Add(splitter);
             group.Children.Add(splitter);
         }
@@ -2454,41 +2409,28 @@ public partial class MainWindow : Window
 
                 foreach (var groupSplitter in splitters)
                 {
-                    if (dividerResizeController is not null)
-                    {
-                        dividerResizeController.SetTemporarilyDisabled(groupSplitter, true);
-                    }
-                    else
-                    {
-                        groupSplitter.IsEnabled = false;
-                    }
+                    _layoutDividerResizeController.SetTemporarilyDisabled(groupSplitter, true);
                 }
 
                 try
                 {
-                    await persistSplitState(new PanelSplitState(
-                        split.Id,
-                        Array.AsReadOnly(weights.ToArray())));
+                    var state = new PanelSplitState(split.Id, Array.AsReadOnly(weights.ToArray()));
+                    await UpdateSettingsAsync(currentSettings =>
+                        PanelLayoutPolicy.WithSplitState(currentSettings, state));
+                    GlobalStatusText.Text = "The layout sizes were saved.";
                 }
                 catch
                 {
                     weights = previousWeights.ToArray();
                     ApplyTrackWeights(group, split.Orientation, weights);
                     group.UpdateLayout();
-                    reportSaveFailure();
+                    ShowError("The row heights could not be saved.");
                 }
                 finally
                 {
                     foreach (var groupSplitter in splitters)
                     {
-                        if (dividerResizeController is not null)
-                        {
-                            dividerResizeController.SetTemporarilyDisabled(groupSplitter, false);
-                        }
-                        else
-                        {
-                            groupSplitter.IsEnabled = true;
-                        }
+                        _layoutDividerResizeController.SetTemporarilyDisabled(groupSplitter, false);
                     }
                 }
             };
@@ -3008,12 +2950,6 @@ public partial class MainWindow : Window
 
     private void AttachBrowserView(PanelSlotCard slot, Guid accountId, WebView2CompositionControl view)
     {
-        if (!ReferenceEquals(view.Parent, slot.BrowserHost))
-        {
-            DetachBrowserView(view);
-            slot.BrowserHost.Children.Add(view);
-        }
-
         Panel.SetZIndex(view, 0);
 
         slot.View = view;
@@ -3071,22 +3007,6 @@ public partial class MainWindow : Window
         }, DispatcherPriority.Background);
         view.CoreWebView2.ProcessFailed += slot.ProcessFailedHandler;
         RefreshTrackerRows();
-    }
-
-    private static void DetachBrowserView(WebView2CompositionControl view)
-    {
-        switch (view.Parent)
-        {
-            case Panel panel:
-                panel.Children.Remove(view);
-                break;
-            case ContentControl contentControl when ReferenceEquals(contentControl.Content, view):
-                contentControl.Content = null;
-                break;
-            case Decorator decorator when ReferenceEquals(decorator.Child, view):
-                decorator.Child = null;
-                break;
-        }
     }
 
     private async Task CloseAccountViewAsync(Guid accountId, bool preserveFailure = false)
