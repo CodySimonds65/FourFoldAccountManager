@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using FourFoldAccountManager.Core.Overlay;
@@ -31,6 +32,21 @@ public static partial class PluginManifestReader
     // file "nul.tools.json" that silently swallows every write.
     [GeneratedRegex("^(con|prn|aux|nul|com[0-9]|lpt[0-9])$")]
     private static partial Regex DeviceNameRegex();
+
+    // True for an id the reader accepts: the pattern, no Windows device name first, and a usable host label.
+    public static bool IsValidId([NotNullWhen(true)] string? id)
+    {
+        if (id is null || id.Length > 64 || !IdRegex().IsMatch(id) || DeviceNameRegex().IsMatch(id[..id.IndexOf('.')]))
+        {
+            return false;
+        }
+
+        var label = id.Replace(".", "--");
+        return label.Length <= 63 && !label.StartsWith("xn--", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static bool IsVersion([NotNullWhen(true)] string? version) =>
+        version is not null && VersionRegex().IsMatch(version);
 
     // Reads and validates <folder>/plugin.json. Every rejection carries a reason an author can act on, and a file the
     // reader can't make sense of for any other reason (one that vanishes mid-read, a host name Uri refuses) is
@@ -81,18 +97,13 @@ public static partial class PluginManifestReader
                 }
 
                 var id = Text(root, "id");
-                if (id is null || id.Length > 64 || !IdRegex().IsMatch(id))
-                {
-                    return Reject("The id must look like author.plugin-name (lowercase letters, digits, dots and dashes).");
-                }
-
-                if (DeviceNameRegex().IsMatch(id[..id.IndexOf('.')]))
+                if (id is not null && id.Length <= 64 && IdRegex().IsMatch(id) &&
+                    DeviceNameRegex().IsMatch(id[..id.IndexOf('.')]))
                 {
                     return Reject("The id can't start with a Windows device name such as nul, con or com1.");
                 }
 
-                var label = id.Replace(".", "--");
-                if (label.Length > 63 || label.StartsWith("xn--", StringComparison.OrdinalIgnoreCase))
+                if (!IsValidId(id))
                 {
                     return Reject("The id must look like author.plugin-name (lowercase letters, digits, dots and dashes).");
                 }
@@ -108,7 +119,7 @@ public static partial class PluginManifestReader
                 }
 
                 var version = Text(root, "version");
-                if (version is null || !VersionRegex().IsMatch(version))
+                if (!IsVersion(version))
                 {
                     return Reject("The version must look like 1.0.0.");
                 }
@@ -182,12 +193,12 @@ public static partial class PluginManifestReader
 
     private static PluginManifestResult Reject(string reason) => new(null, reason);
 
-    private static string? Text(JsonElement root, string property) =>
+    internal static string? Text(JsonElement root, string property) =>
         root.TryGetProperty(property, out var element) && element.ValueKind == JsonValueKind.String
             ? element.GetString()?.Trim()
             : null;
 
-    private static bool InRange(string? value, int minimum, int maximum, out string result)
+    internal static bool InRange(string? value, int minimum, int maximum, out string result)
     {
         result = value ?? string.Empty;
         return result.Length >= minimum && result.Length <= maximum;
@@ -207,7 +218,7 @@ public static partial class PluginManifestReader
                BinaryPrimitives.ReadUInt32BigEndian(header[20..]) is >= 1 and <= 256;
     }
 
-    private static bool TryReadSites(JsonElement root, out IReadOnlyList<Uri> sites, out string error)
+    internal static bool TryReadSites(JsonElement root, out IReadOnlyList<Uri> sites, out string error)
     {
         sites = [];
         error = "Each site must look like https://example.com, with no path, and can't be an IP address or a local network name.";
