@@ -21,8 +21,6 @@ public sealed class TimerCoordinator : IDisposable
 
     public TimerDisplay Display { get; } = new();
 
-    internal bool IsTicking => _ticker.IsEnabled;
-
     public void Split()
     {
         if (_timer.Split())

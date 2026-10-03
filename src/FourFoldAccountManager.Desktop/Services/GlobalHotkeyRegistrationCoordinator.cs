@@ -68,14 +68,6 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
         }
     }
 
-    public bool IsCurrent(int id)
-    {
-        lock (_sync)
-        {
-            return !_disposed && _activeRegistrations.ContainsKey(id);
-        }
-    }
-
     public bool TryGetChord(int id, out GlobalHotkeyChord chord)
     {
         lock (_sync)
@@ -88,33 +80,6 @@ internal sealed class GlobalHotkeyRegistrationCoordinator : IDisposable
             chord = null!;
             return false;
         }
-    }
-
-    public Task<bool> TryReplaceAsync(GlobalHotkeyChord chord, Func<Task> persist)
-    {
-        ArgumentNullException.ThrowIfNull(chord);
-        GlobalHotkeyChord previous;
-        lock (_sync)
-        {
-            if (_disposed)
-            {
-                return Task.FromResult(false);
-            }
-
-            previous = _activeRegistrations.Values.FirstOrDefault() ?? chord;
-        }
-
-        return TryReplaceAsync([new GlobalHotkeyShortcutChange(previous, chord)], persist);
-    }
-
-    public Task<bool> TryReplaceAsync(
-        GlobalHotkeyChord previous,
-        GlobalHotkeyChord current,
-        Func<Task> persist)
-    {
-        ArgumentNullException.ThrowIfNull(previous);
-        ArgumentNullException.ThrowIfNull(current);
-        return TryReplaceAsync([new GlobalHotkeyShortcutChange(previous, current)], persist);
     }
 
     public async Task<bool> TryReplaceAsync(
