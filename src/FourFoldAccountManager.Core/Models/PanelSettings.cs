@@ -27,6 +27,9 @@ public sealed record PanelSettings
     // files keep their shown-or-hidden choice.
     public bool PluginsSidebarExpanded { get; init; } = true;
 
+    // Whether the whole plugin strip and its panel show in the main window; the toolbar button toggles it.
+    public bool PluginStripVisible { get; init; } = true;
+
     // Plugin ids in strip order. Empty means the built-in order. Unknown ids are kept for plugins that may return.
     [JsonConverter(typeof(LenientListJsonConverter<string>))]
     public IReadOnlyList<string> PluginOrder { get; init; } = Array.Empty<string>();

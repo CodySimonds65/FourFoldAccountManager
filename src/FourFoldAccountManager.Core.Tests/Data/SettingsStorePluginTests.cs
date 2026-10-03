@@ -28,11 +28,13 @@ public sealed class SettingsStorePluginTests : IDisposable
             PluginOrder = ["timer", "xp-tracker", "someone.community-plugin"],
             DisabledPlugins = ["stats"],
             OpenPlugin = "timer",
-            PluginsSidebarExpanded = false
+            PluginsSidebarExpanded = false,
+            PluginStripVisible = false
         });
 
         var loaded = await _store.LoadAsync();
 
+        Assert.False(loaded.PluginStripVisible);
         Assert.Equal(["timer", "xp-tracker", "someone.community-plugin"], loaded.PluginOrder);
         Assert.Equal(["stats"], loaded.DisabledPlugins);
         Assert.Equal("timer", loaded.OpenPlugin);

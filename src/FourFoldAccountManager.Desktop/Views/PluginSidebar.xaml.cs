@@ -14,6 +14,8 @@ namespace FourFoldAccountManager.Desktop.Views;
 public partial class PluginSidebar : UserControl
 {
     private const string IconFont = "Segoe Fluent Icons, Segoe MDL2 Assets";
+    // A private drag format, so only a strip icon can be dropped on the strip.
+    private const string DragFormat = "FourFold.PluginId";
     private IReadOnlyList<IFourFoldPlugin> _plugins = [];
     private PanelSettings _settings = PanelSettings.Default;
     private bool _showingList;
@@ -26,7 +28,7 @@ public partial class PluginSidebar : UserControl
     public PluginSidebar()
     {
         InitializeComponent();
-        PluginListButton.Content = CreateIconContent("", "Plugins");
+        PluginListButton.Content = CreateIconContent("\uE90F", "Plugins");
     }
 
     public event Action<string>? OpenRequested;
@@ -34,12 +36,20 @@ public partial class PluginSidebar : UserControl
     public event Action<string, int>? MoveRequested;
     public event Action<string, bool>? EnabledChangeRequested;
 
-    // In the tools window the panel never closes, since a window that's just a strip would be odd.
+    // In the tools window the panel never closes, since a window that's just a strip would be odd. Moving between the
+    // main window and the tools window starts from the plugin view, not the plugin list or a settings page.
     public bool StayOpen
     {
         set
         {
+            if (_stayOpen == value)
+            {
+                return;
+            }
+
             _stayOpen = value;
+            _showingList = false;
+            _settingsFor = null;
             Render(_settings);
         }
     }
@@ -113,6 +123,7 @@ public partial class PluginSidebar : UserControl
             AutomationProperties.SetName(button, descriptor.Name);
             button.Click += (_, _) => PluginIcon_Click(descriptor.Id);
             button.PreviewMouseLeftButtonDown += StripIcon_PreviewMouseLeftButtonDown;
+            button.PreviewMouseLeftButtonUp += (_, _) => _pressedId = null;
             button.PreviewMouseMove += StripIcon_PreviewMouseMove;
             StripIcons.Children.Add(button);
         }
@@ -124,10 +135,16 @@ public partial class PluginSidebar : UserControl
     {
         var visible = _showingList || shown is not null;
         PanelArea.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        PanelColumn.Width = new GridLength(visible ? 250 : 0);
+        // The tools window gives the panel whatever width the strip leaves, so the strip stays at the window's edge.
+        PanelColumn.Width = !visible ? new GridLength(0)
+            : _stayOpen ? new GridLength(1, GridUnitType.Star) : new GridLength(250);
         PanelGapColumn.Width = new GridLength(visible ? 6 : 0);
         BackButton.Visibility = _showingList && _settingsFor is not null ? Visibility.Visible : Visibility.Collapsed;
 
+        // A plugin's panel carries its own header, so only the plugin list and settings pages get the host's.
+        var showingPlugin = !_showingList && shown is not null;
+        PageCard.Visibility = _showingList ? Visibility.Visible : Visibility.Collapsed;
+        PluginHost.Content = showingPlugin ? shown!.Panel : null;
         if (_showingList && _settingsFor is { } settingsPlugin)
         {
             KickerText.Text = settingsPlugin.Descriptor.Name.ToUpperInvariant();
@@ -140,23 +157,18 @@ public partial class PluginSidebar : UserControl
             TitleText.Text = "Plugin list";
             PageHost.Content = BuildPluginList();
         }
-        else if (shown is not null)
-        {
-            KickerText.Text = "PLUGIN";
-            TitleText.Text = shown.Descriptor.Name;
-            PageHost.Content = shown.Panel;
-        }
         else
         {
             PageHost.Content = null;
         }
 
-        if (shown is not null && !ReferenceEquals(shown, _lastShown))
+        // Set before Opened(), which can ask MainWindow to refresh and render again.
+        var previous = _lastShown;
+        _lastShown = shown;
+        if (shown is not null && !ReferenceEquals(shown, previous))
         {
             shown.Opened();
         }
-
-        _lastShown = shown;
     }
 
     private UIElement BuildPluginList()
@@ -188,7 +200,7 @@ public partial class PluginSidebar : UserControl
             {
                 var cog = new Button
                 {
-                    Content = new TextBlock { Text = "", FontFamily = new FontFamily(IconFont), FontSize = 13 },
+                    Content = new TextBlock { Text = "\uE713", FontFamily = new FontFamily(IconFont), FontSize = 13 },
                     Width = 28,
                     Height = 26,
                     Padding = new Thickness(0),
@@ -311,7 +323,14 @@ public partial class PluginSidebar : UserControl
 
     private void StripIcon_PreviewMouseMove(object sender, MouseEventArgs e)
     {
-        if (_pressedId is not { } id || e.LeftButton != MouseButtonState.Pressed)
+        // A press released off the icon never reaches its button-up, so the released button clears the press too.
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            _pressedId = null;
+            return;
+        }
+
+        if (_pressedId is not { } id)
         {
             return;
         }
@@ -324,19 +343,19 @@ public partial class PluginSidebar : UserControl
         }
 
         _pressedId = null;
-        DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(typeof(string), id), DragDropEffects.Move);
+        DragDrop.DoDragDrop((DependencyObject)sender, new DataObject(DragFormat, id), DragDropEffects.Move);
     }
 
     private void StripIcons_DragOver(object sender, DragEventArgs e)
     {
-        e.Effects = e.Data.GetDataPresent(typeof(string)) ? DragDropEffects.Move : DragDropEffects.None;
+        e.Effects = e.Data.GetDataPresent(DragFormat) ? DragDropEffects.Move : DragDropEffects.None;
         e.Handled = true;
     }
 
     // The new index counts the other icons above the drop point, so dropping an icon on itself changes nothing.
     private void StripIcons_Drop(object sender, DragEventArgs e)
     {
-        if (e.Data.GetData(typeof(string)) is not string id)
+        if (e.Data.GetData(DragFormat) is not string id)
         {
             return;
         }

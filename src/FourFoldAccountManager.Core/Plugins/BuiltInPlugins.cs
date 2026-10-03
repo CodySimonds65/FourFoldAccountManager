@@ -11,16 +11,16 @@ public static class BuiltInPlugins
 
     // Icons are Segoe glyphs: AreaChart, ReportDocument, Calculator, Stopwatch.
     public static PluginDescriptor XpTracker { get; } =
-        new(XpTrackerId, "XP tracker", "XP", "", [OverlayAddOnKind.Xp], []);
+        new(XpTrackerId, "XP tracker", "XP", "\uE9D2", [OverlayAddOnKind.Xp], []);
 
     public static PluginDescriptor Stats { get; } =
-        new(StatsId, "Stats", "Stats", "", [OverlayAddOnKind.Stats], []);
+        new(StatsId, "Stats", "Stats", "\uE9F9", [OverlayAddOnKind.Stats], []);
 
     public static PluginDescriptor XpCalc { get; } =
-        new(XpCalcId, "XP calc", "XP calc", "", [OverlayAddOnKind.XpCalc], []);
+        new(XpCalcId, "XP calc", "XP calc", "\uE8EF", [OverlayAddOnKind.XpCalc], []);
 
     public static PluginDescriptor Timer { get; } =
-        new(TimerId, "Timer", "Timer", "", [OverlayAddOnKind.Timer],
+        new(TimerId, "Timer", "Timer", "\uE916", [OverlayAddOnKind.Timer],
             [GlobalShortcutAction.TimerSplit, GlobalShortcutAction.TimerFinish, GlobalShortcutAction.TimerReset]);
 
     // Default strip order.
