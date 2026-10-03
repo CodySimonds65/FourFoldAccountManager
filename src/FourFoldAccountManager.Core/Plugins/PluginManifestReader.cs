@@ -1,0 +1,237 @@
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using FourFoldAccountManager.Core.Overlay;
+
+namespace FourFoldAccountManager.Core.Plugins;
+
+public static partial class PluginManifestReader
+{
+    public const int SupportedApiVersion = 1;
+
+    // author.plugin-name: lowercase letters, digits and dashes in dot-separated parts, with at least one dot.
+    public const string IdPattern = @"[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)+";
+
+    public const string CardIdPattern = "[a-z0-9]+(-[a-z0-9]+)*";
+
+    private const int MaximumIconBytes = 64 * 1024;
+
+    [GeneratedRegex("^" + IdPattern + "$")]
+    private static partial Regex IdRegex();
+
+    [GeneratedRegex("^" + CardIdPattern + "$")]
+    private static partial Regex CardIdRegex();
+
+    [GeneratedRegex(@"^\d+\.\d+\.\d+$")]
+    private static partial Regex VersionRegex();
+
+    // Reads and validates <folder>/plugin.json. Every rejection carries a reason an author can act on.
+    public static PluginManifestResult Read(string folder)
+    {
+        var path = Path.Combine(folder, "plugin.json");
+        if (!File.Exists(path))
+        {
+            return Reject("plugin.json is missing.");
+        }
+
+        JsonDocument document;
+        try
+        {
+            document = JsonDocument.Parse(File.ReadAllBytes(path));
+        }
+        catch (Exception exception) when (exception is JsonException or IOException or UnauthorizedAccessException)
+        {
+            return Reject("plugin.json isn't valid JSON.");
+        }
+
+        using (document)
+        {
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return Reject("plugin.json isn't valid JSON.");
+            }
+
+            var id = Text(root, "id");
+            if (id is null || id.Length > 64 || !IdRegex().IsMatch(id))
+            {
+                return Reject("The id must look like author.plugin-name (lowercase letters, digits, dots and dashes).");
+            }
+
+            if (!InRange(Text(root, "name"), 1, 40, out var name))
+            {
+                return Reject("The name must be 1 to 40 characters.");
+            }
+
+            if (!InRange(Text(root, "shortLabel"), 1, 8, out var shortLabel))
+            {
+                return Reject("The shortLabel must be 1 to 8 characters.");
+            }
+
+            var version = Text(root, "version");
+            if (version is null || !VersionRegex().IsMatch(version))
+            {
+                return Reject("The version must look like 1.0.0.");
+            }
+
+            if (!InRange(Text(root, "author"), 1, 40, out var author))
+            {
+                return Reject("The author must be 1 to 40 characters.");
+            }
+
+            var description = Text(root, "description") ?? string.Empty;
+            if (description.Length > 200)
+            {
+                return Reject("The description must be at most 200 characters.");
+            }
+
+            if (!root.TryGetProperty("apiVersion", out var apiElement) || !apiElement.TryGetInt32(out var apiVersion) ||
+                apiVersion < 1)
+            {
+                return Reject("The apiVersion must be a whole number.");
+            }
+
+            if (apiVersion > SupportedApiVersion)
+            {
+                return Reject("Update FourFold to use this plugin.");
+            }
+
+            var panel = Text(root, "panel");
+            if (panel is null || !panel.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ||
+                !PluginPaths.TryResolveInside(folder, panel, out var panelPath) || !File.Exists(panelPath))
+            {
+                return Reject("The panel must be an .html file inside the plugin folder.");
+            }
+
+            var icon = Text(root, "icon");
+            if (icon is not null &&
+                (!icon.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                 !PluginPaths.TryResolveInside(folder, icon, out var iconPath) || !File.Exists(iconPath) ||
+                 new FileInfo(iconPath).Length > MaximumIconBytes))
+            {
+                return Reject("The icon must be a .png inside the plugin folder, at most 64 KB.");
+            }
+
+            if (!TryReadSites(root, out var sites, out var siteError))
+            {
+                return Reject(siteError);
+            }
+
+            var anySite = root.TryGetProperty("anySite", out var anySiteElement) &&
+                          anySiteElement.ValueKind == JsonValueKind.True;
+            if (!TryReadCards(root, out var cards, out var cardError))
+            {
+                return Reject(cardError);
+            }
+
+            return new PluginManifestResult(
+                new PluginManifest(id, name, shortLabel, version, author, description, apiVersion, panel, icon,
+                    sites, anySite, cards) { Folder = folder },
+                null);
+        }
+    }
+
+    private static PluginManifestResult Reject(string reason) => new(null, reason);
+
+    private static string? Text(JsonElement root, string property) =>
+        root.TryGetProperty(property, out var element) && element.ValueKind == JsonValueKind.String
+            ? element.GetString()?.Trim()
+            : null;
+
+    private static bool InRange(string? value, int minimum, int maximum, out string result)
+    {
+        result = value ?? string.Empty;
+        return result.Length >= minimum && result.Length <= maximum;
+    }
+
+    private static bool TryReadSites(JsonElement root, out IReadOnlyList<Uri> sites, out string error)
+    {
+        sites = [];
+        error = "Each site must look like https://example.com, with no path, and can't be an IP address or localhost.";
+        if (!root.TryGetProperty("sites", out var element) || element.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        var result = new List<Uri>();
+        foreach (var item in element.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String ||
+                !Uri.TryCreate(item.GetString(), UriKind.Absolute, out var uri) ||
+                uri.Scheme != Uri.UriSchemeHttps || uri.AbsolutePath != "/" || uri.Query.Length > 0 ||
+                uri.Fragment.Length > 0 || uri.UserInfo.Length > 0 || uri.HostNameType != UriHostNameType.Dns ||
+                PluginNetworkHosts.IsLocalName(uri.IdnHost))
+            {
+                return false;
+            }
+
+            result.Add(new Uri(uri.GetLeftPart(UriPartial.Authority)));
+        }
+
+        if (result.Count > 10)
+        {
+            error = "A plugin can declare at most 10 sites.";
+            return false;
+        }
+
+        sites = Array.AsReadOnly(result.Distinct().ToArray());
+        return true;
+    }
+
+    private static bool TryReadCards(JsonElement root, out IReadOnlyList<PluginCardManifest> cards, out string error)
+    {
+        cards = [];
+        error = "Each card needs an id (lowercase letters, digits, dashes), a name (1 to 24 characters) and a scope of account or global.";
+        if (!root.TryGetProperty("cards", out var element) || element.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        var result = new List<PluginCardManifest>();
+        foreach (var item in element.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            var id = Text(item, "id");
+            var scope = Text(item, "scope");
+            if (id is null || id.Length > 32 || !CardIdRegex().IsMatch(id) ||
+                !InRange(Text(item, "name"), 1, 24, out var name) ||
+                scope is not ("account" or "global") || result.Any(card => card.Id == id))
+            {
+                return false;
+            }
+
+            result.Add(new PluginCardManifest(id, name,
+                scope == "account" ? OverlayAddOnScope.Account : OverlayAddOnScope.Global));
+        }
+
+        if (result.Count > 6)
+        {
+            error = "A plugin can declare at most 6 cards.";
+            return false;
+        }
+
+        cards = Array.AsReadOnly(result.ToArray());
+        return true;
+    }
+}
+
+// Host-name checks shared by the manifest reader and the network policy.
+public static class PluginNetworkHosts
+{
+    public static bool IsLocalName(string host) =>
+        host.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+        host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
+}
