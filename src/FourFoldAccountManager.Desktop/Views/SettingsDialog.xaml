@@ -162,13 +162,6 @@
                     <views:ShortcutRow x:Name="DividerShortcutRow" Action="ToggleDividerResizing"
                                        Title="Toggle divider resizing"
                                        Description="Lock or unlock layout divider dragging." />
-                    <TextBlock Text="TIMER" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}" Margin="0,20,0,9" />
-                    <views:ShortcutRow x:Name="TimerSplitShortcutRow" Action="TimerSplit"
-                                       Title="Timer split" Description="Start the run, then record a lap on each press." />
-                    <views:ShortcutRow x:Name="TimerFinishShortcutRow" Action="TimerFinish" Margin="0,10,0,0"
-                                       Title="Timer finish" Description="Record the final lap and stop the run." />
-                    <views:ShortcutRow x:Name="TimerResetShortcutRow" Action="TimerReset" Margin="0,10,0,0"
-                                       Title="Timer reset" Description="Clear the timer and all laps." />
                     <TextBlock Text="TABS" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}"
                                Margin="0,20,0,9" />
                     <views:ShortcutRow x:Name="NextTabShortcutRow" Action="NextTab"
