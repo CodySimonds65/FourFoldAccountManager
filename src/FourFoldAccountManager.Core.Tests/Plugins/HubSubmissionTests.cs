@@ -275,6 +275,29 @@ public sealed class HubSubmissionTests : IDisposable
     }
 
     [Fact]
+    public void ACatalogWithTooManyPluginsIsNotBuilt()
+    {
+        // Past 2,000 plugins the app's reader silently drops the rest. 2,001 small ones are still under the size limit,
+        // so only the count rule stops them. Every entry is listed already at the same commit and repository, so none is
+        // checked or downloaded.
+        var repository = new Uri("https://github.com/cody/goal-tracker");
+        var entries = Enumerable.Range(0, HubLimits.MaximumCatalogPlugins + 1)
+            .Select(number => new HubEntry($"cody.plugin-{number}", repository, CommitA, "", false))
+            .ToArray();
+        var listed = entries
+            .Select(entry => new HubPlugin(
+                entry.Id, "Plugin", "Plug", "1.0.0", "cody", "", [], false, [], repository, CommitA, "2026-10-01", 1000,
+                new string('0', 64)))
+            .ToArray();
+
+        var build = HubSubmission.BuildCatalog(
+            entries, [], new HubCatalog(listed, []), _ => throw new InvalidOperationException("checked"));
+
+        Assert.Null(build.Catalog);
+        Assert.Single(build.Errors);
+    }
+
+    [Fact]
     public void TheSummaryCannotBeSteeredByTheSubmission()
     {
         // A name that is a Markdown link, and a file name with a backtick (legal on Windows and Linux).
@@ -283,18 +306,30 @@ public sealed class HubSubmissionTests : IDisposable
             "2026-10-09");
         Assert.Null(result.Error);
 
+        // A site whose converted name holds "<": a stranger's plugin.json can't get one through the manifest reader, but the
+        // summary must not depend on that.
+        var steered = result.Plugin! with { Sites = [new Uri("https://a\uFE64b.example.com")] };
         var summary = HubSubmission.Summary(
-            "# [evil](http://e).json", Entry(), null, result.Plugin, result.Package, null);
+            "# [evil](http://e).json", Entry(), null, steered, result.Package, null);
 
-        Assert.DoesNotMatch(@"(?<!\\)[\[\]`]", summary);
+        Assert.DoesNotMatch(@"(?<!\\)[\[\]`<]", summary);
+        Assert.Contains(@"a\<b.example.com", summary);
         Assert.DoesNotContain("[x](http://e)", summary);
         Assert.Contains(@"\[x\]\(http://e\)", summary);
         Assert.Contains("a\\`b.html", summary);
-        // Every line starts with text the tool wrote, so no value can open a line of its own.
+        // Every line starts with text the tool wrote, so no value can open a line of its own, and a file name can't pose
+        // as a list item or a nested list because the tool's own word comes first.
         foreach (var line in summary.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries))
         {
-            Assert.Matches(@"^(###|\||-|\*\*|[A-Za-z])", line);
+            Assert.Matches(@"^(###|\||- File: |\*\*|[A-Za-z])", line);
         }
+
+        // The same site, in an update's "Sites added" line.
+        var update = HubSubmission.Summary(
+            "x.json", Entry(), null, steered, result.Package, new HubCatalog([result.Plugin!], []));
+
+        Assert.DoesNotMatch(@"(?<!\\)<", update);
+        Assert.Contains(@"Sites added: a\<b.example.com", update);
 
         // The rejected path shows an error and the entry's name the same way.
         var rejected = HubSubmission.Summary("# [evil](http://e).json", null, "[x](http://e)\n::warning::", null, null, null);

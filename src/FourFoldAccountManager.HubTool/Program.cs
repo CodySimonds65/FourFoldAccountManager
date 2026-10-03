@@ -16,8 +16,8 @@ var options = new Dictionary<string, string>(StringComparer.Ordinal);
 var wellFormed = args.Length % 2 == 1;
 for (var index = 1; wellFormed && index + 1 < args.Length; index += 2)
 {
-    wellFormed = knownOptions.Contains(args[index]);
-    options[args[index]] = args[index + 1];
+    // An option given twice is as much a mistake as a mistyped one.
+    wellFormed = knownOptions.Contains(args[index]) && options.TryAdd(args[index], args[index + 1]);
 }
 
 if (args.Length == 0 || args[0] is not ("check" or "publish") || !wellFormed || !options.ContainsKey("--hub") ||
@@ -126,7 +126,9 @@ async Task<int> RunAsync()
         : HubSubmission.BuildCatalog(entries, removed!, current, entry => CheckAsync(entry).GetAwaiter().GetResult());
     foreach (var problem in build.Errors)
     {
-        Console.Error.WriteLine(problem);
+        // A problem can carry a stranger's file name, so it is printed as plain text: a line break in it must not start a
+        // line of its own, where the runner would read it as a workflow command.
+        Console.Error.WriteLine(HubSubmission.Plain(problem, 500));
     }
 
     if (build.Catalog is null)
