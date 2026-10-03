@@ -14,8 +14,9 @@ namespace FourFoldAccountManager.Desktop.Plugins.Web;
 public sealed class WebPlugin : IFourFoldPlugin, IDisposable
 {
     // A page can post messages or ask for files in a tight loop, faster than the UI thread can answer, which freezes
-    // the whole app (and again on every launch). More than this many events, or this much message text, within one
-    // second stops the plugin; its Reload button starts it fresh.
+    // the whole app (and again on every launch). More than this many events, or this much message and reply text,
+    // within one second stops the plugin; its Reload button starts it fresh. Replies count too: a loop of reads that
+    // each return a big stored value saturates the UI thread well before the event limit.
     private const int MaximumEventsPerSecond = 2_000;
     private const int MaximumMessageCharactersPerSecond = 8 * 1024 * 1024;
 
@@ -115,6 +116,10 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
 
     public bool IsRunning => _view is not null;
 
+    // Raised when the plugin stops (a flood, a crash, Reload, being switched off) and when it has started. The manager
+    // forwards it, so the cards' stale dimming follows IsRunning.
+    public event Action? RunningChanged;
+
     public void Opened()
     {
     }
@@ -206,6 +211,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             _stoppedNotice.Visibility = Visibility.Collapsed;
             core.Navigate(new Uri(PluginNetworkPolicy.Origin(Manifest.Id), Manifest.Panel.Replace('\\', '/')).AbsoluteUri);
             started = true;
+            RunningChanged?.Invoke();
         }
         catch when (generation != _generation)
         {
@@ -242,6 +248,10 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         var view = _view;
         _view = null;
         Discard(view);
+        if (view is not null)
+        {
+            RunningChanged?.Invoke();
+        }
     }
 
     public void PostEvent(string name, object? data)
@@ -294,16 +304,16 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         view.Dispose();
     }
 
-    // Counts one page event (a request, or a message of the given length) and says whether the page has now gone past
-    // a flood limit within the current second.
-    private bool IsFlooding(int messageCharacters = 0)
+    // Counts page events (a request or message by default) and message or reply characters, and says whether the page
+    // has now gone past a flood limit within the current second.
+    private bool IsFlooding(int messageCharacters = 0, int events = 1)
     {
         if (Environment.TickCount64 - _windowStart >= 1000)
         {
             ResetFloodWindow();
         }
 
-        _windowEvents++;
+        _windowEvents += events;
         _windowCharacters += messageCharacters;
         return _windowEvents > MaximumEventsPerSecond || _windowCharacters > MaximumMessageCharactersPerSecond;
     }
@@ -456,6 +466,13 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             // A reply for a page that was stopped or reloaded while the call ran is dropped.
             if (reply is not null && view is not null && ReferenceEquals(view, _view))
             {
+                // The reply's text is counted, but it is not a second event.
+                if (IsFlooding(reply.Length, events: 0))
+                {
+                    ShowStopped();
+                    return;
+                }
+
                 view.CoreWebView2.PostWebMessageAsJson(reply);
             }
         }

@@ -166,7 +166,17 @@ public sealed class CommunityPluginManager : IDisposable
                 continue;
             }
 
-            kept.Add(new WebPlugin(manifest, PluginTrust.Developer, _browser, _parkingHost, _host, _cards, _paths));
+            var webPlugin = new WebPlugin(manifest, PluginTrust.Developer, _browser, _parkingHost, _host, _cards, _paths);
+            // A plugin stops or restarts by itself (a flood, a crash, its Reload button). That can happen inside a web
+            // view event or while SyncRunningAsync is mid-loop, and Changed re-renders the sidebar, so it is raised later.
+            webPlugin.RunningChanged += () => _dispatcher.BeginInvoke(() =>
+            {
+                if (!_disposed)
+                {
+                    Changed?.Invoke();
+                }
+            });
+            kept.Add(webPlugin);
         }
 
         _plugins.Clear();

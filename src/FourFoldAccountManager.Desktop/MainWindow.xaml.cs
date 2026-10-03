@@ -1595,7 +1595,7 @@ public partial class MainWindow : Window
         var states = _xpTracker.GetStates().ToDictionary(state => state.AccountId);
         var accountRows = new List<OverlayTrayAccountRow>();
         var editing = OverlaysShown && _overlayEditing;
-        _xpTrackerRows.Clear();
+        var trackerRows = new List<XpTrackerRow>();
 
         // Every card over the game sits on the one window-wide layer, so it can go anywhere in the window.
         var build = new OverlayCardBuild();
@@ -1626,7 +1626,7 @@ public partial class MainWindow : Window
                 if (states.TryGetValue(trackedAccountId, out var state))
                 {
                     trackerRow = XpTrackerRow.FromState(slot.SlotIndex + 1, label, state);
-                    _xpTrackerRows.Add(trackerRow);
+                    trackerRows.Add(trackerRow);
                 }
 
                 if (account is not null)
@@ -1649,12 +1649,30 @@ public partial class MainWindow : Window
             }
         }
 
-        GlobalOverlayLayer.SetCards(build.GameCards, editing);
+        // Rows that show what the XP tracker already shows are left alone, so a refresh doesn't rebuild them under the
+        // mouse (a plugin's card can cause four a second).
+        if (!_xpTrackerRows.SequenceEqual(trackerRows))
+        {
+            _xpTrackerRows.Clear();
+            foreach (var row in trackerRows)
+            {
+                _xpTrackerRows.Add(row);
+            }
+        }
+
+        // Plugin cards go after every built-in card, so a plugin never moves where a built-in card that was never
+        // dragged first appears (its cascade spot, or its new floating window's).
+        var gameCards = build.GameCards
+            .OrderBy(card => card.Key.Kind == OverlayAddOnKind.Plugin)
+            .Select((card, index) => card with { CascadeIndex = index })
+            .ToList();
+        var floatingCards = build.FloatingCards.OrderBy(card => card.Key.Kind == OverlayAddOnKind.Plugin).ToList();
+        GlobalOverlayLayer.SetCards(gameCards, editing);
         _floatingChecklist = build.Checklist;
         // Floating windows exist only in Floating cards mode, and never during shutdown, when they are closed.
         _floatingCards.Update(
             _panelSettings.SecondMonitorMode == SecondMonitorMode.FloatingCards && !_shutdownStarted
-                ? build.FloatingCards
+                ? floatingCards
                 : [],
             _arrangingFloatingCards);
         FullscreenOverlayTray.SetRows(globalSwitches, accountRows);

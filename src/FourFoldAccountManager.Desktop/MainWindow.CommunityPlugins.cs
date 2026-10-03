@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Windows.Input;
 using FourFoldAccountManager.Core.Data;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Overlay;
@@ -81,6 +82,13 @@ public partial class MainWindow : IPluginHostData
             };
             _pluginCardRefreshTimer.Tick += (_, _) =>
             {
+                // A click that straddles a rebuild of the switches is lost, so wait for the button to come up; the
+                // timer keeps running and tries again 250 ms later.
+                if (Mouse.LeftButton == MouseButtonState.Pressed || Mouse.RightButton == MouseButtonState.Pressed)
+                {
+                    return;
+                }
+
                 _pluginCardRefreshTimer.Stop();
                 RefreshTrackerRows();
             };
@@ -115,8 +123,11 @@ public partial class MainWindow : IPluginHostData
                     IsStale: !plugin.IsRunning,
                     content?.Rows.Select(row => new PluginCardRowData(row.Label, row.Value, row.Progress)).ToArray() ?? [],
                     content?.Summary ?? "No data yet");
+                // The short label says whose card it is: two plugins can both declare "Goals", and a card named "Timer"
+                // must not pass for FourFold's own in the Overlays panel and the floating checklist.
                 AddOverlayCard(
-                    new OverlayAddOnDefinition(OverlayAddOnKind.Plugin, scope, card.Name, 220, 120, 150, 44),
+                    new OverlayAddOnDefinition(
+                        OverlayAddOnKind.Plugin, scope, $"{card.Name} ({plugin.Descriptor.ShortLabel})", 220, 120, 150, 44),
                     key, accountLabel, data, showOverGame, switches, build);
             }
         }

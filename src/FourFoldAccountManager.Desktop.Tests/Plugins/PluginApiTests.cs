@@ -52,7 +52,8 @@ public sealed class PluginApiTests : IDisposable
         foreach (var url in new[]
                  {
                      "file:///C:/Windows/System32/calc.exe", "javascript:alert(1)", "http://example.com/",
-                     "https://localhost/", "https://192.168.1.1/", "https://user@example.com/", "ms-settings:",
+                     "https://localhost/", "https://192.168.1.1/", "https://printer.local/",
+                     "https://user@example.com/", "ms-settings:",
                      "not a url"
                  })
         {

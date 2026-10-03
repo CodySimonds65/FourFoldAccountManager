@@ -22,8 +22,14 @@ internal static class PluginSdk
           let nextId = 1;
           const call = (method, params) => new Promise((resolve, reject) => {
             const id = nextId++;
+            const message = { id, method, params: params ?? {} };
+            // FourFold drops a message this long without a reply, which would leave the promise waiting for ever.
+            if (JSON.stringify(message).length > 512 * 1024) {
+              reject(Object.assign(new Error('The message is too large.'), { code: 'limit-exceeded' }));
+              return;
+            }
             pending.set(id, { resolve, reject });
-            window.chrome.webview.postMessage({ id, method, params: params ?? {} });
+            window.chrome.webview.postMessage(message);
           });
           window.chrome.webview.addEventListener('message', event => {
             const message = event.data;

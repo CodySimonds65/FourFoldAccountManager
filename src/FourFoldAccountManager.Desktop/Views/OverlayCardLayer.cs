@@ -63,7 +63,12 @@ public sealed class OverlayCardLayer : Canvas
             entry!.Model = model;
             entry.Frame.CardData = model.Data;
             entry.Frame.IsEditing = editing;
-            Panel.SetZIndex(entry.Frame, OverlayAddOnCatalog.IndexOf(model.Key.Kind));
+            // A refresh in the middle of a drag must not drop the dragged card behind its neighbours.
+            if (Panel.GetZIndex(entry.Frame) != DraggingZIndex)
+            {
+                Panel.SetZIndex(entry.Frame, OverlayAddOnCatalog.IndexOf(model.Key.Kind));
+            }
+
             if (boundsChanged)
             {
                 ApplyBounds(entry);

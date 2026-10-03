@@ -95,6 +95,13 @@ public sealed class PluginManifestReaderTests : IDisposable
     [InlineData("\"sites\": [\"https://127.0.0.1.\"]")]
     [InlineData("\"sites\": [\"https://app.localhost.\"]")]
     [InlineData("\"sites\": [\"https://x.fourfoldplugin\"]")]
+    [InlineData("\"sites\": [\"https://printer.local\"]")]
+    [InlineData("\"sites\": [\"https://nas.lan\"]")]
+    [InlineData("\"sites\": [\"https://router\"]")]
+    // The JSON escape \u0007 (a bell character) is what the file holds, so it is the reader's control-character rule
+    // that rejects these, not the JSON parser.
+    [InlineData("\"name\": \"Goal\\u0007tracker\"")]
+    [InlineData("\"cards\": [{ \"id\": \"goal\", \"name\": \"Go\\u0007al\", \"scope\": \"account\" }]")]
     // A zero-width joiner in a host makes Uri.IdnHost throw rather than return a name.
     [InlineData("\"sites\": [\"https://a\u200Db.example\"]")]
     [InlineData("\"cards\": [{ \"id\": \"Goal\", \"name\": \"Goal\", \"scope\": \"account\" }]")]
