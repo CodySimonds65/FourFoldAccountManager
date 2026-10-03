@@ -6,8 +6,6 @@ public sealed record UpdateAsset(string Name, Uri DownloadUrl, long Size);
 
 public sealed record UpdateRelease(
     Version Version,
-    string TagName,
-    string Name,
     string Notes,
     IReadOnlyList<UpdateAsset> Assets);
 
