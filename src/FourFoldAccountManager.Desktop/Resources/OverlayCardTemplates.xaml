@@ -112,6 +112,7 @@
                                                Foreground="{DynamicResource Brush.TextMuted}" />
                                     <TextBlock Grid.Column="1" Text="{Binding Value}" FontSize="11" Margin="8,0,0,0"
                                                Typography.NumeralAlignment="Tabular"
+                                               TextTrimming="CharacterEllipsis" MaxWidth="120"
                                                Foreground="{DynamicResource Brush.TextPrimary}" />
                                 </Grid>
                                 <ProgressBar x:Name="Bar" Minimum="0" Maximum="1" Value="{Binding Progress, Mode=OneWay, TargetNullValue=0}"

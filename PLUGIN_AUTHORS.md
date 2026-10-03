@@ -52,11 +52,11 @@ Dev plugins are not reviewed, and FourFold honors their `plugin.json` as written
 }
 ```
 
-A `plugin.json` that breaks any rule below is rejected: the plugin doesn't load, and the plugin list shows the reason. Text values are trimmed. Fields not listed here are ignored. The file can be at most 64 KB, and it is never served to your page.
+A `plugin.json` that breaks any rule below is rejected: the plugin doesn't load, and the plugin list shows the reason. Text values are trimmed. The `name`, `shortLabel`, `author` and `description` fields, and a card's `name`, can't contain control characters (a line break or a bell character, say), because FourFold shows them. Fields not listed here are ignored. The file can be at most 64 KB, and it is never served to your page.
 
 | Field | Required | Rule |
 |---|---|---|
-| `id` | yes | `author.plugin-name`. Lowercase letters and digits, with single dashes allowed between them, in parts joined by dots. At least one dot, at most 64 characters. The first part can't be a Windows device name (`con`, `prn`, `aux`, `nul`, `com0` to `com9`, `lpt0` to `lpt9`). With each dot written as `--`, the id can be at most 63 characters. Two plugins can't share an id. |
+| `id` | yes | `author.plugin-name`. Lowercase letters and digits, with single dashes allowed between them, in parts joined by dots. At least one dot, at most 64 characters. The first part can't be a Windows device name (`con`, `prn`, `aux`, `nul`, `com0` to `com9`, `lpt0` to `lpt9`), and an id can't begin with the label `xn` (`xn.tools` is rejected). With each dot written as `--`, the id can be at most 63 characters. Two plugins can't share an id. |
 | `name` | yes | 1 to 40 characters. |
 | `shortLabel` | yes | 1 to 8 characters, shown on the strip. |
 | `version` | yes | `MAJOR.MINOR.PATCH`, digits only, such as `1.0.0`. |
@@ -65,7 +65,7 @@ A `plugin.json` that breaks any rule below is rejected: the plugin doesn't load,
 | `apiVersion` | yes | A whole number. FourFold supports `1`. A higher number is rejected with "Update FourFold to use this plugin." |
 | `panel` | yes | Path to an existing `.html` file inside the plugin folder. Forward slashes only. |
 | `icon` | no | Path to a `.png` inside the plugin folder, at most 64 KB. Forward slashes only. Without one, the strip shows a default icon. |
-| `sites` | no | At most 10 websites the plugin may contact. Each is an origin: `https://host` or `https://host:port`, with no path, query or `user@`. The host must be a DNS name: no IP address, no `localhost` or `.localhost` name, no trailing dot. A subdomain is its own site, so `https://example.com` doesn't cover `https://www.example.com`. |
+| `sites` | no | At most 10 websites the plugin may contact. Each is an origin: `https://host` or `https://host:port`, with no path, query or `user@`. The host must be a DNS name: no IP address, no trailing dot, and no name that only works on the local network. `localhost`, `.localhost`, `.local`, `.internal`, `.lan` and `.home.arpa` names are refused, and so is a single-label name such as `router`. A subdomain is its own site, so `https://example.com` doesn't cover `https://www.example.com`. |
 | `anySite` | no | `true` lets the plugin contact any `https` site. Default `false`. FourFold honors it for plugins in the dev folder. |
 | `cards` | no | At most 6 overlay cards. See [Cards](#cards). |
 
@@ -189,7 +189,7 @@ button.addEventListener('click', () => {
 
 `fourfold.openExternal(url)` opens an `https` link in the user's default browser.
 
-- The URL must be `https`, with no `user@`, and not `localhost`, a `.localhost` name or a local network address (`invalid-argument`).
+- The URL must be `https`, with no `user@`, and not `localhost`, a `.localhost`, `.local`, `.internal`, `.lan` or `.home.arpa` name, a single-label name such as `router`, or a local network address (`invalid-argument`).
 - It works only while the plugin's panel is showing, and only in response to a click (`unavailable`).
 - At most one link every 2 seconds (`limit-exceeded`).
 
@@ -258,7 +258,7 @@ body { background: var(--ff-surface); color: var(--ff-text); }
 
 | What | Limit |
 |---|---|
-| One message from your page to FourFold | 512 KB. A larger message gets no reply, so its promise never settles. |
+| One message from your page to FourFold | 512 KB. A larger one isn't sent: the call is rejected with `limit-exceeded`. |
 | Calls waiting for an answer at once | 32. More are rejected with `limit-exceeded`. |
 | `http.fetch` | 60 requests a minute, 5 redirects, 15 seconds, 2 MB response. |
 | Storage | 256 KB in all, 120 writes a minute, keys up to 64 characters. |
@@ -310,7 +310,7 @@ What that means for you:
 
 ### The local network
 
-No page request and no `http.fetch` can reach the user's own network. That covers `localhost`, `.localhost` names, and addresses in `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7` and `fe80::/10`, in any spelling. Page requests are checked by host name or address. `http.fetch` also checks every address a host name resolves to.
+No page request and no `http.fetch` can reach the user's own network. That covers `localhost`, `.localhost`, `.local`, `.internal`, `.lan` and `.home.arpa` names, single-label names such as `router`, and addresses in `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7` and `fe80::/10`, in any spelling. Page requests are checked by host name or address. `http.fetch` also checks every address a host name resolves to.
 
 ### The browser around your page
 
@@ -325,7 +325,7 @@ No page request and no `http.fetch` can reach the user's own network. That cover
 FourFold stops a plugin that:
 
 - sends more than 2,000 requests or messages in one second (every request the page makes counts, including for its own files);
-- sends more than 8 MB of messages in one second;
+- sends more than 8 MB of messages in one second, counting FourFold's replies too (a loop of `storage.get` calls on a big value can reach it);
 - loads more than 32 MB of its own files in one second;
 - crashes, or stops responding.
 
@@ -362,6 +362,8 @@ Text with control characters (line breaks, for example) fails with `invalid-argu
 - The card shows the account's label (for an `account` card), the card's `name` as its title, then your rows: label on the left, value on the right, and a thin bar under each row that has `progress`.
 - A card with no rows shows "No data yet".
 - The `summary` is not drawn on the card. The Overlays panel shows it beside the card's switch. Before your first `set`, the Overlays panel shows "No data yet" there.
+- The Overlays panel and the floating checklist list a card as "Card name (plugin short label)", for example "Goal (Goals)", so users can tell your card from another plugin's, and from FourFold's own. The card itself shows only the name.
+- A value too long for its row, and a summary too long for the Overlays panel, are trimmed with an ellipsis.
 - FourFold redraws cards at most four times a second. Setting the same content again changes nothing.
 
 **How users switch cards on:** a declared card is offered wherever FourFold's own cards are. The Overlays panel has one switch per open account for an `account` card and one switch for a `global` card. The card can then be dragged and resized over the game, or shown in its own floating window when Floating cards mode is on. It starts at 220 by 120 and can shrink to 150 by 44.

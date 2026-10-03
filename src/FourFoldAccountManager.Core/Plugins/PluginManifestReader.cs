@@ -123,6 +123,11 @@ public static partial class PluginManifestReader
                     return Reject("The description must be at most 200 characters.");
                 }
 
+                if (HasControlCharacter(name, shortLabel, author, description))
+                {
+                    return Reject("The name, shortLabel, author and description can't contain control characters.");
+                }
+
                 if (!root.TryGetProperty("apiVersion", out var apiElement) || apiElement.ValueKind != JsonValueKind.Number ||
                     !apiElement.TryGetInt32(out var apiVersion) || apiVersion < 1)
                 {
@@ -187,10 +192,14 @@ public static partial class PluginManifestReader
         return result.Length >= minimum && result.Length <= maximum;
     }
 
+    // The text a manifest supplies is drawn in the app (the plugin list, the Overlays panel), so a line break or a bell
+    // character in it is never wanted.
+    private static bool HasControlCharacter(params string[] values) => values.Any(value => value.Any(char.IsControl));
+
     private static bool TryReadSites(JsonElement root, out IReadOnlyList<Uri> sites, out string error)
     {
         sites = [];
-        error = "Each site must look like https://example.com, with no path, and can't be an IP address or localhost.";
+        error = "Each site must look like https://example.com, with no path, and can't be an IP address or a local network name.";
         if (!root.TryGetProperty("sites", out var element) || element.ValueKind == JsonValueKind.Null)
         {
             return true;
@@ -236,7 +245,7 @@ public static partial class PluginManifestReader
     private static bool TryReadCards(JsonElement root, out IReadOnlyList<PluginCardManifest> cards, out string error)
     {
         cards = [];
-        error = "Each card needs an id (lowercase letters, digits, dashes), a name (1 to 24 characters) and a scope of account or global.";
+        error = "Each card needs an id (lowercase letters, digits, dashes), a name (1 to 24 characters, no control characters) and a scope of account or global.";
         if (!root.TryGetProperty("cards", out var element) || element.ValueKind == JsonValueKind.Null)
         {
             return true;
@@ -258,7 +267,7 @@ public static partial class PluginManifestReader
             var id = Text(item, "id");
             var scope = Text(item, "scope");
             if (id is null || id.Length > 32 || !CardIdRegex().IsMatch(id) ||
-                !InRange(Text(item, "name"), 1, 24, out var name) ||
+                !InRange(Text(item, "name"), 1, 24, out var name) || HasControlCharacter(name) ||
                 scope is not ("account" or "global") || result.Any(card => card.Id == id))
             {
                 return false;
@@ -282,10 +291,17 @@ public static partial class PluginManifestReader
 // Host-name checks shared by the manifest reader and the network policy.
 public static class PluginNetworkHosts
 {
+    // Names that only mean something on the user's own network: localhost, mDNS (.local), common intranet endings, and
+    // a single-label name such as "router". An IPv6 literal has colons and no dots, so it isn't a single-label name.
     public static bool IsLocalName(string host)
     {
         var trimmed = host.TrimEnd('.');
         return trimmed.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
-               trimmed.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase);
+               trimmed.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.EndsWith(".local", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.EndsWith(".internal", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.EndsWith(".lan", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.EndsWith(".home.arpa", StringComparison.OrdinalIgnoreCase) ||
+               (trimmed.Length > 0 && !trimmed.Contains('.') && !trimmed.Contains(':'));
     }
 }
