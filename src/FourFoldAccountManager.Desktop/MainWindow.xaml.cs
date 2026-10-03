@@ -2919,6 +2919,12 @@ public partial class MainWindow : Window
 
         slot.NavigationCompletedHandler = (_, args) =>
         {
+            // A cancelled navigation (a blocked page, or one replaced by a newer navigation) leaves the game loaded.
+            if (args.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled)
+            {
+                return;
+            }
+
             var batchLaunchWasActive = _batchLaunchInProgress;
             Dispatcher.BeginInvoke(() =>
             {
@@ -3221,20 +3227,18 @@ public partial class MainWindow : Window
         _ => "This account view could not be opened. Other slots remain available."
     };
 
-    private void BrowserSessions_NavigationBlocked(Guid accountId) =>
-        ShowSlotWarning(accountId, "Blocked navigation outside FourFold Online.");
-
-    private void BrowserSessions_StorePageBlocked(Guid accountId) =>
-        ShowSlotWarning(accountId, "Store and gold pages are blocked (Settings → Display).");
-
-    private void ShowSlotWarning(Guid accountId, string message)
+    private void BrowserSessions_NavigationBlocked(Guid accountId)
     {
         var slot = _slotCards.FirstOrDefault(item => AccountIdFor(item.SlotIndex) == accountId);
         if (slot is not null)
         {
-            SetSlotStatus(slot, message, StatusTone.Warning);
+            SetSlotStatus(slot, "Blocked navigation outside FourFold Online.", StatusTone.Warning);
         }
     }
+
+    // The global status line, not the panel's: a panel status row would shrink the game.
+    private void BrowserSessions_StorePageBlocked(Guid accountId) =>
+        GlobalStatusText.Text = "Store and gold pages are blocked (Settings → Display).";
 
     private async void MainWindow_Closing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
