@@ -23,7 +23,6 @@ public sealed class XpTrackingSession
             : null;
     public bool IsStale { get; private set; }
     public bool IsStopped { get; private set; }
-    public bool HasUncertainInterval { get; private set; }
     public bool MissedPreviousSample { get; private set; }
     public bool ActiveClassUnavailable { get; private set; }
     public IReadOnlyList<string> InvalidClassNames { get; private set; } = [];
@@ -38,14 +37,10 @@ public sealed class XpTrackingSession
         MissedPreviousSample = _hasFailedPoll;
         ActiveClassUnavailable = string.IsNullOrWhiteSpace(snapshot.ActiveClassName);
         InvalidClassNames = [];
-        if (_hasFailedPoll)
+        if (_hasFailedPoll || ActiveClassUnavailable)
         {
-            HasUncertainInterval = true;
+            // No trustworthy interval to measure after a missed poll or without an active class.
             _hasFailedPoll = false;
-        }
-        else if (ActiveClassUnavailable)
-        {
-            HasUncertainInterval = true;
         }
         else if (_baselineSnapshot is { } baseline && _baselineSampledAt is { } from)
         {
@@ -53,7 +48,6 @@ public sealed class XpTrackingSession
             var gain = XpProgressCalculator.Calculate(
                 ForClass(baseline, activeClassName), ForClass(snapshot, activeClassName));
             InvalidClassNames = gain.InvalidClasses;
-            HasUncertainInterval = InvalidClassNames.Count > 0;
             if (gain.ValidClassCount > 0)
             {
                 _window.Add(from, sampledAt, gain.ValidGain);
@@ -66,7 +60,6 @@ public sealed class XpTrackingSession
                     StringComparer.OrdinalIgnoreCase) || !snapshot.Classes.ContainsKey(activeClassName)
                 ? [activeClassName]
                 : [];
-            HasUncertainInterval = InvalidClassNames.Count > 0;
         }
 
         RatePerHour = _window.GetRate(sampledAt);
@@ -77,7 +70,7 @@ public sealed class XpTrackingSession
         IsStale = false;
     }
 
-    public void MarkFetchFailed(DateTimeOffset attemptedAt)
+    public void MarkFetchFailed()
     {
         if (!IsStopped)
         {
@@ -107,7 +100,6 @@ public sealed class XpTrackingSession
         _baselineSampledAt = null;
         _hasFailedPoll = false;
         RatePerHour = null;
-        HasUncertainInterval = false;
         MissedPreviousSample = false;
         ActiveClassUnavailable = false;
         InvalidClassNames = [];

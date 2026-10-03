@@ -62,14 +62,12 @@ public sealed class LeaderboardRetentionWorkerTests
 
         public Task ApplyHeartbeatAsync(ParticipationHeartbeat heartbeat, DateTimeOffset receivedAtUtc, CancellationToken ct) =>
             throw new NotImplementedException();
-        public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct) =>
-            throw new NotImplementedException();
         public Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
             DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct) => throw new NotImplementedException();
         public Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct) =>
             throw new NotImplementedException();
         public Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
-            TimeSpan activeLeaseDuration, CancellationToken ct) =>
+            CancellationToken ct) =>
             throw new NotImplementedException();
         public Task MarkNeedsBaselineAsync(int playerId, CancellationToken ct) =>
             throw new NotImplementedException();

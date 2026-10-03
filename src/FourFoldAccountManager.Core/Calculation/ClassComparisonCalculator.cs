@@ -2,32 +2,32 @@ using FourFoldAccountManager.Core.Tracking;
 
 namespace FourFoldAccountManager.Core.Calculation;
 
-public sealed class ClassComparisonCalculator
+public static class ClassComparisonCalculator
 {
     private static readonly CharacterStat[] OrderedStats = Enum.GetValues<CharacterStat>();
-    private readonly ClassAverageCatalog _catalog;
 
-    public ClassComparisonCalculator(ClassAverageCatalog? catalog = null) => _catalog = catalog ?? new ClassAverageCatalog();
-
-    public ClassComparisonResult Compare(ClassProfileSnapshot profile)
+    public static ClassComparisonDisplayState Compare(string className, ClassProfileSnapshot profile)
     {
         ArgumentNullException.ThrowIfNull(profile);
+        ClassComparisonDisplayState Unavailable(string status) =>
+            ClassComparisonDisplayState.Unavailable(status, className, profile.Level, profile.SourceUpdated);
+
         if (string.IsNullOrWhiteSpace(profile.ClassName))
-            return ClassComparisonResult.Unavailable("The active class is unavailable.");
+            return Unavailable("The active class is unavailable.");
         if (profile.Level < 1)
-            return ClassComparisonResult.Unavailable("The profile level is invalid.");
-        if (!_catalog.TryGet(profile.ClassName, out var definition))
-            return ClassComparisonResult.Unavailable($"No class average is available for {profile.ClassName}.");
+            return Unavailable("The profile level is invalid.");
+        if (!ClassAverageDefinition.TryGet(profile.ClassName, out var definition))
+            return Unavailable($"No class average is available for {profile.ClassName}.");
 
         var rows = new List<ClassStatComparison>(OrderedStats.Length);
         foreach (var stat in OrderedStats)
         {
             if (!TryGetProfileValue(profile, stat, out var profileValue))
-                return ClassComparisonResult.Unavailable($"The profile is missing {stat}.");
+                return Unavailable($"The profile is missing {stat}.");
 
             var projected = definition.Projected(stat, profile.Level);
             if (!double.IsFinite(projected) || projected == 0 || projected > long.MaxValue || projected < long.MinValue)
-                return ClassComparisonResult.Unavailable($"The class average for {stat} is invalid.");
+                return Unavailable($"The class average for {stat} is invalid.");
 
             var average = checked((long)Math.Round(projected, MidpointRounding.AwayFromZero));
             var difference = checked(profileValue - average);
@@ -37,14 +37,16 @@ public sealed class ClassComparisonCalculator
             rows.Add(new ClassStatComparison(stat, profileValue, average, difference, percentage, direction));
         }
 
-        return new ClassComparisonResult(
+        return new ClassComparisonDisplayState(
             true,
-            null,
+            "Profile stats loaded.",
+            className,
+            profile.Level,
+            profile.SourceUpdated,
             rows,
             rows.Count(row => row.Direction == ComparisonDirection.Above),
             rows.Count(row => row.Direction == ComparisonDirection.Below),
-            rows.Count(row => row.Direction == ComparisonDirection.Equal),
-            rows.Count == 0 ? null : rows.Average(row => row.PercentageDifference ?? 0d));
+            rows.Average(row => row.PercentageDifference ?? 0d));
     }
 
     private static bool TryGetProfileValue(ClassProfileSnapshot profile, CharacterStat stat, out long value)

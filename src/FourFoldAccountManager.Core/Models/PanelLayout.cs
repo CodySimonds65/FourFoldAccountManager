@@ -12,9 +12,3 @@ public enum PanelLayout
     // One client per tab, taken from PanelSettings.Tabs instead of the grid slots.
     Tabs
 }
-
-public readonly record struct PanelSlotPlacement(
-    int Row,
-    int Column,
-    int RowSpan = 1,
-    int ColumnSpan = 1);

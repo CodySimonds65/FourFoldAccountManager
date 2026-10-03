@@ -19,78 +19,65 @@ public sealed class AccountBrowserSessionService
 {
     private static readonly TimeSpan NavigationTimeout = TimeSpan.FromSeconds(30);
     private readonly LocalDataPaths _paths;
-    private readonly FourFoldNavigationPolicy _navigationPolicy = new(["fourfoldonline.com"]);
     private readonly Dispatcher _dispatcher;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly Dictionary<Guid, SessionView> _views = [];
     private readonly Dictionary<Guid, GameViewportSize> _gameViewportSizes = [];
+    private readonly Func<bool> _blockStorePages;
     private Task<CoreWebView2Environment>? _environmentTask;
     private bool _fillGameToPanel = true;
 
-    public AccountBrowserSessionService(LocalDataPaths paths)
+    /// <param name="blockStorePages">
+    /// Read on every navigation. When true, the store and gold pages don't load: the game opens them as popups that
+    /// would replace it in its panel.
+    /// </param>
+    public AccountBrowserSessionService(LocalDataPaths paths, Func<bool> blockStorePages)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
+        _blockStorePages = blockStorePages;
         _dispatcher = Dispatcher.CurrentDispatcher;
     }
 
     /// <summary>
     /// Raised when a slot attempts to leave the approved FourFold HTTPS origin.
-    /// Event data contains only the account ID and block kind; it never exposes
-    /// the attempted URL, which could contain sensitive query values.
+    /// Event data contains only the account ID; it never exposes the attempted
+    /// URL, which could contain sensitive query values.
     /// </summary>
-    public event EventHandler<NavigationBlockedEventArgs>? NavigationBlocked;
+    public event Action<Guid>? NavigationBlocked;
 
-    public Task<WebView2CompositionControl> CreateViewAsync(
-        Guid accountId,
-        Panel host,
-        CancellationToken cancellationToken = default) =>
-        InvokeOnDispatcherAsync(() => CreateViewCoreAsync(accountId, host, cancellationToken), cancellationToken);
+    /// <summary>Raised when a slot is stopped from opening the store or gold page.</summary>
+    public event Action<Guid>? StorePageBlocked;
 
-    public Task<BrowserNavigationResult> NavigateAndWaitAsync(
-        Guid accountId,
-        Uri destination,
-        CancellationToken cancellationToken = default) =>
-        InvokeOnDispatcherAsync(() => NavigateAndWaitCoreAsync(accountId, destination, cancellationToken), cancellationToken);
+    public Task<WebView2CompositionControl> CreateViewAsync(Guid accountId, Panel host) =>
+        InvokeOnDispatcherAsync(() => CreateViewCoreAsync(accountId, host));
 
-    public Task<LoginSubmissionResult> SubmitSavedLoginAsync(
-        Guid accountId,
-        AccountCredentials credentials,
-        CancellationToken cancellationToken = default) =>
-        InvokeOnDispatcherAsync(() => SubmitSavedLoginCoreAsync(accountId, credentials, cancellationToken), cancellationToken);
+    public Task<BrowserNavigationResult> NavigateAndWaitAsync(Guid accountId, Uri destination) =>
+        InvokeOnDispatcherAsync(() => NavigateAndWaitCoreAsync(accountId, destination));
 
-    public Task<PlayInBrowserResult> SelectPlayInBrowserAsync(
-        Guid accountId,
-        CancellationToken cancellationToken = default) =>
-        InvokeOnDispatcherAsync(() => SelectPlayInBrowserCoreAsync(accountId, cancellationToken), cancellationToken);
+    public Task<LoginSubmissionResult> SubmitSavedLoginAsync(Guid accountId, AccountCredentials credentials) =>
+        InvokeOnDispatcherAsync(() => SubmitSavedLoginCoreAsync(accountId, credentials));
+
+    public Task<PlayInBrowserResult> SelectPlayInBrowserAsync(Guid accountId) =>
+        InvokeOnDispatcherAsync(() => SelectPlayInBrowserCoreAsync(accountId));
 
     public Task CloseViewAsync(Guid accountId) =>
-        InvokeOnDispatcherAsync(() => CloseViewCoreAsync(accountId), CancellationToken.None);
+        InvokeOnDispatcherAsync(() => CloseViewCoreAsync(accountId));
 
-    public Task SetGameScalingAsync(bool fillGameToPanel, CancellationToken cancellationToken = default) =>
-        InvokeOnDispatcherAsync(() => SetGameScalingCoreAsync(fillGameToPanel, cancellationToken), cancellationToken);
+    public Task SetGameScalingAsync(bool fillGameToPanel) =>
+        InvokeOnDispatcherAsync(() => SetGameScalingCoreAsync(fillGameToPanel));
 
-    public Task SetGameViewportSizeAsync(
-        Guid accountId,
-        GameViewportSize size,
-        CancellationToken cancellationToken = default) =>
-        InvokeOnDispatcherAsync(() => SetGameViewportSizeCoreAsync(accountId, size, cancellationToken), cancellationToken);
+    public Task SetGameViewportSizeAsync(Guid accountId, GameViewportSize size) =>
+        InvokeOnDispatcherAsync(() => SetGameViewportSizeCoreAsync(accountId, size));
 
-    public Task ClearProfileAsync(
-        Guid accountId,
-        Panel temporaryViewHost,
-        CancellationToken cancellationToken = default) =>
-        InvokeOnDispatcherAsync(() => ClearProfileCoreAsync(accountId, temporaryViewHost, cancellationToken), cancellationToken);
+    public Task ClearProfileAsync(Guid accountId, Panel temporaryViewHost) =>
+        InvokeOnDispatcherAsync(() => ClearProfileCoreAsync(accountId, temporaryViewHost));
 
-    private async Task<WebView2CompositionControl> CreateViewCoreAsync(
-        Guid accountId,
-        Panel host,
-        CancellationToken cancellationToken)
+    private async Task<WebView2CompositionControl> CreateViewCoreAsync(Guid accountId, Panel host)
     {
         ValidateAccountId(accountId);
         ArgumentNullException.ThrowIfNull(host);
-        cancellationToken.ThrowIfCancellationRequested();
 
-        await _lifecycleGate.WaitAsync(cancellationToken);
+        await _lifecycleGate.WaitAsync();
         try
         {
             if (_views.TryGetValue(accountId, out var existing))
@@ -104,7 +91,7 @@ public sealed class AccountBrowserSessionService
                 return existing.View;
             }
 
-            var view = await CreateInitializedViewAsync(accountId, host, cancellationToken);
+            var view = await CreateInitializedViewAsync(accountId, host);
             string scalingScriptId;
             try
             {
@@ -123,25 +110,32 @@ public sealed class AccountBrowserSessionService
             }
             EventHandler<CoreWebView2NavigationStartingEventArgs> navigationStarting = (sender, args) =>
             {
-                if (TryApprove(args.Uri, out _))
+                if (!IsApproved(args.Uri))
                 {
+                    args.Cancel = true;
+                    RaiseNavigationBlocked(accountId);
                     return;
                 }
 
-                args.Cancel = true;
-                RaiseNavigationBlocked(accountId, NavigationBlockedKind.TopLevelNavigation);
+                // Store popups reach here too: the popup handler below navigates this view to them.
+                if (_blockStorePages() && FourFoldNavigationPolicy.IsStorePage(new Uri(args.Uri)))
+                {
+                    args.Cancel = true;
+                    StorePageBlocked?.Invoke(accountId);
+                }
             };
 
             EventHandler<CoreWebView2NewWindowRequestedEventArgs> newWindowRequested = (_, args) =>
             {
                 args.Handled = true;
-                if (TryApprove(args.Uri, out var approved))
+                if (Uri.TryCreate(args.Uri, UriKind.Absolute, out var target) &&
+                    FourFoldNavigationPolicy.IsAllowed(target))
                 {
-                    view.CoreWebView2.Navigate(approved.AbsoluteUri);
+                    view.CoreWebView2.Navigate(target.AbsoluteUri);
                     return;
                 }
 
-                RaiseNavigationBlocked(accountId, NavigationBlockedKind.Popup);
+                RaiseNavigationBlocked(accountId);
             };
 
             view.CoreWebView2.NavigationStarting += navigationStarting;
@@ -155,16 +149,14 @@ public sealed class AccountBrowserSessionService
         }
     }
 
-    private async Task SetGameScalingCoreAsync(bool fillGameToPanel, CancellationToken cancellationToken)
+    private async Task SetGameScalingCoreAsync(bool fillGameToPanel)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        await _lifecycleGate.WaitAsync(cancellationToken);
+        await _lifecycleGate.WaitAsync();
         try
         {
             _fillGameToPanel = fillGameToPanel;
             foreach (var (accountId, session) in _views)
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 var core = session.View.CoreWebView2;
                 var viewportSize = GetGameViewportSize(accountId);
                 var replacementScriptId = await InstallGameScalingScriptAsync(
@@ -175,7 +167,7 @@ public sealed class AccountBrowserSessionService
                 core.RemoveScriptToExecuteOnDocumentCreated(session.ScalingScriptId);
                 session.ScalingScriptId = replacementScriptId;
 
-                if (TryApprove(core.Source, out _))
+                if (IsApproved(core.Source))
                 {
                     core.Reload();
                 }
@@ -187,10 +179,7 @@ public sealed class AccountBrowserSessionService
         }
     }
 
-    private async Task SetGameViewportSizeCoreAsync(
-        Guid accountId,
-        GameViewportSize size,
-        CancellationToken cancellationToken)
+    private async Task SetGameViewportSizeCoreAsync(Guid accountId, GameViewportSize size)
     {
         ValidateAccountId(accountId);
         ArgumentNullException.ThrowIfNull(size);
@@ -199,8 +188,7 @@ public sealed class AccountBrowserSessionService
             throw new ArgumentOutOfRangeException(nameof(size), "Viewport dimensions must be between 25% and 100%.");
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-        await _lifecycleGate.WaitAsync(cancellationToken);
+        await _lifecycleGate.WaitAsync();
         try
         {
             if (!_views.TryGetValue(accountId, out var session))
@@ -291,74 +279,37 @@ public sealed class AccountBrowserSessionService
             ? size
             : GameViewportSize.Default;
 
-    private async Task<BrowserNavigationResult> NavigateAndWaitCoreAsync(
-        Guid accountId,
-        Uri destination,
-        CancellationToken cancellationToken)
+    private async Task<BrowserNavigationResult> NavigateAndWaitCoreAsync(Guid accountId, Uri destination)
     {
         ValidateAccountId(accountId);
         ArgumentNullException.ThrowIfNull(destination);
-        cancellationToken.ThrowIfCancellationRequested();
 
         if (!_views.TryGetValue(accountId, out var session))
         {
             return BrowserNavigationResult.ViewNotOpen;
         }
 
-        if (!TryApprove(destination, out var approved))
+        if (!FourFoldNavigationPolicy.IsAllowed(destination))
         {
-            RaiseNavigationBlocked(accountId, NavigationBlockedKind.RequestedNavigation);
+            RaiseNavigationBlocked(accountId);
             return BrowserNavigationResult.Blocked;
         }
 
         var core = session.View.CoreWebView2;
-        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        ulong? targetNavigationId = null;
-        EventHandler<CoreWebView2NavigationStartingEventArgs> navigationStarting = (_, args) =>
+        using var watch = new NavigationWatch(core, destination);
+        core.Navigate(destination.AbsoluteUri);
+        return await watch.WaitAsync() switch
         {
-            if (IsSamePage(args.Uri, approved))
-            {
-                targetNavigationId = args.NavigationId;
-            }
+            true => BrowserNavigationResult.Navigated,
+            false => BrowserNavigationResult.Failed,
+            null => BrowserNavigationResult.TimedOut
         };
-        EventHandler<CoreWebView2NavigationCompletedEventArgs> navigationCompleted = (_, args) =>
-        {
-            if (targetNavigationId == args.NavigationId)
-            {
-                completion.TrySetResult(args.IsSuccess);
-            }
-        };
-
-        core.NavigationStarting += navigationStarting;
-        core.NavigationCompleted += navigationCompleted;
-        try
-        {
-            core.Navigate(approved.AbsoluteUri);
-            try
-            {
-                var succeeded = await completion.Task.WaitAsync(NavigationTimeout, cancellationToken);
-                return succeeded ? BrowserNavigationResult.Navigated : BrowserNavigationResult.Failed;
-            }
-            catch (TimeoutException)
-            {
-                return BrowserNavigationResult.TimedOut;
-            }
-        }
-        finally
-        {
-            core.NavigationStarting -= navigationStarting;
-            core.NavigationCompleted -= navigationCompleted;
-        }
     }
 
-    private async Task<LoginSubmissionResult> SubmitSavedLoginCoreAsync(
-        Guid accountId,
-        AccountCredentials credentials,
-        CancellationToken cancellationToken)
+    private async Task<LoginSubmissionResult> SubmitSavedLoginCoreAsync(Guid accountId, AccountCredentials credentials)
     {
         ValidateAccountId(accountId);
         ArgumentNullException.ThrowIfNull(credentials);
-        cancellationToken.ThrowIfCancellationRequested();
 
         if (!_views.TryGetValue(accountId, out var session))
         {
@@ -371,58 +322,24 @@ public sealed class AccountBrowserSessionService
             return LoginSubmissionResult.NotOnLoginPage;
         }
 
-        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        ulong? authNavigationId = null;
-        EventHandler<CoreWebView2NavigationStartingEventArgs> navigationStarting = (_, args) =>
+        using var watch = new NavigationWatch(core, FourFoldDestination.LoginSubmitUri);
+        var scriptResult = await SubmitLoginFormScriptAsync(core, credentials);
+        if (!string.Equals(scriptResult, "true", StringComparison.OrdinalIgnoreCase))
         {
-            if (IsSamePage(args.Uri, FourFoldDestination.LoginSubmitUri))
-            {
-                authNavigationId = args.NavigationId;
-            }
-        };
-        EventHandler<CoreWebView2NavigationCompletedEventArgs> navigationCompleted = (_, args) =>
-        {
-            if (authNavigationId == args.NavigationId)
-            {
-                completion.TrySetResult(args.IsSuccess);
-            }
-        };
-
-        core.NavigationStarting += navigationStarting;
-        core.NavigationCompleted += navigationCompleted;
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var scriptResult = await SubmitLoginFormScriptAsync(core, credentials);
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!string.Equals(scriptResult, "true", StringComparison.OrdinalIgnoreCase))
-            {
-                return LoginSubmissionResult.LoginFieldsNotFound;
-            }
-
-            try
-            {
-                var succeeded = await completion.Task.WaitAsync(NavigationTimeout, cancellationToken);
-                return succeeded ? LoginSubmissionResult.Submitted : LoginSubmissionResult.NavigationFailed;
-            }
-            catch (TimeoutException)
-            {
-                return LoginSubmissionResult.TimedOut;
-            }
+            return LoginSubmissionResult.LoginFieldsNotFound;
         }
-        finally
+
+        return await watch.WaitAsync() switch
         {
-            core.NavigationStarting -= navigationStarting;
-            core.NavigationCompleted -= navigationCompleted;
-        }
+            true => LoginSubmissionResult.Submitted,
+            false => LoginSubmissionResult.NavigationFailed,
+            null => LoginSubmissionResult.TimedOut
+        };
     }
 
-    private async Task<PlayInBrowserResult> SelectPlayInBrowserCoreAsync(
-        Guid accountId,
-        CancellationToken cancellationToken)
+    private async Task<PlayInBrowserResult> SelectPlayInBrowserCoreAsync(Guid accountId)
     {
         ValidateAccountId(accountId);
-        cancellationToken.ThrowIfCancellationRequested();
         if (!_views.TryGetValue(accountId, out var session))
         {
             return PlayInBrowserResult.ViewNotOpen;
@@ -435,7 +352,6 @@ public sealed class AccountBrowserSessionService
         }
 
         var scriptResult = await SelectPlayInBrowserScriptAsync(core);
-        cancellationToken.ThrowIfCancellationRequested();
         return string.Equals(scriptResult, "true", StringComparison.OrdinalIgnoreCase)
             ? PlayInBrowserResult.Activated
             : PlayInBrowserResult.ControlNotFound;
@@ -532,13 +448,7 @@ public sealed class AccountBrowserSessionService
         await _lifecycleGate.WaitAsync();
         try
         {
-            if (_views.Remove(accountId, out var session))
-            {
-                session.View.CoreWebView2.NavigationStarting -= session.NavigationStarting;
-                session.View.CoreWebView2.NewWindowRequested -= session.NewWindowRequested;
-                DetachFromParent(session.View);
-                session.View.Dispose();
-            }
+            CloseViewCoreUnderLock(accountId);
         }
         finally
         {
@@ -546,24 +456,19 @@ public sealed class AccountBrowserSessionService
         }
     }
 
-    private async Task ClearProfileCoreAsync(
-        Guid accountId,
-        Panel temporaryViewHost,
-        CancellationToken cancellationToken)
+    private async Task ClearProfileCoreAsync(Guid accountId, Panel temporaryViewHost)
     {
         ValidateAccountId(accountId);
         ArgumentNullException.ThrowIfNull(temporaryViewHost);
-        cancellationToken.ThrowIfCancellationRequested();
 
-        await _lifecycleGate.WaitAsync(cancellationToken);
+        await _lifecycleGate.WaitAsync();
         try
         {
             CloseViewCoreUnderLock(accountId);
 
-            var temporaryView = await CreateInitializedViewAsync(accountId, temporaryViewHost, cancellationToken);
+            var temporaryView = await CreateInitializedViewAsync(accountId, temporaryViewHost);
             try
             {
-                cancellationToken.ThrowIfCancellationRequested();
                 await temporaryView.CoreWebView2.Profile.ClearBrowsingDataAsync(
                     CoreWebView2BrowsingDataKinds.AllProfile);
             }
@@ -592,14 +497,9 @@ public sealed class AccountBrowserSessionService
         session.View.Dispose();
     }
 
-    private async Task<WebView2CompositionControl> CreateInitializedViewAsync(
-        Guid accountId,
-        Panel host,
-        CancellationToken cancellationToken)
+    private async Task<WebView2CompositionControl> CreateInitializedViewAsync(Guid accountId, Panel host)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        var environment = await GetEnvironmentAsync(cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
+        var environment = await GetEnvironmentAsync();
 
         var options = environment.CreateCoreWebView2ControllerOptions();
         options.ProfileName = accountId.ToString("N");
@@ -610,7 +510,6 @@ public sealed class AccountBrowserSessionService
         {
             host.Children.Add(view);
             await view.EnsureCoreWebView2Async(environment, options);
-            cancellationToken.ThrowIfCancellationRequested();
             view.CoreWebView2.Settings.AreDevToolsEnabled = false;
             view.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
             return view;
@@ -623,16 +522,15 @@ public sealed class AccountBrowserSessionService
         }
     }
 
-    private async Task<CoreWebView2Environment> GetEnvironmentAsync(CancellationToken cancellationToken)
+    private async Task<CoreWebView2Environment> GetEnvironmentAsync()
     {
-        cancellationToken.ThrowIfCancellationRequested();
         Directory.CreateDirectory(_paths.WebViewUserDataRoot);
         var environmentTask = _environmentTask ??= CoreWebView2Environment.CreateAsync(
             browserExecutableFolder: null,
             userDataFolder: _paths.WebViewUserDataRoot);
         try
         {
-            return await environmentTask.WaitAsync(cancellationToken);
+            return await environmentTask;
         }
         catch
         {
@@ -645,31 +543,23 @@ public sealed class AccountBrowserSessionService
         }
     }
 
-    private bool TryApprove(string value, out Uri approved)
-    {
-        approved = null!;
-        return Uri.TryCreate(value, UriKind.Absolute, out var candidate) &&
-            _navigationPolicy.TryValidate(candidate, out approved);
-    }
+    private static bool IsApproved(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var candidate) && FourFoldNavigationPolicy.IsAllowed(candidate);
 
-    private bool TryApprove(Uri candidate, out Uri approved) =>
-        _navigationPolicy.TryValidate(candidate, out approved);
+    private void RaiseNavigationBlocked(Guid accountId) => NavigationBlocked?.Invoke(accountId);
 
-    private void RaiseNavigationBlocked(Guid accountId, NavigationBlockedKind kind) =>
-        NavigationBlocked?.Invoke(this, new NavigationBlockedEventArgs(accountId, kind));
-
-    private async Task<T> InvokeOnDispatcherAsync<T>(Func<Task<T>> operation, CancellationToken cancellationToken)
+    private async Task<T> InvokeOnDispatcherAsync<T>(Func<Task<T>> operation)
     {
         if (_dispatcher.CheckAccess())
         {
             return await operation();
         }
 
-        var dispatched = _dispatcher.InvokeAsync(operation, DispatcherPriority.Normal, cancellationToken);
+        var dispatched = _dispatcher.InvokeAsync(operation);
         return await dispatched.Task.Unwrap();
     }
 
-    private async Task InvokeOnDispatcherAsync(Func<Task> operation, CancellationToken cancellationToken)
+    private async Task InvokeOnDispatcherAsync(Func<Task> operation)
     {
         if (_dispatcher.CheckAccess())
         {
@@ -677,7 +567,7 @@ public sealed class AccountBrowserSessionService
             return;
         }
 
-        var dispatched = _dispatcher.InvokeAsync(operation, DispatcherPriority.Normal, cancellationToken);
+        var dispatched = _dispatcher.InvokeAsync(operation);
         await dispatched.Task.Unwrap();
     }
 
@@ -689,19 +579,60 @@ public sealed class AccountBrowserSessionService
         }
     }
 
-    private static void DetachFromParent(WebView2CompositionControl view)
+    // Views are only ever hosted in a Panel.
+    private static void DetachFromParent(WebView2CompositionControl view) =>
+        (view.Parent as Panel)?.Children.Remove(view);
+
+    // Matches one navigation to `page` by its ID. Create it before starting the navigation so no event is
+    // missed, and dispose it to unsubscribe.
+    private sealed class NavigationWatch : IDisposable
     {
-        switch (view.Parent)
+        private readonly CoreWebView2 _core;
+        private readonly Uri _page;
+        private readonly TaskCompletionSource<bool> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private ulong? _navigationId;
+
+        public NavigationWatch(CoreWebView2 core, Uri page)
         {
-            case Panel panel:
-                panel.Children.Remove(view);
-                break;
-            case ContentControl contentControl when ReferenceEquals(contentControl.Content, view):
-                contentControl.Content = null;
-                break;
-            case Decorator decorator when ReferenceEquals(decorator.Child, view):
-                decorator.Child = null;
-                break;
+            _core = core;
+            _page = page;
+            core.NavigationStarting += OnNavigationStarting;
+            core.NavigationCompleted += OnNavigationCompleted;
+        }
+
+        // Whether the navigation succeeded, or null if it did not finish within the timeout.
+        public async Task<bool?> WaitAsync()
+        {
+            try
+            {
+                return await _completion.Task.WaitAsync(NavigationTimeout);
+            }
+            catch (TimeoutException)
+            {
+                return null;
+            }
+        }
+
+        public void Dispose()
+        {
+            _core.NavigationStarting -= OnNavigationStarting;
+            _core.NavigationCompleted -= OnNavigationCompleted;
+        }
+
+        private void OnNavigationStarting(object? sender, CoreWebView2NavigationStartingEventArgs args)
+        {
+            if (IsSamePage(args.Uri, _page))
+            {
+                _navigationId = args.NavigationId;
+            }
+        }
+
+        private void OnNavigationCompleted(object? sender, CoreWebView2NavigationCompletedEventArgs args)
+        {
+            if (_navigationId == args.NavigationId)
+            {
+                _completion.TrySetResult(args.IsSuccess);
+            }
         }
     }
 

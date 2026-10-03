@@ -26,7 +26,7 @@ public sealed class OverlayCardToggleRequestedEventArgs(OverlayCardKey key, bool
 
 public partial class FullscreenOverlayTray : UserControl
 {
-    private readonly FullscreenXpOverlayTabVisibilityState _tabVisibilityState = new();
+    private bool _edgeTabDismissed;
     private bool _isFullScreen;
     private bool _isEditing;
     private bool _ignoreEdgeTabMouseEnterUntilLeave;
@@ -75,16 +75,15 @@ public partial class FullscreenOverlayTray : UserControl
 
     public void DismissEdgeTab()
     {
-        _tabVisibilityState.Dismiss();
+        _edgeTabDismissed = true;
         SetEditing(false);
         UpdateEdgeTabVisibility();
     }
 
     public void RevealEdgeTab()
     {
-        var pointerWasAlreadyOverTab = _isFullScreen &&
-            !_tabVisibilityState.IsVisible(_isFullScreen) && IsPointerOverEdgeTab();
-        _tabVisibilityState.Reveal();
+        var pointerWasAlreadyOverTab = _isFullScreen && _edgeTabDismissed && IsPointerOverEdgeTab();
+        _edgeTabDismissed = false;
         _ignoreEdgeTabMouseEnterUntilLeave = pointerWasAlreadyOverTab;
         UpdateEdgeTabVisibility();
     }
@@ -132,7 +131,7 @@ public partial class FullscreenOverlayTray : UserControl
     }
 
     private void UpdateEdgeTabVisibility() =>
-        EdgeTab.Visibility = _tabVisibilityState.IsVisible(_isFullScreen)
+        EdgeTab.Visibility = _isFullScreen && !_edgeTabDismissed
             ? Visibility.Visible
             : Visibility.Collapsed;
 

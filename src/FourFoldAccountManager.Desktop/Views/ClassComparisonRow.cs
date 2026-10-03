@@ -8,12 +8,4 @@ public sealed record ClassComparisonRow(
     string AverageText,
     string DifferenceText,
     string PercentageText,
-    ComparisonDirection Direction)
-{
-    public string DirectionText => Direction switch
-    {
-        ComparisonDirection.Above => "Above",
-        ComparisonDirection.Below => "Below",
-        _ => "Equal"
-    };
-}
+    ComparisonDirection Direction);

@@ -21,14 +21,15 @@ public sealed record PlayerObservation(
 
 public interface ILeaderboardStore
 {
+    // How long a profile stays active after the heartbeat that last marked it active.
+    static readonly TimeSpan ActiveLeaseDuration = TimeSpan.FromMinutes(3);
+
     Task ApplyHeartbeatAsync(ParticipationHeartbeat heartbeat, DateTimeOffset receivedAtUtc, CancellationToken ct);
-    Task<IReadOnlyList<ActiveLeaderboardProfile>> GetActiveProfilesAsync(DateTimeOffset activeAfterUtc, CancellationToken ct);
     // Active profiles awaiting a baseline first, then those last sampled at or before sampledBeforeUtc, oldest first.
     Task<IReadOnlyList<ActiveLeaderboardProfile>> GetProfilesDueForSampleAsync(
         DateTimeOffset activeAfterUtc, DateTimeOffset sampledBeforeUtc, CancellationToken ct);
     Task<PlayerSampleState?> GetPlayerStateAsync(int playerId, CancellationToken ct);
-    Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState,
-        TimeSpan activeLeaseDuration, CancellationToken ct);
+    Task SaveObservationAsync(PlayerObservation observation, PlayerSampleState? expectedState, CancellationToken ct);
     Task MarkNeedsBaselineAsync(int playerId, CancellationToken ct);
     Task<LeaderboardPage> GetPageAsync(LeaderboardPeriod period, int page, int pageSize,
         DateTimeOffset nowUtc, TimeSpan staleAfter, CancellationToken ct);
