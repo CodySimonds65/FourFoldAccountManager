@@ -11,7 +11,9 @@ public enum GlobalHotkeyModifiers
     Shift = 4
 }
 
-public sealed record GlobalHotkeyChord(ushort VirtualKey, GlobalHotkeyModifiers Modifiers)
+public sealed record GlobalHotkeyChord(
+    [property: JsonRequired, JsonNumberHandling(JsonNumberHandling.Strict)] ushort VirtualKey,
+    [property: JsonRequired] GlobalHotkeyModifiers Modifiers)
 {
     private const GlobalHotkeyModifiers SupportedModifiers =
         GlobalHotkeyModifiers.Control | GlobalHotkeyModifiers.Alt | GlobalHotkeyModifiers.Shift;

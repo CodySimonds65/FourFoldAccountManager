@@ -39,14 +39,6 @@ public sealed class LenientTargetLevelsJsonConverter : JsonConverter<IReadOnlyDi
         return targets;
     }
 
-    public override void Write(Utf8JsonWriter writer, IReadOnlyDictionary<Guid, long> value, JsonSerializerOptions options)
-    {
-        writer.WriteStartObject();
-        foreach (var (accountId, level) in value)
-        {
-            writer.WriteNumber(accountId.ToString(), level);
-        }
-
-        writer.WriteEndObject();
-    }
+    public override void Write(Utf8JsonWriter writer, IReadOnlyDictionary<Guid, long> value, JsonSerializerOptions options) =>
+        JsonSerializer.Serialize(writer, value, options);
 }

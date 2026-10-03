@@ -1,11 +1,11 @@
+using System.IO;
+
 namespace FourFoldAccountManager.Desktop.Updates;
 
 public sealed record UpdateAsset(string Name, Uri DownloadUrl, long Size);
 
 public sealed record UpdateRelease(
     Version Version,
-    string TagName,
-    string Name,
     string Notes,
     IReadOnlyList<UpdateAsset> Assets);
 
@@ -16,17 +16,22 @@ public enum UpdateInstallResult
     Failed
 }
 
-public interface IUpdateReleaseClient
+internal static class UpdateFiles
 {
-    Task<UpdateRelease?> GetLatestAsync(CancellationToken cancellationToken);
-}
+    // File.Delete is already a no-op when the file is missing.
+    public static void TryDelete(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
 
-public interface IUpdateDownloader
-{
-    Task<string?> DownloadAndVerifyAsync(UpdateRelease release, CancellationToken cancellationToken);
-}
-
-public interface IUpdateInstaller
-{
-    UpdateInstallResult TryStart(string verifiedUpdatePath, string currentExecutablePath, int parentProcessId);
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
+    }
 }

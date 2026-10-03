@@ -1,5 +1,3 @@
-using System.IO;
-
 namespace FourFoldAccountManager.Desktop.Updates;
 
 public sealed class UpdateCoordinator
@@ -7,9 +5,9 @@ public sealed class UpdateCoordinator
     private readonly Version _currentVersion;
     private readonly string _currentExecutablePath;
     private readonly int _currentProcessId;
-    private readonly IUpdateReleaseClient _releaseClient;
-    private readonly IUpdateDownloader _downloader;
-    private readonly IUpdateInstaller _installer;
+    private readonly GitHubReleaseClient _releaseClient;
+    private readonly UpdateDownloader _downloader;
+    private readonly UpdateInstaller _installer;
     private readonly Func<UpdateRelease, Task<bool>> _prompt;
     private readonly Action<string>? _failureNotice;
     private readonly Action? _shutdown;
@@ -19,9 +17,9 @@ public sealed class UpdateCoordinator
         Version currentVersion,
         string currentExecutablePath,
         int currentProcessId,
-        IUpdateReleaseClient releaseClient,
-        IUpdateDownloader downloader,
-        IUpdateInstaller installer,
+        GitHubReleaseClient releaseClient,
+        UpdateDownloader downloader,
+        UpdateInstaller installer,
         Func<UpdateRelease, Task<bool>> prompt,
         Action<string>? failureNotice = null,
         Action? shutdown = null)
@@ -66,7 +64,7 @@ public sealed class UpdateCoordinator
             var result = _installer.TryStart(downloadedPath, _currentExecutablePath, _currentProcessId);
             if (result != UpdateInstallResult.Started)
             {
-                DeleteIfPresent(downloadedPath);
+                UpdateFiles.TryDelete(downloadedPath);
                 _failureNotice?.Invoke("The update could not be started. You can download the latest release manually.");
                 return;
             }
@@ -79,23 +77,6 @@ public sealed class UpdateCoordinator
         catch (Exception)
         {
             _failureNotice?.Invoke("The update could not be installed. You can download the latest release manually.");
-        }
-    }
-
-    private static void DeleteIfPresent(string path)
-    {
-        try
-        {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
-        {
         }
     }
 }

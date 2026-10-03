@@ -84,55 +84,15 @@ public static class PanelLayoutPolicy
     }
 
     public static int GetVisibleSlotCount(PanelLayout layout) =>
-        GetSlotPlacements(layout).Count;
-
-    public static IReadOnlyList<PanelSlotPlacement> GetSlotPlacements(PanelLayout layout) =>
         layout switch
         {
-            PanelLayout.OneByTwo => new[]
-            {
-                new PanelSlotPlacement(0, 0),
-                new PanelSlotPlacement(0, 1)
-            },
-            PanelLayout.TwoByOne => new[]
-            {
-                new PanelSlotPlacement(0, 0),
-                new PanelSlotPlacement(1, 0)
-            },
-            PanelLayout.TwoByTwo => new[]
-            {
-                new PanelSlotPlacement(0, 0),
-                new PanelSlotPlacement(0, 1),
-                new PanelSlotPlacement(1, 0),
-                new PanelSlotPlacement(1, 1)
-            },
-            PanelLayout.TwoByThree => new[]
-            {
-                new PanelSlotPlacement(0, 0, ColumnSpan: 3),
-                new PanelSlotPlacement(0, 3, ColumnSpan: 3),
-                new PanelSlotPlacement(1, 0, ColumnSpan: 2),
-                new PanelSlotPlacement(1, 2, ColumnSpan: 2),
-                new PanelSlotPlacement(1, 4, ColumnSpan: 2)
-            },
-            PanelLayout.OneByTwoVertical => new[]
-            {
-                new PanelSlotPlacement(0, 0, 2),
-                new PanelSlotPlacement(0, 1),
-                new PanelSlotPlacement(1, 1)
-            },
-            PanelLayout.OneByOne => new[]
-            {
-                new PanelSlotPlacement(0, 0)
-            },
-            PanelLayout.OneByThree => new[]
-            {
-                new PanelSlotPlacement(0, 0, ColumnSpan: 3),
-                new PanelSlotPlacement(1, 0),
-                new PanelSlotPlacement(1, 1),
-                new PanelSlotPlacement(1, 2)
-            },
+            PanelLayout.OneByOne => 1,
+            PanelLayout.OneByTwo or PanelLayout.TwoByOne => 2,
+            PanelLayout.OneByTwoVertical => 3,
+            PanelLayout.TwoByTwo or PanelLayout.OneByThree => 4,
+            PanelLayout.TwoByThree => 5,
             // The Tabs layout shows tabs instead of grid slots.
-            PanelLayout.Tabs => Array.Empty<PanelSlotPlacement>(),
+            PanelLayout.Tabs => 0,
             _ => throw new ArgumentOutOfRangeException(nameof(layout), layout, "Unknown panel layout.")
         };
 

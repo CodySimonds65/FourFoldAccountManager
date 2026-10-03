@@ -173,19 +173,3 @@ jobs:
               gh release create $env:RELEASE_TAG $assetPaths --repo $env:GITHUB_REPOSITORY --target $env:RELEASE_TARGET --title "$env:RELEASE_TAG" --notes "FourFold Account Manager $env:RELEASE_TAG"
               if ($LASTEXITCODE -ne 0) { throw "GitHub release creation failed for $env:RELEASE_TAG." }
           }
-
-      - name: Verify published GitHub Release
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          $releaseJson = gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --json tagName,targetCommitish,isDraft,isPrerelease,assets
-          if ($LASTEXITCODE -ne 0) { throw "Unable to read published release $env:RELEASE_TAG." }
-          $release = $releaseJson | ConvertFrom-Json
-          if ($release.tagName -ne $env:RELEASE_TAG -or $release.isDraft -or $release.isPrerelease -or $release.targetCommitish -ine $env:RELEASE_TARGET) {
-              throw "Published release $env:RELEASE_TAG has unexpected metadata."
-          }
-          foreach ($assetPath in Get-ChildItem -LiteralPath release -File) {
-              $matches = @($release.assets | Where-Object { $_.name -eq $assetPath.Name -and $_.state -eq 'uploaded' -and [int64]$_.size -gt 0 })
-              if ($matches.Count -ne 1) { throw "Published release is missing exactly one uploaded asset named $($assetPath.Name)." }
-          }

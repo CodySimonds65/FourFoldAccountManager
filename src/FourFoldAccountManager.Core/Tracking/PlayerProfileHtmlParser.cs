@@ -19,7 +19,6 @@ public static class PlayerProfileHtmlParser
 
         var classes = new Dictionary<string, ClassProfileSnapshot>(StringComparer.OrdinalIgnoreCase);
         var invalid = new List<string>();
-        var invalidStats = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         string? activeClassName = null;
 
@@ -44,11 +43,7 @@ public static class PlayerProfileHtmlParser
             var levelText = ReadMeta(card, "Level");
             var expText = ReadMeta(card, "EXP");
             var xpParts = expText?.Split('/', 2);
-            var stats = ReadStats(card, out var statInvalid);
-            if (statInvalid)
-            {
-                invalidStats.Add(className);
-            }
+            var stats = ReadStats(card);
 
             if (!TryParsePositiveInt(levelText, out var level) || xpParts is not { Length: 2 } ||
                 !TryParseNonnegativeLong(xpParts[0], out var currentXp) ||
@@ -75,25 +70,19 @@ public static class PlayerProfileHtmlParser
             });
         }
 
-        return new PlayerProgressSnapshot(username, activeClassName, classes, invalid, invalidStats);
+        return new PlayerProgressSnapshot(username, activeClassName, classes, invalid);
     }
 
-    private static ProfileStats ReadStats(IElement card, out bool invalid)
-    {
-        invalid = false;
-        var hp = TryParseDisplayedStat(ReadMeta(card, "HP"), useMaximum: true, out var hpValue);
-        var sp = TryParseDisplayedStat(ReadMeta(card, "SP"), useMaximum: true, out var spValue);
-        var attack = TryParseDisplayedStat(ReadMeta(card, "ATT"), useMaximum: false, out var attackValue);
-        var magic = TryParseDisplayedStat(ReadMeta(card, "MAG"), useMaximum: false, out var magicValue);
-        var skill = TryParseDisplayedStat(ReadMeta(card, "SKL"), useMaximum: false, out var skillValue);
-        var speed = TryParseDisplayedStat(ReadMeta(card, "SPD"), useMaximum: false, out var speedValue);
-        var defense = TryParseDisplayedStat(ReadMeta(card, "DEF"), useMaximum: false, out var defenseValue);
-        var resistance = TryParseDisplayedStat(ReadMeta(card, "RES"), useMaximum: false, out var resistanceValue);
-        var luck = TryParseDisplayedStat(ReadMeta(card, "LCK"), useMaximum: false, out var luckValue);
-        invalid = !(hp && sp && attack && magic && skill && speed && defense && resistance && luck);
-        return new ProfileStats(hpValue, spValue, attackValue, magicValue, skillValue, speedValue,
-            defenseValue, resistanceValue, luckValue);
-    }
+    private static ProfileStats ReadStats(IElement card) => new(
+        ParseDisplayedStat(ReadMeta(card, "HP"), useMaximum: true),
+        ParseDisplayedStat(ReadMeta(card, "SP"), useMaximum: true),
+        ParseDisplayedStat(ReadMeta(card, "ATT"), useMaximum: false),
+        ParseDisplayedStat(ReadMeta(card, "MAG"), useMaximum: false),
+        ParseDisplayedStat(ReadMeta(card, "SKL"), useMaximum: false),
+        ParseDisplayedStat(ReadMeta(card, "SPD"), useMaximum: false),
+        ParseDisplayedStat(ReadMeta(card, "DEF"), useMaximum: false),
+        ParseDisplayedStat(ReadMeta(card, "RES"), useMaximum: false),
+        ParseDisplayedStat(ReadMeta(card, "LCK"), useMaximum: false));
 
     private static IReadOnlyDictionary<string, string> ReadEquipment(IElement card)
     {
@@ -123,33 +112,20 @@ public static class PlayerProfileHtmlParser
     private static bool TryParseNonnegativeLong(string? value, out long result) =>
         long.TryParse(value?.Trim().Replace(",", ""), NumberStyles.None, CultureInfo.InvariantCulture, out result) && result >= 0;
 
-    private static bool TryParseDisplayedStat(string? value, bool useMaximum, out long? result)
+    private static long? ParseDisplayedStat(string? value, bool useMaximum)
     {
-        result = null;
         if (string.IsNullOrWhiteSpace(value))
         {
-            return false;
+            return null;
         }
 
         var parts = value.Split('/', 2, StringSplitOptions.TrimEntries);
-        if (useMaximum && parts.Length != 2)
+        if (useMaximum && (parts.Length != 2 || !TryParseNonnegativeLong(parts[0], out _)))
         {
-            return false;
+            return null;
         }
 
-        if (useMaximum && !TryParseNonnegativeLong(parts[0], out _))
-        {
-            return false;
-        }
-
-        var numericValue = useMaximum ? parts[1] : parts[0];
-        if (!TryParseNonnegativeLong(numericValue, out var parsed))
-        {
-            return false;
-        }
-
-        result = parsed;
-        return true;
+        return TryParseNonnegativeLong(useMaximum ? parts[1] : parts[0], out var parsed) ? parsed : null;
     }
 
     private sealed record ProfileStats(

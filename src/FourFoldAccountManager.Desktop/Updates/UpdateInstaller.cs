@@ -4,7 +4,7 @@ using System.IO;
 
 namespace FourFoldAccountManager.Desktop.Updates;
 
-public sealed class UpdateInstaller : IUpdateInstaller
+public sealed class UpdateInstaller
 {
     private const string ApplyUpdateArgument = "--apply-update";
 
@@ -45,25 +45,15 @@ public sealed class UpdateInstaller : IUpdateInstaller
             using var helper = Process.Start(startInfo);
             if (helper is null)
             {
-                DeleteIfPresent(helperPath);
+                UpdateFiles.TryDelete(helperPath);
                 return UpdateInstallResult.Failed;
             }
 
             return UpdateInstallResult.Started;
         }
-        catch (IOException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or InvalidOperationException)
         {
-            DeleteIfPresent(helperPath);
-            return UpdateInstallResult.Failed;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            DeleteIfPresent(helperPath);
-            return UpdateInstallResult.Failed;
-        }
-        catch (InvalidOperationException)
-        {
-            DeleteIfPresent(helperPath);
+            UpdateFiles.TryDelete(helperPath);
             return UpdateInstallResult.Failed;
         }
     }
@@ -104,8 +94,8 @@ public sealed class UpdateInstaller : IUpdateInstaller
         var backupPath = targetExecutablePath + ".backup";
         try
         {
-            DeleteIfPresent(stagingPath);
-            DeleteIfPresent(backupPath);
+            UpdateFiles.TryDelete(stagingPath);
+            UpdateFiles.TryDelete(backupPath);
             File.Copy(verifiedUpdatePath, stagingPath, overwrite: false);
 
             if (File.Exists(targetExecutablePath))
@@ -125,22 +115,17 @@ public sealed class UpdateInstaller : IUpdateInstaller
                 File.Move(stagingPath, targetExecutablePath, overwrite: false);
             }
 
-            DeleteIfPresent(backupPath);
+            UpdateFiles.TryDelete(backupPath);
             return true;
         }
-        catch (IOException)
-        {
-            RestoreBackup(targetExecutablePath, backupPath);
-            return false;
-        }
-        catch (UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
             RestoreBackup(targetExecutablePath, backupPath);
             return false;
         }
         finally
         {
-            DeleteIfPresent(stagingPath);
+            UpdateFiles.TryDelete(stagingPath);
         }
     }
 
@@ -154,25 +139,18 @@ public sealed class UpdateInstaller : IUpdateInstaller
                 parent.WaitForExit();
             }
         }
-        catch (ArgumentException)
-        {
-        }
-        catch (InvalidOperationException)
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
         }
 
         var replaced = ReplaceTargetFile(sourcePath, targetPath);
-        if (!replaced && File.Exists(targetPath))
-        {
-            TryLaunch(targetPath);
-        }
-        else if (replaced)
+        if (replaced || File.Exists(targetPath))
         {
             TryLaunch(targetPath);
         }
 
-        DeleteIfPresent(sourcePath);
-        DeleteIfPresent(Environment.ProcessPath);
+        UpdateFiles.TryDelete(sourcePath);
+        UpdateFiles.TryDelete(Environment.ProcessPath);
     }
 
     private static bool PathsAreEqual(string left, string right) =>
@@ -187,10 +165,7 @@ public sealed class UpdateInstaller : IUpdateInstaller
                 File.Move(backupPath, targetPath, overwrite: false);
             }
         }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
         }
     }
@@ -205,32 +180,7 @@ public sealed class UpdateInstaller : IUpdateInstaller
                 UseShellExecute = true
             });
         }
-        catch (InvalidOperationException)
-        {
-        }
-        catch (System.ComponentModel.Win32Exception)
-        {
-        }
-    }
-
-    private static void DeleteIfPresent(string? path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return;
-        }
-
-        try
-        {
-            if (File.Exists(path))
-            {
-                File.Delete(path);
-            }
-        }
-        catch (IOException)
-        {
-        }
-        catch (UnauthorizedAccessException)
+        catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
         }
     }

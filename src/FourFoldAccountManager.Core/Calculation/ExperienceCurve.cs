@@ -18,13 +18,6 @@ public static class ExperienceCurve
         return 5 * (BigInteger)level * (level + 1);
     }
 
-    public static BigInteger XpBetweenLevels(long currentLevel, long targetLevel)
-    {
-        if (currentLevel < 1) throw new ArgumentOutOfRangeException(nameof(currentLevel));
-        if (targetLevel < currentLevel) throw new ArgumentOutOfRangeException(nameof(targetLevel));
-        return TotalXpAtLevel(targetLevel) - TotalXpAtLevel(currentLevel);
-    }
-
     public static ExperienceProjection Project(ClassProfileSnapshot profile, long targetLevel)
     {
         ArgumentNullException.ThrowIfNull(profile);

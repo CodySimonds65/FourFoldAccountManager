@@ -192,10 +192,6 @@ public sealed class LeaderboardCoordinator : IAsyncDisposable
 
     public async Task<LeaderboardPage?> RefreshPageAsync(LeaderboardPeriod period, int page, int pageSize,
         CancellationToken ct, bool scheduleRetry = true)
-        => await RefreshPageCoreAsync(period, page, pageSize, ct, scheduleRetry);
-
-    private async Task<LeaderboardPage?> RefreshPageCoreAsync(LeaderboardPeriod period, int page, int pageSize,
-        CancellationToken ct, bool scheduleRetry)
     {
         if (_client is null) return null;
         try
@@ -243,7 +239,7 @@ public sealed class LeaderboardCoordinator : IAsyncDisposable
             foreach (var delaySeconds in new[] { 15, 30, 60, 120 })
             {
                 await Task.Delay(TimeSpan.FromSeconds(delaySeconds), ct);
-                if (await RefreshPageCoreAsync(key.Period, key.Page, key.PageSize, ct,
+                if (await RefreshPageAsync(key.Period, key.Page, key.PageSize, ct,
                         scheduleRetry: false) is not null) return;
             }
         }
@@ -254,24 +250,20 @@ public sealed class LeaderboardCoordinator : IAsyncDisposable
         }
     }
 
-    private Task RunRenewalLoopAsync(CancellationToken ct) =>
-        RunRenewalLoopCoreAsync(async token =>
-        {
-            if (_sharingEnabled && _activePlayerIds.Count > 0)
-                await QueueParticipationAsync(token);
-            else if (HasPendingParticipation)
-                await FlushPendingAsync(token);
-        }, TimeSpan.FromMinutes(1), ct);
-
-    internal static async Task RunRenewalLoopCoreAsync(
-        Func<CancellationToken, Task> tick, TimeSpan interval, CancellationToken ct)
+    private async Task RunRenewalLoopAsync(CancellationToken ct)
     {
-        using var timer = new PeriodicTimer(interval);
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
             {
-                try { await tick(ct); }
+                try
+                {
+                    if (_sharingEnabled && _activePlayerIds.Count > 0)
+                        await QueueParticipationAsync(ct);
+                    else if (HasPendingParticipation)
+                        await FlushPendingAsync(ct);
+                }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
             }
         }

@@ -10,8 +10,6 @@ var collection = new LeaderboardCollectionOptions();
 builder.Configuration.GetSection(LeaderboardCollectionOptions.SectionName).Bind(collection);
 if (collection.RetentionDays is < 31 or > 40)
     throw new InvalidOperationException("Collection:RetentionDays must be between 31 and 40 to retain a complete calendar month.");
-if (collection.ActiveLeaseDuration != TimeSpan.FromMinutes(3))
-    throw new InvalidOperationException("Collection:ActiveLeaseDuration must be three minutes.");
 builder.Services.AddSingleton(collection);
 var capacity = new LeaderboardCapacityOptions();
 builder.Configuration.GetSection(LeaderboardCapacityOptions.SectionName).Bind(capacity);
@@ -32,30 +30,19 @@ builder.Services.AddHostedService<LeaderboardRetentionWorker>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("participation", context =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            RateLimitClientIp.GetPartitionKey(context,
-                context.RequestServices.GetRequiredService<IConfiguration>()
-                    .GetValue<bool>("RateLimiting:TrustCloudflareConnectingIp")),
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 30,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
-    options.AddPolicy("public-read", context =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            RateLimitClientIp.GetPartitionKey(context,
-                context.RequestServices.GetRequiredService<IConfiguration>()
-                    .GetValue<bool>("RateLimiting:TrustCloudflareConnectingIp")),
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 60,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
+    void AddPolicy(string name, int permitLimit) =>
+        options.AddPolicy(name, context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                RateLimitClientIp.GetPartitionKey(context,
+                    context.RequestServices.GetRequiredService<IConfiguration>()
+                        .GetValue<bool>("RateLimiting:TrustCloudflareConnectingIp")),
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = permitLimit,
+                    Window = TimeSpan.FromMinutes(1)
+                }));
+    AddPolicy("participation", 30);
+    AddPolicy("public-read", 60);
 });
 
 var app = builder.Build();

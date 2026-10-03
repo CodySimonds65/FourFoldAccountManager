@@ -5,7 +5,7 @@ using System.Text.RegularExpressions;
 
 namespace FourFoldAccountManager.Desktop.Updates;
 
-public sealed class GitHubReleaseClient : IUpdateReleaseClient
+public sealed class GitHubReleaseClient
 {
     public const string Repository = "CodySimonds65/FourFoldAccountManager";
     public static readonly Uri LatestReleaseUri = new($"https://api.github.com/repos/{Repository}/releases/latest");
@@ -34,11 +34,7 @@ public sealed class GitHubReleaseClient : IUpdateReleaseClient
             var json = await response.Content.ReadAsStringAsync(cancellationToken);
             return UpdateReleaseParser.TryParse(json, out var release) ? release : null;
         }
-        catch (HttpRequestException)
-        {
-            return null;
-        }
-        catch (JsonException)
+        catch (Exception exception) when (exception is HttpRequestException or JsonException)
         {
             return null;
         }
@@ -55,51 +51,45 @@ public static class UpdateReleaseParser
         "^v(?<version>\\d+\\.\\d+\\.\\d+)$",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower };
+
+    private sealed record ReleaseJson(string? TagName, bool? Draft, bool? Prerelease, string? Body, List<AssetJson?>? Assets);
+
+    private sealed record AssetJson(string? Name, string? BrowserDownloadUrl, long Size);
+
     public static bool TryParse(string json, out UpdateRelease? release)
     {
         release = null;
 
         try
         {
-            using var document = JsonDocument.Parse(json);
-            var root = document.RootElement;
-            if (root.ValueKind != JsonValueKind.Object ||
-                !TryGetString(root, "tag_name", out var tagName) ||
-                !TryGetBoolean(root, "draft", out var isDraft) ||
-                !TryGetBoolean(root, "prerelease", out var isPrerelease) ||
-                isDraft ||
-                isPrerelease)
+            if (JsonSerializer.Deserialize<ReleaseJson>(json, JsonOptions) is not { } root ||
+                root.Draft != false ||
+                root.Prerelease != false ||
+                root.Assets is null)
             {
                 return false;
             }
 
-            var tagMatch = TagPattern.Match(tagName);
+            var tagMatch = TagPattern.Match(root.TagName ?? string.Empty);
             if (!tagMatch.Success || !Version.TryParse(tagMatch.Groups["version"].Value, out var version))
             {
                 return false;
             }
 
-            if (!root.TryGetProperty("assets", out var assetsElement) || assetsElement.ValueKind != JsonValueKind.Array)
-            {
-                return false;
-            }
-
             var assets = new List<UpdateAsset>();
-            foreach (var assetElement in assetsElement.EnumerateArray())
+            foreach (var asset in root.Assets)
             {
-                if (assetElement.ValueKind != JsonValueKind.Object ||
-                    !TryGetString(assetElement, "name", out var assetName) ||
-                    !TryGetString(assetElement, "browser_download_url", out var downloadUrlText) ||
-                    !Uri.TryCreate(downloadUrlText, UriKind.Absolute, out var downloadUrl) ||
+                if (asset is null ||
+                    string.IsNullOrWhiteSpace(asset.Name) ||
+                    !Uri.TryCreate(asset.BrowserDownloadUrl, UriKind.Absolute, out var downloadUrl) ||
                     downloadUrl.Scheme != Uri.UriSchemeHttps ||
-                    !assetElement.TryGetProperty("size", out var sizeElement) ||
-                    !sizeElement.TryGetInt64(out var size) ||
-                    size <= 0)
+                    asset.Size <= 0)
                 {
                     return false;
                 }
 
-                assets.Add(new UpdateAsset(assetName, downloadUrl, size));
+                assets.Add(new UpdateAsset(asset.Name, downloadUrl, asset.Size));
             }
 
             var releaseVersion = version.ToString(3);
@@ -111,45 +101,12 @@ public static class UpdateReleaseParser
                 return false;
             }
 
-            var name = TryGetString(root, "name", out var releaseName) ? releaseName : tagName;
-            var notes = TryGetString(root, "body", out var releaseNotes) ? releaseNotes : string.Empty;
-            release = new UpdateRelease(version, tagName, name, notes, assets);
+            release = new UpdateRelease(version, root.Body ?? string.Empty, assets);
             return true;
         }
         catch (JsonException)
         {
             return false;
         }
-    }
-
-    private static bool TryGetString(JsonElement element, string propertyName, out string value)
-    {
-        value = string.Empty;
-        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
-        {
-            return false;
-        }
-
-        var text = property.GetString();
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return false;
-        }
-
-        value = text;
-        return true;
-    }
-
-    private static bool TryGetBoolean(JsonElement element, string propertyName, out bool value)
-    {
-        value = false;
-        if (!element.TryGetProperty(propertyName, out var property) ||
-            (property.ValueKind != JsonValueKind.True && property.ValueKind != JsonValueKind.False))
-        {
-            return false;
-        }
-
-        value = property.GetBoolean();
-        return true;
     }
 }
