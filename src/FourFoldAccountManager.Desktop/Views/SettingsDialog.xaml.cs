@@ -12,35 +12,19 @@ public partial class SettingsDialog : Window
     private const string InvalidKeysMessage =
         "Esc, Tab, Enter, Backspace, F5, the Windows key, and Ctrl, Alt, or Shift on their own can't be shortcuts.";
 
-    private readonly Func<MessageBoxResult>? _confirmResetLayoutSizes;
     private readonly IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> _initialShortcuts;
     private readonly IReadOnlySet<GlobalShortcutAction> _unavailableShortcuts;
     private readonly Dictionary<GlobalShortcutAction, GlobalHotkeyChord> _shortcuts;
     private readonly IReadOnlyDictionary<GlobalShortcutAction, ShortcutRow> _rows;
     private GlobalShortcutAction? _capturingShortcut;
 
-    public SettingsDialog(bool fillGameToPanel, bool showFullScreenExitButton)
-        : this(fillGameToPanel, showFullScreenExitButton, DefaultShortcuts(), new HashSet<GlobalShortcutAction>())
-    {
-    }
-
-    internal SettingsDialog(
-        bool fillGameToPanel,
-        bool showFullScreenExitButton,
-        Func<MessageBoxResult>? confirmResetLayoutSizes)
-        : this(fillGameToPanel, showFullScreenExitButton, DefaultShortcuts(), new HashSet<GlobalShortcutAction>(),
-            confirmResetLayoutSizes)
-    {
-    }
-
     internal SettingsDialog(
         bool fillGameToPanel,
         bool showFullScreenExitButton,
         IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> shortcuts,
         IReadOnlySet<GlobalShortcutAction> unavailableShortcuts,
-        Func<MessageBoxResult>? confirmResetLayoutSizes = null,
-        bool showOverlaysInTheatreMode = true,
-        SecondMonitorMode secondMonitorMode = SecondMonitorMode.AccountToolsWindow)
+        bool showOverlaysInTheatreMode,
+        SecondMonitorMode secondMonitorMode)
     {
         ArgumentNullException.ThrowIfNull(shortcuts);
         ArgumentNullException.ThrowIfNull(unavailableShortcuts);
@@ -49,7 +33,6 @@ public partial class SettingsDialog : Window
             throw new ArgumentException("Every shortcut action needs a chord.", nameof(shortcuts));
         }
 
-        _confirmResetLayoutSizes = confirmResetLayoutSizes;
         _initialShortcuts = new Dictionary<GlobalShortcutAction, GlobalHotkeyChord>(shortcuts);
         _shortcuts = new Dictionary<GlobalShortcutAction, GlobalHotkeyChord>(shortcuts);
         _unavailableShortcuts = unavailableShortcuts;
@@ -87,8 +70,6 @@ public partial class SettingsDialog : Window
     public IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> Shortcuts => _shortcuts;
 
     public bool ResetLayoutSizes { get; private set; }
-
-    internal ShortcutRow RowFor(GlobalShortcutAction action) => _rows[action];
 
     private IEnumerable<(Button Tab, ScrollViewer Page)> Tabs() =>
     [
@@ -157,13 +138,9 @@ public partial class SettingsDialog : Window
             "Choose a different shortcut for one of them.";
     }
 
-    private static IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> DefaultShortcuts() =>
-        GlobalShortcutActions.All.ToDictionary(
-            action => action, action => GlobalShortcutActions.GetChord(PanelSettings.Default, action));
-
     private void ResetLayoutSizes_Click(object sender, RoutedEventArgs e)
     {
-        var result = _confirmResetLayoutSizes?.Invoke() ?? MessageBox.Show(
+        var result = MessageBox.Show(
             this,
             "Restore all client layout dividers to their default positions? Game scaling and per-client viewport sizes will not change.",
             "Reset layout sizes",
