@@ -7,16 +7,18 @@ public static class PluginPaths
     public static bool TryResolveInside(string folder, string relativePath, out string fullPath)
     {
         fullPath = string.Empty;
-        if (string.IsNullOrWhiteSpace(relativePath) || relativePath.Contains('\0') || Path.IsPathRooted(relativePath))
+        if (string.IsNullOrWhiteSpace(folder) || string.IsNullOrWhiteSpace(relativePath) ||
+            relativePath.Contains('\0') || Path.IsPathRooted(relativePath))
         {
             return false;
         }
 
-        var root = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
-                   Path.DirectorySeparatorChar;
+        string root;
         string candidate;
         try
         {
+            root = Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
+                   Path.DirectorySeparatorChar;
             candidate = Path.GetFullPath(Path.Combine(root, relativePath));
         }
         catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)

@@ -14,6 +14,8 @@ public sealed class PluginManifestReaderTests : IDisposable
     {
         Directory.CreateDirectory(_folder);
         File.WriteAllText(Path.Combine(_folder, "index.html"), "<!doctype html>");
+        Directory.CreateDirectory(Path.Combine(_folder, "sub"));
+        File.WriteAllText(Path.Combine(_folder, "sub", "index.html"), "<!doctype html>");
 
         var parentFolder = Path.GetDirectoryName(_folder)!;
         var pluginFolderName = Path.GetFileName(_folder);
@@ -77,6 +79,7 @@ public sealed class PluginManifestReaderTests : IDisposable
     [InlineData("\"apiVersion\": \"1\"")]
     [InlineData("\"panel\": \"missing.html\"")]
     [InlineData("\"panel\": \"plugin.json\"")]
+    [InlineData("\"panel\": \"sub\\\\index.html\"")]
     [InlineData("\"shortLabel\": \"Far too long\"")]
     [InlineData("\"version\": \"1.0\"")]
     [InlineData("\"sites\": [\"http://wiki.example.com\"]")]
@@ -87,6 +90,7 @@ public sealed class PluginManifestReaderTests : IDisposable
     [InlineData("\"sites\": [\"https://localhost.\"]")]
     [InlineData("\"sites\": [\"https://127.0.0.1.\"]")]
     [InlineData("\"sites\": [\"https://app.localhost.\"]")]
+    [InlineData("\"sites\": [\"https://x.fourfoldplugin\"]")]
     [InlineData("\"cards\": [{ \"id\": \"Goal\", \"name\": \"Goal\", \"scope\": \"account\" }]")]
     [InlineData("\"cards\": [{ \"id\": \"goal\", \"name\": \"Goal\", \"scope\": \"panel\" }]")]
     [InlineData("\"cards\": [{ \"id\": \"a\", \"name\": \"A\", \"scope\": \"global\" }, { \"id\": \"a\", \"name\": \"B\", \"scope\": \"global\" }]")]

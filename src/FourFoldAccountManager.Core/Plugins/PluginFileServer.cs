@@ -25,6 +25,11 @@ public static class PluginFileServer
     {
         filePath = string.Empty;
         contentType = string.Empty;
+        if (urlPath is null)
+        {
+            return false;
+        }
+
         string relative;
         try
         {
