@@ -24,6 +24,11 @@ public static partial class PluginManifestReader
     [GeneratedRegex(@"^[0-9]+\.[0-9]+\.[0-9]+$")]
     private static partial Regex VersionRegex();
 
+    // Windows treats these names as devices whatever follows the dot, so a plugin called nul.tools would get a storage
+    // file "nul.tools.json" that silently swallows every write.
+    [GeneratedRegex("^(con|prn|aux|nul|com[0-9]|lpt[0-9])$")]
+    private static partial Regex DeviceNameRegex();
+
     // Reads and validates <folder>/plugin.json. Every rejection carries a reason an author can act on.
     public static PluginManifestResult Read(string folder)
     {
@@ -57,6 +62,11 @@ public static partial class PluginManifestReader
                 if (id is null || id.Length > 64 || !IdRegex().IsMatch(id))
                 {
                     return Reject("The id must look like author.plugin-name (lowercase letters, digits, dots and dashes).");
+                }
+
+                if (DeviceNameRegex().IsMatch(id[..id.IndexOf('.')]))
+                {
+                    return Reject("The id can't start with a Windows device name such as nul, con or com1.");
                 }
 
                 var label = id.Replace(".", "--");

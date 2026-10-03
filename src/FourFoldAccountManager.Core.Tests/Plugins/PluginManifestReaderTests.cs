@@ -76,6 +76,8 @@ public sealed class PluginManifestReaderTests : IDisposable
     [InlineData("\"id\": \"cody..goal\"")]
     [InlineData("\"id\": \"timer\"")]
     [InlineData("\"id\": \"xn.foo\"")]
+    [InlineData("\"id\": \"nul.tools\"")]
+    [InlineData("\"id\": \"com1.tools\"")]
     [InlineData("\"id\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"")]
     [InlineData("\"apiVersion\": 2")]
     [InlineData("\"apiVersion\": \"1\"")]

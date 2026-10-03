@@ -48,8 +48,17 @@ internal static class PluginSdk
               document.documentElement.style.setProperty(name, value);
             }
           };
-          if (document.documentElement) applyTheme();
-          else document.addEventListener('DOMContentLoaded', applyTheme);
+          if (document.documentElement) {
+            applyTheme();
+          } else {
+            // The page's <html> doesn't exist yet when this runs; theme it the moment it does, before the first paint.
+            const observer = new MutationObserver(() => {
+              if (!document.documentElement) return;
+              observer.disconnect();
+              applyTheme();
+            });
+            observer.observe(document, { childList: true });
+          }
           window.fourfold = Object.freeze({
             plugin: Object.freeze(info.plugin),
             theme: Object.freeze(info.theme),
