@@ -1608,6 +1608,8 @@ public partial class MainWindow : Window
                 string.Empty, null, false, showOverGame: true, globalSwitches, build);
         }
 
+        AddPluginCards(OverlayAddOnScope.Global, null, string.Empty, showOverGame: true, globalSwitches, build);
+
         foreach (var slot in _slotCards.OrderBy(slot => slot.SlotIndex))
         {
             var assignedAccountId = AccountIdFor(slot.SlotIndex);
@@ -1640,6 +1642,8 @@ public partial class MainWindow : Window
                             label, trackerRow, isStale, ShowsAccountCards(slot), switches, build);
                     }
 
+                    AddPluginCards(
+                        OverlayAddOnScope.Account, trackedAccountId, label, ShowsAccountCards(slot), switches, build);
                     accountRows.Add(new OverlayTrayAccountRow(trackedAccountId, label, switches));
                 }
             }
@@ -1662,8 +1666,6 @@ public partial class MainWindow : Window
     private bool ShowsAccountCards(PanelSlotCard slot) =>
         _panelSettings.Layout != PanelLayout.Tabs || slot.SlotIndex == _panelSettings.ActiveTab;
 
-    // Adds the card's Overlays panel switch and floating checklist entry, then puts the card in the one place it is
-    // assigned to. showOverGame is false for a background tab's account, whose cards stay off the game.
     private void AddOverlayAddOn(
         OverlayAddOnDefinition definition,
         OverlayCardKey key,
@@ -1679,6 +1681,20 @@ public partial class MainWindow : Window
             return;
         }
 
+        AddOverlayCard(definition, key, accountLabel, data, showOverGame, switches, build);
+    }
+
+    // Adds the card's Overlays panel switch and floating checklist entry, then puts the card in the one place it is
+    // assigned to. showOverGame is false for a background tab's account, whose cards stay off the game.
+    private void AddOverlayCard(
+        OverlayAddOnDefinition definition,
+        OverlayCardKey key,
+        string accountLabel,
+        IOverlayCardData data,
+        bool showOverGame,
+        List<OverlayTraySwitch> switches,
+        OverlayCardBuild build)
+    {
         var placement = OverlayCardPolicy.Get(_panelSettings, key);
         var isFloating = placement is { Enabled: true, IsFloating: true };
         var accessibleName = accountLabel.Length > 0
@@ -3386,6 +3402,7 @@ public partial class MainWindow : Window
             // Flush a pending sidebar XP target save before the final settings save, so a target
             // typed just before closing reaches disk instead of being lost.
             _plugins.XpCalc.View.FlushPendingTargetSave();
+            _pluginCardRefreshTimer?.Stop();
             _communityPlugins.Dispose();
 
             try
