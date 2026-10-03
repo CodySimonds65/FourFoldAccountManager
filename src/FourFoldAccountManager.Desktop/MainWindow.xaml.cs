@@ -331,6 +331,9 @@ public partial class MainWindow : Window
             SetManagerEnabled(true);
             // Not awaited: a slow or stuck plugin start must never keep the manager disabled.
             _ = _communityPlugins.ApplyAsync(_panelSettings);
+            // After ApplyAsync: the manager starts no hub plugin until it has seen the user's settings, so a plugin
+            // they switched off is never started first.
+            _ = _pluginHub.StartAsync();
             LayoutPicker.SelectedValue = _panelSettings.Layout;
             AccountsListBox.SelectedIndex = _accounts.Count > 0 ? 0 : -1;
             UpdateAccountActions();
@@ -3422,6 +3425,8 @@ public partial class MainWindow : Window
             // typed just before closing reaches disk instead of being lost.
             _plugins.XpCalc.View.FlushPendingTargetSave();
             _pluginCardRefreshTimer?.Stop();
+            // First, so a download that finishes now can't reach the plugins that are being disposed.
+            _pluginHub.Dispose();
             _communityPlugins.Dispose();
 
             try

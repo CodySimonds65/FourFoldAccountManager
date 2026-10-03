@@ -23,6 +23,7 @@ public sealed record PluginDescriptor(
     // A short tag beside the plugin's name in the plugin list, such as "DEV".
     public string? Badge { get; init; }
 
-    // One line under the plugin's name in the plugin list, such as the sites it can contact.
+    // Text under the plugin's name in the plugin list. A community plugin gives two lines: its author, then the sites
+    // it can contact.
     public string? Detail { get; init; }
 }

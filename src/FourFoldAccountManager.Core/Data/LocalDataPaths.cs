@@ -19,6 +19,9 @@ public sealed class LocalDataPaths
         DevPluginsRoot = Path.Combine(DataRoot, "dev-plugins");
         PluginDataRoot = Path.Combine(DataRoot, "plugin-data");
         PluginWebViewUserDataRoot = Path.Combine(DataRoot, "PluginWebView2");
+        HubPluginsRoot = Path.Combine(DataRoot, "plugins");
+        HubCatalogFilePath = Path.Combine(DataRoot, "hub", "catalog.json");
+        HubInstalledFilePath = Path.Combine(DataRoot, "hub", "installed.json");
     }
 
     public string DataRoot { get; }
@@ -41,4 +44,13 @@ public sealed class LocalDataPaths
 
     // The plugin browser's own data folder, separate from the game profiles in WebViewUserDataRoot.
     public string PluginWebViewUserDataRoot { get; }
+
+    // Plugins installed from the hub, one folder per plugin id.
+    public string HubPluginsRoot { get; }
+
+    // The last good copy of the hub's catalog, so installed plugins work offline.
+    public string HubCatalogFilePath { get; }
+
+    // Which hub plugins are installed, and at which reviewed commit.
+    public string HubInstalledFilePath { get; }
 }
