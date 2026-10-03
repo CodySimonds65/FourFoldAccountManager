@@ -1,12 +1,15 @@
 using System.Diagnostics;
 using System.IO;
+using System.Windows;
 using System.Windows.Input;
 using FourFoldAccountManager.Core.Data;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Overlay;
 using FourFoldAccountManager.Core.Plugins;
+using FourFoldAccountManager.Core.Plugins.Hub;
 using FourFoldAccountManager.Core.Timing;
 using FourFoldAccountManager.Desktop.Plugins;
+using FourFoldAccountManager.Desktop.Plugins.Hub;
 using FourFoldAccountManager.Desktop.Plugins.Web;
 using FourFoldAccountManager.Desktop.Views;
 
@@ -19,6 +22,7 @@ public partial class MainWindow : IPluginHostData
     private readonly Dictionary<Guid, (DateTimeOffset? LastUpdated, bool IsStale, double? RatePerHour, long SessionGain)>
         _postedXpUpdates = [];
     private CommunityPluginManager _communityPlugins = null!;
+    private PluginHub _pluginHub = null!;
     private string _postedAccounts = string.Empty;
     private System.Windows.Threading.DispatcherTimer? _pluginCardRefreshTimer;
 
@@ -36,6 +40,17 @@ public partial class MainWindow : IPluginHostData
             RefreshPluginSidebar();
             RefreshTrackerRows();
         };
+        _pluginHub = new PluginHub(paths, _communityPlugins);
+        _pluginHub.Changed += () => PluginSidebar.SetHubState(_pluginHub.ViewState);
+        // An uninstalled plugin's cards, its place in the strip and its switch go from the saved settings too.
+        _pluginHub.Uninstalled += id =>
+            _ = ApplyPluginChangeAsync(settings => HubPolicy.WithUninstalled(settings, id), refreshEffects: true);
+        PluginSidebar.HubOpened += () => _ = _pluginHub.RefreshAsync(userAsked: false);
+        PluginSidebar.HubRetryRequested += () => _ = _pluginHub.RefreshAsync(userAsked: true);
+        PluginSidebar.HubInstallRequested += id => _ = _pluginHub.InstallAsync(id);
+        PluginSidebar.HubUninstallRequested += ConfirmPluginUninstall;
+        // The catalog reader only lets through https://github.com/<owner>/<repo>, and OpenInBrowser opens https only.
+        PluginSidebar.HubSourceRequested += uri => ((IPluginHostData)this).OpenInBrowser(uri);
         _pluginCards.Changed += QueuePluginCardRefresh;
         _timer.StateChanged += () => _communityPlugins.PostEvent("timer.changed", null);
         PluginSidebar.DeveloperModeChangeRequested += on =>
@@ -58,6 +73,28 @@ public partial class MainWindow : IPluginHostData
                 GlobalStatusText.Text = "The dev plugins folder couldn't be opened.";
             }
         };
+    }
+
+    // Uninstalling deletes the plugin's saved data, so it asks first, and No is the answer Enter gives. The name comes from
+    // the catalog or the plugin, so it only ever goes into the message as it is. The sidebar can be in the separate
+    // tools window, so the box belongs to whichever window the user clicked in.
+    private void ConfirmPluginUninstall(string id)
+    {
+        var state = _pluginHub.ViewState;
+        var name = state.Plugins.FirstOrDefault(plugin => plugin.Id == id)?.Name
+                   ?? state.Pulled.FirstOrDefault(plugin => plugin.Id == id)?.Name
+                   ?? id;
+        var answer = MessageBox.Show(
+            Window.GetWindow(PluginSidebar) ?? this,
+            $"Uninstall {name}? Its saved data on this computer will be deleted.",
+            "Uninstall plugin",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (answer == MessageBoxResult.Yes)
+        {
+            _ = _pluginHub.UninstallAsync(id);
+        }
     }
 
     private void RefreshPluginSidebar()

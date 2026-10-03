@@ -21,6 +21,9 @@ public static class PluginFileServer
         [".woff2"] = "font/woff2"
     };
 
+    // Whether a file of this name is a type FourFold serves; the hub packages only these.
+    public static bool IsServed(string path) => ContentTypes.ContainsKey(Path.GetExtension(path));
+
     public static bool TryResolve(PluginManifest manifest, string urlPath, out string filePath, out string contentType)
     {
         filePath = string.Empty;
