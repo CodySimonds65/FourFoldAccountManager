@@ -30,30 +30,19 @@ builder.Services.AddHostedService<LeaderboardRetentionWorker>();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("participation", context =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            RateLimitClientIp.GetPartitionKey(context,
-                context.RequestServices.GetRequiredService<IConfiguration>()
-                    .GetValue<bool>("RateLimiting:TrustCloudflareConnectingIp")),
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 30,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
-    options.AddPolicy("public-read", context =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            RateLimitClientIp.GetPartitionKey(context,
-                context.RequestServices.GetRequiredService<IConfiguration>()
-                    .GetValue<bool>("RateLimiting:TrustCloudflareConnectingIp")),
-            _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 60,
-                Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0,
-                AutoReplenishment = true
-            }));
+    void AddPolicy(string name, int permitLimit) =>
+        options.AddPolicy(name, context =>
+            RateLimitPartition.GetFixedWindowLimiter(
+                RateLimitClientIp.GetPartitionKey(context,
+                    context.RequestServices.GetRequiredService<IConfiguration>()
+                        .GetValue<bool>("RateLimiting:TrustCloudflareConnectingIp")),
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = permitLimit,
+                    Window = TimeSpan.FromMinutes(1)
+                }));
+    AddPolicy("participation", 30);
+    AddPolicy("public-read", 60);
 });
 
 var app = builder.Build();
