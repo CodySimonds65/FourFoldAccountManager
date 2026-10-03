@@ -71,6 +71,99 @@ public sealed class PluginPackageTests : IDisposable
         var large = Zip(("big.txt", new byte[HubLimits.MaximumUnpackedBytes + 1]));
         Assert.True(large.Length < 100_000);
         Assert.Throws<InvalidDataException>(() => PluginPackage.Extract(large, Path.Combine(_root, "large")));
+
+        // Each entry is under the limit; only the total is over it.
+        var two = Zip(("a.txt", new byte[3 * 1024 * 1024]), ("b.txt", new byte[3 * 1024 * 1024]));
+        Assert.Throws<InvalidDataException>(() => PluginPackage.Extract(two, Path.Combine(_root, "two")));
+    }
+
+    [Fact]
+    public void AnEntryNestedTooDeeplyIsRefused()
+    {
+        // Deleting a tree thousands of levels deep overflows the stack, so a deep entry must never be unpacked.
+        var name = string.Join('/', Enumerable.Repeat("a", 100)) + "/f.txt";
+        var target = Path.Combine(_root, "deep");
+
+        Assert.Throws<InvalidDataException>(() => PluginPackage.Extract(Zip((name, new byte[] { 1 })), target));
+
+        Assert.Empty(Directory.EnumerateFileSystemEntries(target));
+    }
+
+    [Fact]
+    public void AFileWhereAFolderAlreadyIsIsRefused()
+    {
+        using var package = new MemoryStream(Zip(("a/b.txt", new byte[] { 1 }), ("a", new byte[] { 1 })));
+
+        var exception = Assert.ThrowsAny<IOException>(
+            () => SafeArchive.Extract(
+                package, Path.Combine(_root, "clash"), 500, HubLimits.MaximumUnpackedBytes, stripTopFolder: false));
+
+        Assert.IsNotType<UnauthorizedAccessException>(exception);
+    }
+
+    [Fact]
+    public void AFolderThatAlreadyHasFilesIsNotUnpackedInto()
+    {
+        var target = Path.Combine(_root, "taken");
+        Directory.CreateDirectory(target);
+        File.WriteAllText(Path.Combine(target, "mine.txt"), "mine");
+
+        Assert.Throws<IOException>(() => PluginPackage.Extract(Zip(("plugin.json", "{}"u8.ToArray())), target));
+
+        Assert.Equal(["mine.txt"], Directory.EnumerateFileSystemEntries(target).Select(path => Path.GetFileName(path)));
+    }
+
+    [Fact]
+    public void LinksAndOddNamesAreSkippedOnlyWhenAsked()
+    {
+        var package = Zip(
+            entry =>
+            {
+                if (entry.FullName == "link.txt")
+                {
+                    entry.ExternalAttributes = unchecked((int)0xA1FF0000);
+                }
+            },
+            ("link.txt", "target"u8.ToArray()),
+            ("a:b.txt", new byte[] { 1 }),
+            ("logs\\c.log", new byte[] { 1 }),
+            ("ok.txt", new byte[] { 1 }));
+        var skipped = Path.Combine(_root, "skipped");
+
+        using (var stream = new MemoryStream(package))
+        {
+            SafeArchive.Extract(
+                stream, skipped, 500, HubLimits.MaximumUnpackedBytes, stripTopFolder: false, skipLinksAndOddNames: true);
+        }
+
+        Assert.Equal(["ok.txt"], Directory.EnumerateFileSystemEntries(skipped).Select(path => Path.GetFileName(path)));
+
+        using var strict = new MemoryStream(package);
+        Assert.Throws<InvalidDataException>(
+            () => SafeArchive.Extract(
+                strict, Path.Combine(_root, "strict"), 500, HubLimits.MaximumUnpackedBytes, stripTopFolder: false));
+    }
+
+    [Fact]
+    public void APackageWithAFileFourFoldDoesNotServeIsRefusedBeforeAnythingIsWritten()
+    {
+        var package = Zip(("plugin.json", "{}"u8.ToArray()), ("run.exe", new byte[] { 1 }));
+        var target = Path.Combine(_root, "exe");
+
+        Assert.Throws<InvalidDataException>(() => PluginPackage.Extract(package, target));
+
+        Assert.False(Directory.Exists(target));
+    }
+
+    [Fact]
+    public void FileNamesWindowsCannotUnpackAreFoundWhenBuilding()
+    {
+        Assert.Null(PluginPackage.UnpackableReason(["plugin.json", "index.html", "img/a.png", "img/b.png"]));
+        Assert.NotNull(PluginPackage.UnpackableReason(["a:b.png"]));
+        Assert.NotNull(PluginPackage.UnpackableReason(["what?.png"]));
+        Assert.NotNull(PluginPackage.UnpackableReason(["trail.png."]));
+        Assert.NotNull(PluginPackage.UnpackableReason(["dir /a.png"]));
+        Assert.NotNull(PluginPackage.UnpackableReason(["A.png", "a.png"]));
     }
 
     [Fact]
