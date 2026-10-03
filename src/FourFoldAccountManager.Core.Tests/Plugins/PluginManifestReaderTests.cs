@@ -95,6 +95,8 @@ public sealed class PluginManifestReaderTests : IDisposable
     [InlineData("\"sites\": [\"https://127.0.0.1.\"]")]
     [InlineData("\"sites\": [\"https://app.localhost.\"]")]
     [InlineData("\"sites\": [\"https://x.fourfoldplugin\"]")]
+    // A zero-width joiner in a host makes Uri.IdnHost throw rather than return a name.
+    [InlineData("\"sites\": [\"https://a‍b.example\"]")]
     [InlineData("\"cards\": [{ \"id\": \"Goal\", \"name\": \"Goal\", \"scope\": \"account\" }]")]
     [InlineData("\"cards\": [{ \"id\": \"goal\", \"name\": \"Goal\", \"scope\": \"panel\" }]")]
     [InlineData("\"cards\": [{ \"id\": \"a\", \"name\": \"A\", \"scope\": \"global\" }, { \"id\": \"a\", \"name\": \"B\", \"scope\": \"global\" }]")]
@@ -112,6 +114,15 @@ public sealed class PluginManifestReaderTests : IDisposable
     {
         Assert.Equal("plugin.json is missing.", PluginManifestReader.Read(_folder).Error);
         Assert.Equal("plugin.json isn't valid JSON.", Read("{ not json").Error);
+    }
+
+    [Fact]
+    public void AnOversizedManifestIsRejectedWithoutBeingRead()
+    {
+        var result = Read(Manifest() + new string(' ', 70 * 1024));
+
+        Assert.Null(result.Manifest);
+        Assert.Equal("plugin.json is too large.", result.Error);
     }
 
     [Fact]

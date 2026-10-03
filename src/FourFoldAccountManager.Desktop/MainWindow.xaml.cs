@@ -322,7 +322,6 @@ public partial class MainWindow : Window
             UpdateTimerHotkeys();
             RefreshPlainKeyBindings();
             PluginSidebar.Render(_panelSettings);
-            await _communityPlugins.ApplyAsync(_panelSettings);
             foreach (var (accountId, size) in _panelSettings.GameViewportSizes)
             {
                 await _browserSessions.SetGameViewportSizeAsync(accountId, size);
@@ -330,6 +329,8 @@ public partial class MainWindow : Window
             await _browserSessions.SetGameScalingAsync(_panelSettings.FillGameToPanel);
             _isReady = true;
             SetManagerEnabled(true);
+            // Not awaited: a slow or stuck plugin start must never keep the manager disabled.
+            _ = _communityPlugins.ApplyAsync(_panelSettings);
             LayoutPicker.SelectedValue = _panelSettings.Layout;
             AccountsListBox.SelectedIndex = _accounts.Count > 0 ? 0 : -1;
             UpdateAccountActions();

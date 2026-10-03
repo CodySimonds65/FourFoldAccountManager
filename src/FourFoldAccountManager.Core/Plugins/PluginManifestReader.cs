@@ -15,6 +15,8 @@ public static partial class PluginManifestReader
 
     private const int MaximumIconBytes = 64 * 1024;
 
+    private const int MaximumManifestBytes = 64 * 1024;
+
     [GeneratedRegex("^" + IdPattern + @"\z")]
     private static partial Regex IdRegex();
 
@@ -29,13 +31,32 @@ public static partial class PluginManifestReader
     [GeneratedRegex("^(con|prn|aux|nul|com[0-9]|lpt[0-9])$")]
     private static partial Regex DeviceNameRegex();
 
-    // Reads and validates <folder>/plugin.json. Every rejection carries a reason an author can act on.
+    // Reads and validates <folder>/plugin.json. Every rejection carries a reason an author can act on, and a file the
+    // reader can't make sense of for any other reason (one that vanishes mid-read, a host name Uri refuses) is
+    // rejected too: this never throws.
     public static PluginManifestResult Read(string folder)
+    {
+        try
+        {
+            return ReadManifest(folder);
+        }
+        catch (Exception)
+        {
+            return Reject("plugin.json couldn't be read.");
+        }
+    }
+
+    private static PluginManifestResult ReadManifest(string folder)
     {
         var path = Path.Combine(folder, "plugin.json");
         if (!File.Exists(path))
         {
             return Reject("plugin.json is missing.");
+        }
+
+        if (new FileInfo(path).Length > MaximumManifestBytes)
+        {
+            return Reject("plugin.json is too large.");
         }
 
         JsonDocument document;

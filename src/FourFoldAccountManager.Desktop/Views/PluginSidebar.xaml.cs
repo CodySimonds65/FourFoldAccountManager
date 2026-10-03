@@ -335,7 +335,9 @@ public partial class PluginSidebar : UserControl
     // A plugin list row's text: the name with an optional small tag beside it, and an optional line underneath.
     private static StackPanel CreateNameBlock(TextBlock name, string? badge, string? detail, string detailBrush)
     {
-        var nameLine = new StackPanel { Orientation = Orientation.Horizontal };
+        // Wraps, so a long name beside its tag (or a long folder name) never draws over the switch.
+        var nameLine = new WrapPanel();
+        name.TextWrapping = TextWrapping.Wrap;
         nameLine.Children.Add(name);
         if (badge is not null)
         {
@@ -381,6 +383,8 @@ public partial class PluginSidebar : UserControl
             {
                 var bitmap = new BitmapImage();
                 bitmap.BeginInit();
+                // Not the shared image cache, so a hot-reloaded plugin shows its new icon.
+                bitmap.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
                 bitmap.UriSource = new Uri(path);
                 bitmap.DecodePixelWidth = 40;
