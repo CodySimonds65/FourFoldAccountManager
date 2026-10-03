@@ -1,10 +1,13 @@
 using System.Diagnostics;
 using System.IO;
 using FourFoldAccountManager.Core.Data;
+using FourFoldAccountManager.Core.Models;
+using FourFoldAccountManager.Core.Overlay;
 using FourFoldAccountManager.Core.Plugins;
 using FourFoldAccountManager.Core.Timing;
 using FourFoldAccountManager.Desktop.Plugins;
 using FourFoldAccountManager.Desktop.Plugins.Web;
+using FourFoldAccountManager.Desktop.Views;
 
 namespace FourFoldAccountManager.Desktop;
 
@@ -16,6 +19,7 @@ public partial class MainWindow : IPluginHostData
         _postedXpUpdates = [];
     private CommunityPluginManager _communityPlugins = null!;
     private string _postedAccounts = string.Empty;
+    private System.Windows.Threading.DispatcherTimer? _pluginCardRefreshTimer;
 
     // Built-in plugins first, then community plugins: the one list the strip, the plugin list and the layout policy use.
     private IReadOnlyList<IFourFoldPlugin> AllPlugins => [.. _plugins.All, .. _communityPlugins.Plugins];
@@ -31,6 +35,7 @@ public partial class MainWindow : IPluginHostData
             RefreshPluginSidebar();
             RefreshTrackerRows();
         };
+        _pluginCards.Changed += QueuePluginCardRefresh;
         _timer.StateChanged += () => _communityPlugins.PostEvent("timer.changed", null);
         PluginSidebar.DeveloperModeChangeRequested += on =>
             _ = ApplyPluginChangeAsync(
@@ -58,6 +63,63 @@ public partial class MainWindow : IPluginHostData
     {
         PluginSidebar.SetPlugins(AllPlugins);
         PluginSidebar.SetCommunityState(_communityPlugins.Rejected, _communityPlugins.StartupError);
+    }
+
+    // A plugin can set its cards many times a second; they are redrawn at most four times a second.
+    private void QueuePluginCardRefresh()
+    {
+        if (_shutdownStarted)
+        {
+            return;
+        }
+
+        if (_pluginCardRefreshTimer is null)
+        {
+            _pluginCardRefreshTimer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(250)
+            };
+            _pluginCardRefreshTimer.Tick += (_, _) =>
+            {
+                _pluginCardRefreshTimer.Stop();
+                RefreshTrackerRows();
+            };
+        }
+
+        if (!_pluginCardRefreshTimer.IsEnabled)
+        {
+            _pluginCardRefreshTimer.Start();
+        }
+    }
+
+    // Adds every switched-on community plugin's cards of this scope: global cards once, account cards per open account.
+    private void AddPluginCards(
+        OverlayAddOnScope scope,
+        Guid? accountId,
+        string accountLabel,
+        bool showOverGame,
+        List<OverlayTraySwitch> switches,
+        OverlayCardBuild build)
+    {
+        foreach (var plugin in _communityPlugins.Plugins.Where(
+                     plugin => PluginLayoutPolicy.IsEnabled(_panelSettings, plugin.Descriptor.Id)))
+        {
+            foreach (var card in plugin.Descriptor.Cards.Where(card => card.Scope == scope))
+            {
+                var key = new OverlayCardKey(
+                    OverlayAddOnKind.Plugin, accountId, PluginCardId.Create(plugin.Descriptor.Id, card.Id));
+                var content = _pluginCards.Get(key);
+                var data = new PluginCardData(
+                    card.Name,
+                    accountLabel,
+                    IsStale: !plugin.IsRunning,
+                    content?.Rows.Select(row => new PluginCardRowData(row.Label, row.Value, row.Progress)).ToArray() ?? [],
+                    content?.Summary ?? "No data yet");
+                AddOverlayCard(
+                    new OverlayAddOnDefinition(OverlayAddOnKind.Plugin, scope, card.Name, 220, 120, 150, 44),
+                    key, accountLabel, data, showOverGame, switches, build);
+            }
+        }
     }
 
     // Tells running plugins what changed since the last refresh: the account list, and anything in an account's XP
