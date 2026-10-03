@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
 using FourFoldAccountManager.Core.Models;
@@ -125,9 +126,7 @@ public sealed class PluginApiTests : IDisposable
             """{"id":1,"method":5}""",
             """{"id":1,"method":"xp.get","params":[]}""",
             """{"id":1,"method":"cards.set","params":{"cardId":"goal","rows":"x"}}""",
-            """{"id":1,"method":"cards.set","params":{"cardId":"summary","rows":[5,null,{"progress":"x"}]}}""",
-            "{\"id\":1,\"method\":\"storage.set\",\"params\":{\"key\":\"k\",\"value\":\"" +
-            new string('x', PluginApi.MaximumMessageLength) + "\"}}"
+            """{"id":1,"method":"cards.set","params":{"cardId":"summary","rows":[5,null,{"progress":"x"}]}}"""
         };
 
         foreach (var message in messages)
@@ -144,6 +143,53 @@ public sealed class PluginApiTests : IDisposable
                 document.RootElement.TryGetProperty("result", out _) || document.RootElement.TryGetProperty("error", out _),
                 $"The reply to {message[..Math.Min(message.Length, 60)]} had neither a result nor an error.");
         }
+
+        var tooLong = "{\"id\":1,\"method\":\"storage.set\",\"params\":{\"key\":\"k\",\"value\":\"" +
+                      new string('x', PluginApi.MaximumMessageLength) + "\"}}";
+        Assert.Null(await _api.HandleAsync(tooLong));
+    }
+
+    [Fact]
+    public void CallsBeyondTheInFlightLimitAreRefusedNotQueued()
+    {
+        // Resumed work waits in a queue until the test runs it, so the calls stay in flight the way a slow disk keeps
+        // them (the app resumes them on the UI thread one at a time).
+        var context = new QueuedContext();
+        var previous = SynchronizationContext.Current;
+        SynchronizationContext.SetSynchronizationContext(context);
+        try
+        {
+            var calls = Enumerable.Range(1, 100)
+                .Select(id => _api.HandleAsync(JsonSerializer.Serialize(
+                    new { id, method = "storage.set", @params = new { key = "k" + id, value = "v" } })))
+                .ToList();
+            context.RunUntil(Task.WhenAll(calls));
+
+            var codes = calls.Select(call => ErrorCode(JsonDocument.Parse(call.Result!).RootElement)).ToList();
+            Assert.Contains("limit-exceeded", codes);
+            Assert.True(codes.Count(code => code is null) <= PluginApi.MaximumCallsInFlight);
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(previous);
+        }
+    }
+
+    [Fact]
+    public async Task StorageWritesAreRateLimited()
+    {
+        for (var write = 0; write < PluginApi.MaximumStorageWritesPerMinute; write++)
+        {
+            var reply = write % 2 == 0
+                ? await Call("storage.set", new { key = "k", value = write })
+                : await Call("storage.remove", new { key = "k" });
+            Assert.Null(ErrorCode(reply));
+        }
+
+        Assert.Equal("limit-exceeded", ErrorCode(await Call("storage.set", new { key = "k", value = 0 })));
+
+        _clock.Advance(TimeSpan.FromSeconds(60));
+        Assert.Null(ErrorCode(await Call("storage.set", new { key = "k", value = 1 })));
     }
 
     private async Task<JsonElement> Call(string method, object parameters)
@@ -155,6 +201,26 @@ public sealed class PluginApiTests : IDisposable
 
     private static string? ErrorCode(JsonElement reply) =>
         reply.TryGetProperty("error", out var error) ? error.GetProperty("code").GetString() : null;
+
+    private sealed class QueuedContext : SynchronizationContext
+    {
+        private readonly BlockingCollection<(SendOrPostCallback Callback, object? State)> _queue = [];
+
+        public override void Post(SendOrPostCallback callback, object? state) => _queue.Add((callback, state));
+
+        public void RunUntil(Task task)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(30);
+            while (!task.IsCompleted)
+            {
+                Assert.True(DateTime.UtcNow < deadline, "The calls never finished.");
+                if (_queue.TryTake(out var item, 50))
+                {
+                    item.Callback(item.State);
+                }
+            }
+        }
+    }
 
     private sealed class FakeHost : IPluginHostData
     {

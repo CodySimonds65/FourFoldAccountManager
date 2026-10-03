@@ -1,5 +1,4 @@
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -14,6 +13,15 @@ namespace FourFoldAccountManager.Desktop.Plugins.Web;
 // showing (its web view waits in a small invisible parking host), so its cards stay up to date.
 public sealed class WebPlugin : IFourFoldPlugin, IDisposable
 {
+    // A page can post messages or ask for files in a tight loop, faster than the UI thread can answer, which freezes
+    // the whole app (and again on every launch). More than this many events, or this much message text, within one
+    // second stops the plugin; its Reload button starts it fresh.
+    private const int MaximumEventsPerSecond = 2_000;
+    private const int MaximumMessageCharactersPerSecond = 8 * 1024 * 1024;
+
+    // Serving a file reads it whole on the UI thread, so a larger one is treated as missing.
+    private const long MaximumFileBytes = 8 * 1024 * 1024;
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly PluginTrust _trust;
@@ -32,6 +40,11 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
     // start is in flight, so a second start for the same generation does nothing.
     private int _generation;
     private int _startingGeneration = -1;
+
+    // The current one-second window of the flood limits.
+    private long _windowStart;
+    private int _windowEvents;
+    private long _windowCharacters;
 
     public WebPlugin(
         PluginManifest manifest,
@@ -118,7 +131,8 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
                 return;
             }
 
-            view = new WebView2CompositionControl();
+            // The panel's colour, so there is no white flash before the page's own background loads.
+            view = new WebView2CompositionControl { DefaultBackgroundColor = System.Drawing.Color.FromArgb(0x17, 0x1D, 0x24) };
             (_root.IsLoaded ? _viewHost : _parkingHost).Children.Add(view);
             await view.EnsureCoreWebView2Async(environment);
             if (generation != _generation)
@@ -130,7 +144,6 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             var developer = _trust == PluginTrust.Developer;
             core.Settings.AreDevToolsEnabled = developer;
             core.Settings.AreDefaultContextMenusEnabled = developer;
-            core.Settings.AreBrowserAcceleratorKeysEnabled = developer;
             core.Settings.AreHostObjectsAllowed = false;
             core.Settings.IsPasswordAutosaveEnabled = false;
             core.Settings.IsGeneralAutofillEnabled = false;
@@ -152,8 +165,27 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
                 args.Handled = true;
             };
             core.LaunchingExternalUriScheme += (_, args) => args.Cancel = true;
+            core.ScreenCaptureStarting += (_, args) => args.Cancel = true;
+            // Script dialogs are off, and an unanswered "leave this page?" prompt would make F5 do nothing, so a
+            // page can't use one to stop the user reloading it. The browser's own keys (F5 included) stay on.
+            core.ScriptDialogOpening += (_, args) =>
+            {
+                if (args.Kind == CoreWebView2ScriptDialogKind.Beforeunload)
+                {
+                    args.Accept();
+                }
+            };
             core.WebMessageReceived += OnWebMessageReceived;
-            core.ProcessFailed += (_, _) => ShowStopped();
+            // The GPU and utility processes recover on their own and are shared with other plugins' pages.
+            core.ProcessFailed += (_, args) =>
+            {
+                if (args.ProcessFailedKind is CoreWebView2ProcessFailedKind.BrowserProcessExited
+                    or CoreWebView2ProcessFailedKind.RenderProcessExited
+                    or CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
+                {
+                    ShowStopped();
+                }
+            };
             await core.AddScriptToExecuteOnDocumentCreatedAsync(PluginSdk.Build(Manifest));
             if (generation != _generation)
             {
@@ -161,6 +193,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             }
 
             _view = view;
+            ResetFloodWindow();
             // The panel may have been shown or hidden while the view was starting.
             MoveView(_root.IsLoaded ? _viewHost : _parkingHost);
             _stoppedNotice.Visibility = Visibility.Collapsed;
@@ -204,9 +237,10 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         {
             _view?.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(new { @event = name, data }, Json));
         }
-        catch (Exception exception) when (exception is InvalidOperationException or ObjectDisposedException or COMException)
+        catch (Exception)
         {
-            // The page went away between the check and the post.
+            // The page went away between the check and the post, or the data can't be written as JSON (a NaN, say).
+            // An event that can't be sent must never take the app down.
         }
     }
 
@@ -246,6 +280,27 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         view.Dispose();
     }
 
+    // Counts one page event (a request, or a message of the given length) and says whether the page has now gone past
+    // a flood limit within the current second.
+    private bool IsFlooding(int messageCharacters = 0)
+    {
+        if (Environment.TickCount64 - _windowStart >= 1000)
+        {
+            ResetFloodWindow();
+        }
+
+        _windowEvents++;
+        _windowCharacters += messageCharacters;
+        return _windowEvents > MaximumEventsPerSecond || _windowCharacters > MaximumMessageCharactersPerSecond;
+    }
+
+    private void ResetFloodWindow()
+    {
+        _windowStart = Environment.TickCount64;
+        _windowEvents = 0;
+        _windowCharacters = 0;
+    }
+
     private bool IsOwnOrigin(string value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri) && PluginNetworkPolicy.IsOwnOrigin(uri, Manifest.Id);
 
@@ -266,6 +321,23 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
     {
         try
         {
+            // Plugins get no workers. A service worker would answer the page's requests itself, out of reach of this
+            // handler, and worker requests are raised on every web view in the shared environment, so every plugin's
+            // handler refuses them. This comes before the flood count so another page's traffic never counts here.
+            if (args.RequestedSourceKind != CoreWebView2WebResourceRequestSourceKinds.Document ||
+                args.Request.Headers.Contains("Service-Worker"))
+            {
+                args.Response = Respond(environment, null, 403, "Blocked");
+                return;
+            }
+
+            if (IsFlooding())
+            {
+                args.Response = Respond(environment, null, 403, "Blocked");
+                ShowStopped();
+                return;
+            }
+
             if (!Uri.TryCreate(args.Request.Uri, UriKind.Absolute, out var uri))
             {
                 args.Response = Respond(environment, null, 403, "Blocked");
@@ -302,7 +374,11 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         {
             try
             {
-                return Respond(environment, new MemoryStream(File.ReadAllBytes(path)), 200, "OK", type);
+                // A file over the limit falls through to the 404, the same as a missing one.
+                if (new FileInfo(path).Length <= MaximumFileBytes)
+                {
+                    return Respond(environment, new MemoryStream(File.ReadAllBytes(path)), 200, "OK", type);
+                }
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
@@ -326,13 +402,26 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
     {
         try
         {
+            // A late event from a view that was stopped must neither act nor be answered into a newer view.
+            if (!ReferenceEquals(sender, _view?.CoreWebView2))
+            {
+                return;
+            }
+
+            var message = args.WebMessageAsJson;
+            if (IsFlooding(message.Length))
+            {
+                ShowStopped();
+                return;
+            }
+
             if (!IsOwnOrigin(args.Source))
             {
                 return;
             }
 
             var view = _view;
-            var reply = await _api.HandleAsync(args.WebMessageAsJson);
+            var reply = await _api.HandleAsync(message);
             // A reply for a page that was stopped or reloaded while the call ran is dropped.
             if (reply is not null && view is not null && ReferenceEquals(view, _view))
             {

@@ -135,7 +135,7 @@ public static class PluginNetworkPolicy
         var connect = Prefix(connectHttps) + Prefix(wssSites);
         return "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; " +
                $"img-src 'self' data:{Prefix(images)}; connect-src 'self'{connect}; " +
-               "frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";
+               "frame-src 'none'; worker-src 'none'; webrtc 'block'; object-src 'none'; base-uri 'none'; form-action 'none'";
 
         static string Prefix(string value) => value.Length == 0 ? string.Empty : " " + value;
     }

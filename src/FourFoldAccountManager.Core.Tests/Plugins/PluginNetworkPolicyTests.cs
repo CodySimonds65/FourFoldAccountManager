@@ -87,24 +87,24 @@ public sealed class PluginNetworkPolicyTests
     {
         var policy = PluginNetworkPolicy.BuildContentSecurityPolicy(Manifest(), PluginTrust.Developer);
         Assert.Equal(
-            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://wiki.example.com https://api.example.com:8443; connect-src 'self' https://wiki.example.com https://api.example.com:8443 wss://wiki.example.com wss://api.example.com:8443; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://wiki.example.com https://api.example.com:8443; connect-src 'self' https://wiki.example.com https://api.example.com:8443 wss://wiki.example.com wss://api.example.com:8443; frame-src 'none'; worker-src 'none'; webrtc 'block'; object-src 'none'; base-uri 'none'; form-action 'none'",
             policy);
 
         var anySite = PluginNetworkPolicy.BuildContentSecurityPolicy(Manifest(anySite: true), PluginTrust.Verified);
         Assert.Equal(
-            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; connect-src 'self' https: wss://wiki.example.com wss://api.example.com:8443; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https:; connect-src 'self' https: wss://wiki.example.com wss://api.example.com:8443; frame-src 'none'; worker-src 'none'; webrtc 'block'; object-src 'none'; base-uri 'none'; form-action 'none'",
             anySite);
 
         var untrusted = PluginNetworkPolicy.BuildContentSecurityPolicy(Manifest(anySite: true), PluginTrust.Standard);
         Assert.Equal(
-            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://wiki.example.com https://api.example.com:8443; connect-src 'self' https://wiki.example.com https://api.example.com:8443 wss://wiki.example.com wss://api.example.com:8443; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://wiki.example.com https://api.example.com:8443; connect-src 'self' https://wiki.example.com https://api.example.com:8443 wss://wiki.example.com wss://api.example.com:8443; frame-src 'none'; worker-src 'none'; webrtc 'block'; object-src 'none'; base-uri 'none'; form-action 'none'",
             untrusted);
 
         var noSites = new PluginManifest("cody.goal-tracker", "Goal tracker", "Goals", "1.0.0", "Cody", "", 1,
             "index.html", null, [], false, []);
         var nositespolicy = PluginNetworkPolicy.BuildContentSecurityPolicy(noSites, PluginTrust.Developer);
         Assert.Equal(
-            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'",
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-src 'none'; worker-src 'none'; webrtc 'block'; object-src 'none'; base-uri 'none'; form-action 'none'",
             nositespolicy);
     }
 

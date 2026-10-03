@@ -17,14 +17,24 @@ internal sealed class PluginApi(
 {
     public const int MaximumMessageLength = 512 * 1024;
 
+    // Calls still waiting on a reply (storage, a web request). Without a cap a plugin could queue thousands of
+    // half-megabyte writes and grow the app's memory without bound.
+    public const int MaximumCallsInFlight = 32;
+
+    // Each write rewrites the plugin's whole storage file, so writes are limited, not just their size.
+    public const int MaximumStorageWritesPerMinute = 120;
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private static readonly JsonElement EmptyObject = JsonDocument.Parse("{}").RootElement.Clone();
+    private readonly Queue<long> _storageWrites = new();
+    private int _callsInFlight;
     private long? _lastOpened;
 
     // Returns the reply JSON, or null when the message can't be answered (too large, not JSON, or no id).
     public async Task<string?> HandleAsync(string messageJson)
     {
         JsonElement id = default;
+        var counted = false;
         try
         {
             if (messageJson.Length > MaximumMessageLength)
@@ -41,6 +51,12 @@ internal sealed class PluginApi(
             }
 
             id = idElement.Clone();
+            counted = true;
+            if (Interlocked.Increment(ref _callsInFlight) > MaximumCallsInFlight)
+            {
+                return Error(id, "limit-exceeded", "Too many requests at once.");
+            }
+
             var method = root.TryGetProperty("method", out var methodElement) &&
                          methodElement.ValueKind == JsonValueKind.String
                 ? methodElement.GetString()
@@ -64,6 +80,13 @@ internal sealed class PluginApi(
         catch (Exception)
         {
             return Error(id, "unavailable", "FourFold couldn't complete the request.");
+        }
+        finally
+        {
+            if (counted)
+            {
+                Interlocked.Decrement(ref _callsInFlight);
+            }
         }
     }
 
@@ -97,10 +120,14 @@ internal sealed class PluginApi(
                     throw new PluginApiException("invalid-argument", "storage.set needs a value.");
                 }
 
-                await storage.SetAsync(Text(parameters, "key"), value);
+                var setKey = Text(parameters, "key");
+                TakeStorageWriteSlot();
+                await storage.SetAsync(setKey, value);
                 return null;
             case "storage.remove":
-                await storage.RemoveAsync(Text(parameters, "key"));
+                var removeKey = Text(parameters, "key");
+                TakeStorageWriteSlot();
+                await storage.RemoveAsync(removeKey);
                 return null;
             case "cards.set":
                 cards.Set(CardKey(parameters), CardContent(parameters));
@@ -117,6 +144,27 @@ internal sealed class PluginApi(
                 return null;
             default:
                 throw new PluginApiException("invalid-argument", $"Unknown method '{method}'.");
+        }
+    }
+
+    // A rolling minute on the same monotonic clock as openExternal. A refused call isn't recorded, so it doesn't count.
+    private void TakeStorageWriteSlot()
+    {
+        lock (_storageWrites)
+        {
+            var now = clock.GetTimestamp();
+            while (_storageWrites.Count > 0 &&
+                   clock.GetElapsedTime(_storageWrites.Peek(), now) >= TimeSpan.FromSeconds(60))
+            {
+                _storageWrites.Dequeue();
+            }
+
+            if (_storageWrites.Count >= MaximumStorageWritesPerMinute)
+            {
+                throw new PluginApiException("limit-exceeded", "A plugin can write to its storage 120 times a minute.");
+            }
+
+            _storageWrites.Enqueue(now);
         }
     }
 
@@ -183,8 +231,13 @@ internal sealed class PluginApi(
         {
             foreach (var row in rowsElement.EnumerateArray())
             {
+                if (row.ValueKind != JsonValueKind.Object)
+                {
+                    throw new PluginApiException("invalid-argument", "Every row must be an object.");
+                }
+
                 double? progress = null;
-                if (row.ValueKind == JsonValueKind.Object && row.TryGetProperty("progress", out var progressElement) &&
+                if (row.TryGetProperty("progress", out var progressElement) &&
                     progressElement.ValueKind != JsonValueKind.Null)
                 {
                     var number = progressElement.ValueKind == JsonValueKind.Number
@@ -207,6 +260,12 @@ internal sealed class PluginApi(
         {
             throw new PluginApiException(
                 "limit-exceeded", "A card takes a summary of up to 40 characters and up to 8 rows of up to 40 characters.");
+        }
+
+        // A line break or other control character would let a card's text pose as a different row or hide its end.
+        if (summary.Any(char.IsControl) || rows.Any(row => row.Label.Any(char.IsControl) || row.Value.Any(char.IsControl)))
+        {
+            throw new PluginApiException("invalid-argument", "A card's text can't contain control characters.");
         }
 
         return new PluginCardContent(summary, rows);
