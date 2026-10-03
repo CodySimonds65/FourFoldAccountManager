@@ -1129,6 +1129,12 @@ public partial class MainWindow : Window
     // Opens the stats window, or brings an open one to the front.
     private void OpenStatsWindow(bool activate)
     {
+        // A window opened while FourFold is shutting down would never be closed and would keep the app running.
+        if (_shutdownStarted)
+        {
+            return;
+        }
+
         if (_statsWindow is { } open)
         {
             if (open.WindowState == WindowState.Minimized)
@@ -3104,19 +3110,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task SaveSettingsAsync()
-    {
-        await _settingsMutationGate.WaitAsync();
-        try
-        {
-            await _settingsStore.SaveAsync(_panelSettings);
-        }
-        finally
-        {
-            _settingsMutationGate.Release();
-        }
-    }
-
     private async Task ReloadLocalDataAfterFailureAsync()
     {
         try
@@ -3239,15 +3232,20 @@ public partial class MainWindow : Window
             // typed just before closing reaches disk instead of being lost.
             PluginSidebar.FlushPendingXpTarget();
             // Keep the stats window marked open, with its current spot, so it reopens there next launch.
+            StatsWindowPlacement? statsPlacement = null;
             if (_statsWindow is { } statsWindow)
             {
                 _statsWindow = null;
-                _panelSettings = _panelSettings with { StatsWindow = statsWindow.CapturePlacement(isOpen: true) };
+                statsPlacement = statsWindow.CapturePlacement(isOpen: true);
                 statsWindow.CloseForShutdown();
             }
+
             try
             {
-                await SaveSettingsAsync();
+                // Through the settings gate, so a save still in flight (such as the XP target just flushed)
+                // can't overwrite the stats window placement.
+                await UpdateSettingsAsync(settings =>
+                    statsPlacement is null ? settings : settings with { StatsWindow = statsPlacement });
             }
             catch
             {
