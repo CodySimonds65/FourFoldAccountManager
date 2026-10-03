@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using FourFoldAccountManager.Core.Plugins;
 using Xunit;
@@ -36,17 +37,54 @@ public sealed class PluginStorageTests : IDisposable
     {
         var storage = new PluginStorage(FilePath);
         await storage.SetAsync("kept", Json("\"safe\""));
+        var tooBig = Json("\"" + new string('x', PluginStorage.MaximumBytes) + "\"");
 
-        // Create a nested value with many numbers to make indentation matter and exceed the cap
-        var largeArray = Json("[" + string.Join(",", Enumerable.Range(1, 70000)) + "]");
-        var error = await Assert.ThrowsAsync<PluginApiException>(() => storage.SetAsync("big", largeArray));
+        var error = await Assert.ThrowsAsync<PluginApiException>(() => storage.SetAsync("big", tooBig));
 
         Assert.Equal("limit-exceeded", error.Code);
         Assert.Equal("safe", (await new PluginStorage(FilePath).GetAsync("kept"))!.Value.GetString());
         Assert.Null(await new PluginStorage(FilePath).GetAsync("big"));
+    }
 
-        // Verify the file size is actually within the cap
+    [Fact]
+    public async Task AValueThatOnlyFitsWhenCompactIsRejected()
+    {
+        // A JSON array of 40,000 ones is ~80 KB compact (under cap) but ~320 KB indented (over cap).
+        // This test proves the size check measures indented JSON, not compact.
+        var json = "[" + string.Join(",", Enumerable.Repeat("1", 40000)) + "]";
+        var compactBytes = Encoding.UTF8.GetByteCount(json);
+        Assert.True(compactBytes < PluginStorage.MaximumBytes,
+            $"Compact size {compactBytes} must be under {PluginStorage.MaximumBytes} to test the boundary");
+
+        var storage = new PluginStorage(FilePath);
+        await storage.SetAsync("kept", Json("\"safe\""));
+        var largeArray = Json(json);
+
+        var error = await Assert.ThrowsAsync<PluginApiException>(() => storage.SetAsync("list", largeArray));
+
+        Assert.Equal("limit-exceeded", error.Code);
+        Assert.Equal("safe", (await new PluginStorage(FilePath).GetAsync("kept"))!.Value.GetString());
+        Assert.Null(await new PluginStorage(FilePath).GetAsync("list"));
+    }
+
+    [Fact]
+    public async Task AnAllowedWriteStaysWithinTheCapOnDisk()
+    {
+        // A JSON array of 20,000 ones is ~160 KB indented (under cap).
+        var json = "[" + string.Join(",", Enumerable.Repeat("1", 20000)) + "]";
+        var storage = new PluginStorage(FilePath);
+
+        var largeArray = Json(json);
+        await storage.SetAsync("list", largeArray);
+
+        // Verify the file size is within the cap
         Assert.True(new FileInfo(FilePath).Length <= PluginStorage.MaximumBytes);
+
+        // Verify the data persists and reads back correctly
+        var loaded = await new PluginStorage(FilePath).GetAsync("list");
+        Assert.NotNull(loaded);
+        var array = loaded.Value.EnumerateArray().ToList();
+        Assert.Equal(20000, array.Count);
     }
 
     [Theory]
