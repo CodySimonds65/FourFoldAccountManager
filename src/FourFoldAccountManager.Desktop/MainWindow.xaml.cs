@@ -133,11 +133,7 @@ public partial class MainWindow : Window
         _browserSessions.NavigationBlocked += BrowserSessions_NavigationBlocked;
 
         AccountsListBox.ItemsSource = _accounts;
-        AddAccountButton.IsEnabled = false;
-        SettingsButton.IsEnabled = false;
-        SecondMonitorButton.IsEnabled = false;
-        LayoutPicker.IsEnabled = false;
-        LaunchVisibleButton.IsEnabled = false;
+        SetManagerEnabled(false);
         LayoutPicker.ItemsSource = new[]
         {
             new LayoutChoice(PanelLayout.OneByTwo, "1 × 2 · Side by side"),
@@ -282,11 +278,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            foreach (var account in await _accountStore.LoadAsync())
-            {
-                _accounts.Add(account);
-            }
-
+            ReplaceAccounts(await _accountStore.LoadAsync());
             _panelSettings = await _settingsStore.LoadAsync();
             try
             {
@@ -317,12 +309,7 @@ public partial class MainWindow : Window
             }
             await _browserSessions.SetGameScalingAsync(_panelSettings.FillGameToPanel);
             _isReady = true;
-            AddAccountButton.IsEnabled = true;
-            SettingsButton.IsEnabled = true;
-            SecondMonitorButton.IsEnabled = true;
-            LayoutPicker.IsEnabled = true;
-            LaunchVisibleButton.IsEnabled = true;
-            TogglePluginsButton.IsEnabled = true;
+            SetManagerEnabled(true);
             LayoutPicker.SelectedValue = _panelSettings.Layout;
             AccountsListBox.SelectedIndex = _accounts.Count > 0 ? 0 : -1;
             UpdateAccountActions();
@@ -339,26 +326,27 @@ public partial class MainWindow : Window
         }
         catch (InvalidDataException exception)
         {
-            AddAccountButton.IsEnabled = false;
-            SettingsButton.IsEnabled = false;
-            SecondMonitorButton.IsEnabled = false;
-            LayoutPicker.IsEnabled = false;
-            LaunchVisibleButton.IsEnabled = false;
-            TogglePluginsButton.IsEnabled = false;
+            SetManagerEnabled(false);
             GlobalStatusText.Text = "Account data could not be loaded. The original local files were left unchanged.";
             ShowError(exception.Message, "FourFold profile data");
         }
         catch
         {
-            AddAccountButton.IsEnabled = false;
-            SettingsButton.IsEnabled = false;
-            SecondMonitorButton.IsEnabled = false;
-            LayoutPicker.IsEnabled = false;
-            LaunchVisibleButton.IsEnabled = false;
-            TogglePluginsButton.IsEnabled = false;
+            SetManagerEnabled(false);
             GlobalStatusText.Text = "The manager could not load local profile data.";
             ShowError("The local account or panel settings could not be loaded.");
         }
+    }
+
+    // The manager controls stay off until local data has loaded, and after it fails to.
+    private void SetManagerEnabled(bool enabled)
+    {
+        AddAccountButton.IsEnabled = enabled;
+        SettingsButton.IsEnabled = enabled;
+        SecondMonitorButton.IsEnabled = enabled;
+        LayoutPicker.IsEnabled = enabled;
+        LaunchVisibleButton.IsEnabled = enabled;
+        TogglePluginsButton.IsEnabled = enabled;
     }
 
     private async Task CheckForUpdatesAsync()
@@ -665,7 +653,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            RestoreAccountOrder(previous);
+            ReplaceAccounts(previous);
             AccountsListBox.SelectedItem = _accounts.FirstOrDefault(item => item.Id == account.Id);
             ShowError("The account order could not be saved.");
         }
@@ -828,7 +816,8 @@ public partial class MainWindow : Window
 
     private async void LayoutPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (!_isReady || LayoutPicker.SelectedValue is not PanelLayout layout || layout == _panelSettings.Layout)
+        if (!_isReady || LayoutPicker.SelectedItem is not LayoutChoice(var layout, var label) ||
+            layout == _panelSettings.Layout)
         {
             return;
         }
@@ -839,7 +828,7 @@ public partial class MainWindow : Window
                 PanelLayoutPolicy.WithLayout(currentSettings, layout));
             await RebuildPanelAsync(closeExistingViews: false);
             FullscreenOverlayTray.RevealEdgeTab();
-            GlobalStatusText.Text = $"Layout changed to {FormatLayout(layout)}. Slot assignments were preserved.";
+            GlobalStatusText.Text = $"Layout changed to {label}. Slot assignments were preserved.";
         }
         catch
         {
@@ -1685,9 +1674,7 @@ public partial class MainWindow : Window
     private Guid? AccountIdFor(int slotIndex) =>
         _panelSettings.Layout == PanelLayout.Tabs
             ? PanelTabPolicy.AccountIdAt(_panelSettings, slotIndex)
-            : slotIndex >= 0 && slotIndex < _panelSettings.SlotAccountIds.Count
-                ? _panelSettings.SlotAccountIds[slotIndex]
-                : null;
+            : _panelSettings.SlotAccountIds.ElementAtOrDefault(slotIndex);
 
     private void UpdateAllSlotPresentations()
     {
@@ -1899,11 +1886,7 @@ public partial class MainWindow : Window
         SettingsButton.IsEnabled = !isActive && _isReady;
         AdjustViewsButton.IsEnabled = !isActive && _isReady;
         AccountsListBox.IsEnabled = !isActive;
-        RenameAccountButton.IsEnabled = !isActive && SelectedAccount is not null;
-        FavoriteAccountButton.IsEnabled = !isActive && SelectedAccount is not null;
-        MoveUpButton.IsEnabled = !isActive && SelectedAccount is not null && AccountsListBox.SelectedIndex > 0;
-        MoveDownButton.IsEnabled = !isActive && SelectedAccount is not null && AccountsListBox.SelectedIndex < _accounts.Count - 1;
-        RemoveAccountButton.IsEnabled = !isActive && SelectedAccount is not null;
+        UpdateAccountActions();
 
         foreach (var slot in _slotCards)
         {
@@ -2154,14 +2137,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var changed = false;
-            await UpdateSettingsAsync(settings =>
-            {
-                var next = PanelTabPolicy.Add(settings, accountId);
-                changed = !ReferenceEquals(next, settings);
-                return next;
-            });
-            if (!changed)
+            if (!await UpdateSettingsIfChangedAsync(settings => PanelTabPolicy.Add(settings, accountId)))
             {
                 // The account already has a tab.
                 return;
@@ -2185,14 +2161,7 @@ public partial class MainWindow : Window
 
         try
         {
-            var changed = false;
-            await UpdateSettingsAsync(settings =>
-            {
-                var next = PanelTabPolicy.RemoveAccount(settings, accountId);
-                changed = !ReferenceEquals(next, settings);
-                return next;
-            });
-            if (!changed)
+            if (!await UpdateSettingsIfChangedAsync(settings => PanelTabPolicy.RemoveAccount(settings, accountId)))
             {
                 // A stale click on a tab that is already gone.
                 return;
@@ -2901,12 +2870,8 @@ public partial class MainWindow : Window
         }
     }
 
-    private IReadOnlyList<SlotAccountChoice> CreateSlotChoices()
-    {
-        var choices = new List<SlotAccountChoice> { new(null, "Choose account") };
-        choices.AddRange(_accounts.Select(account => new SlotAccountChoice(account.Id, account.Label)));
-        return choices;
-    }
+    private IReadOnlyList<SlotAccountChoice> CreateSlotChoices() =>
+        [new(null, "Choose account"), .. _accounts.Select(account => new SlotAccountChoice(account.Id, account.Label))];
 
     private async Task RefreshSlotPickersAsync()
     {
@@ -3092,8 +3057,7 @@ public partial class MainWindow : Window
                 return new LeaderboardProfile(account.RankingPlayerId ?? 0,
                     account.RankingUsername?.Trim() ?? string.Empty);
             }).Where(profile => profile.PlayerId > 0 && !string.IsNullOrWhiteSpace(profile.Username))
-                .GroupBy(profile => profile.PlayerId)
-                .Select(group => group.First()).ToArray();
+                .DistinctBy(profile => profile.PlayerId).ToArray();
             var linkedIds = profiles.Select(profile => profile.PlayerId).ToHashSet();
             var activeIds = activeProfiles.Values.Select(profile => profile.PlayerId)
                 .Where(linkedIds.Contains).Distinct().ToArray();
@@ -3107,6 +3071,19 @@ public partial class MainWindow : Window
 
     private Task<PanelSettings> UpdateSettingsAsync(Func<PanelSettings, PanelSettings> update) =>
         UpdateSettingsAsync(currentSettings => Task.FromResult(update(currentSettings)));
+
+    // A policy returns the settings it was given when there is nothing to change.
+    private async Task<bool> UpdateSettingsIfChangedAsync(Func<PanelSettings, PanelSettings> update)
+    {
+        var changed = false;
+        await UpdateSettingsAsync(settings =>
+        {
+            var next = update(settings);
+            changed = !ReferenceEquals(next, settings);
+            return next;
+        });
+        return changed;
+    }
 
     private async Task<PanelSettings> UpdateSettingsAsync(
         Func<PanelSettings, Task<PanelSettings>> update,
@@ -3151,12 +3128,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            _accounts.Clear();
-            foreach (var account in await _accountStore.LoadAsync())
-            {
-                _accounts.Add(account);
-            }
-
+            ReplaceAccounts(await _accountStore.LoadAsync());
             await _settingsMutationGate.WaitAsync();
             try
             {
@@ -3185,7 +3157,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void RestoreAccountOrder(IReadOnlyList<AccountProfile> accounts)
+    private void ReplaceAccounts(IEnumerable<AccountProfile> accounts)
     {
         _accounts.Clear();
         foreach (var account in accounts)
@@ -3205,12 +3177,12 @@ public partial class MainWindow : Window
     private void UpdateAccountActions()
     {
         var selected = SelectedAccount;
-        var hasSelection = selected is not null;
-        RenameAccountButton.IsEnabled = hasSelection;
-        FavoriteAccountButton.IsEnabled = hasSelection;
-        RemoveAccountButton.IsEnabled = hasSelection;
-        MoveUpButton.IsEnabled = hasSelection && AccountsListBox.SelectedIndex > 0;
-        MoveDownButton.IsEnabled = hasSelection && AccountsListBox.SelectedIndex < _accounts.Count - 1;
+        var canEdit = selected is not null && !_batchLaunchInProgress;
+        RenameAccountButton.IsEnabled = canEdit;
+        FavoriteAccountButton.IsEnabled = canEdit;
+        RemoveAccountButton.IsEnabled = canEdit;
+        MoveUpButton.IsEnabled = canEdit && AccountsListBox.SelectedIndex > 0;
+        MoveDownButton.IsEnabled = canEdit && AccountsListBox.SelectedIndex < _accounts.Count - 1;
         FavoriteAccountButton.Content = selected?.IsFavorite == true ? "Unfavorite" : "Favorite";
         AccountCountText.Text = _accounts.Count == 1 ? "1 profile" : $"{_accounts.Count} profiles";
     }
@@ -3370,19 +3342,6 @@ public partial class MainWindow : Window
         _allowClose = true;
         Close();
     }
-
-    private static string FormatLayout(PanelLayout layout) => layout switch
-    {
-        PanelLayout.OneByTwo => "1 × 2",
-        PanelLayout.TwoByOne => "2 × 1",
-        PanelLayout.TwoByTwo => "2 × 2",
-        PanelLayout.TwoByThree => "2 × 3",
-        PanelLayout.OneByThree => "1 × 3 · One above three",
-        PanelLayout.OneByTwoVertical => "1 × 2 vertical",
-        PanelLayout.OneByOne => "1 × 1",
-        PanelLayout.Tabs => "Tabs",
-        _ => "Unknown"
-    };
 
     private enum StatusTone { Neutral, Info, Success, Warning, Error }
 
