@@ -37,6 +37,11 @@ public static class OverlayAddOnCatalog
 
     public static int IndexOf(OverlayAddOnKind kind)
     {
+        if (kind == OverlayAddOnKind.Plugin)
+        {
+            return All.Count;
+        }
+
         for (var index = 0; index < All.Count; index++)
         {
             if (All[index].Kind == kind)
