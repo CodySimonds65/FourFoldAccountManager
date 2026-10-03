@@ -8,6 +8,14 @@ internal static class PluginSdk
 {
     private const string Script = """
         (() => {
+          // Best effort: the content security policy's webrtc 'block' is the intended lock, but this browser doesn't
+          // enforce it yet, and the hub review (part 3) rejects plugins that use WebRTC.
+          for (const name of ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel', 'RTCSessionDescription', 'RTCIceCandidate']) {
+            try {
+              delete window[name];
+              Object.defineProperty(window, name, { value: undefined, configurable: false, writable: false });
+            } catch {}
+          }
           const info = __FOURFOLD_INFO__;
           const pending = new Map();
           const listeners = new Map();
