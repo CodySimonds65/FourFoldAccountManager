@@ -49,7 +49,8 @@ public partial class ToolsWindow : Window
         WindowStartupLocation = WindowStartupLocation.Manual;
         Left = placement.Left;
         Top = placement.Top;
-        Width = placement.Width;
+        // A placement saved before the strip existed can be narrower than the strip and panel need.
+        Width = Math.Max(placement.Width, MinWidth);
         Height = placement.Height;
         _maximizeOnOpen = placement.IsMaximized;
     }

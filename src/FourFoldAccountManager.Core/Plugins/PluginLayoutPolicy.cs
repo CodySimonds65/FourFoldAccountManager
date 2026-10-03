@@ -1,0 +1,103 @@
+using FourFoldAccountManager.Core.Models;
+
+namespace FourFoldAccountManager.Core.Plugins;
+
+public static class PluginLayoutPolicy
+{
+    // Room for the built-in plugins plus every hub plugin a user is likely to install.
+    public const int MaximumIds = 256;
+
+    // Known plugins in saved order; a known plugin missing from the saved order goes last, in the order given.
+    public static IReadOnlyList<PluginDescriptor> Ordered(PanelSettings settings, IReadOnlyList<PluginDescriptor> known)
+    {
+        var rank = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var id in settings.PluginOrder)
+        {
+            rank.TryAdd(id, rank.Count);
+        }
+
+        return known
+            .Select((plugin, index) => (plugin, index, rank: rank.GetValueOrDefault(plugin.Id, int.MaxValue)))
+            .OrderBy(entry => entry.rank)
+            .ThenBy(entry => entry.index)
+            .Select(entry => entry.plugin)
+            .ToArray();
+    }
+
+    public static bool IsEnabled(PanelSettings settings, string id) =>
+        !settings.DisabledPlugins.Contains(id, StringComparer.Ordinal);
+
+    public static bool IsCardSuppressed(PanelSettings settings, OverlayAddOnKind kind) =>
+        BuiltInPlugins.All.Any(plugin => plugin.OverlayCards.Contains(kind) && !IsEnabled(settings, plugin.Id));
+
+    public static bool IsShortcutSuppressed(PanelSettings settings, GlobalShortcutAction action) =>
+        BuiltInPlugins.All.Any(plugin => plugin.Shortcuts.Contains(action) && !IsEnabled(settings, plugin.Id));
+
+    // The saved open plugin when it is known and switched on; otherwise null.
+    public static PluginDescriptor? OpenPlugin(PanelSettings settings, IReadOnlyList<PluginDescriptor> known) =>
+        known.FirstOrDefault(plugin => plugin.Id == settings.OpenPlugin && IsEnabled(settings, plugin.Id));
+
+    // Returns the same instance when nothing changes, so callers can skip the save.
+    public static PanelSettings WithEnabled(PanelSettings settings, string id, bool enabled)
+    {
+        if (IsEnabled(settings, id) == enabled)
+        {
+            return settings;
+        }
+
+        var others = settings.DisabledPlugins.Where(other => other != id);
+        var next = settings with
+        {
+            DisabledPlugins = Array.AsReadOnly((enabled ? others : others.Append(id)).ToArray())
+        };
+        // Switching off the open plugin closes the panel.
+        return !enabled && settings.OpenPlugin == id ? next with { PluginsSidebarExpanded = false } : next;
+    }
+
+    // Moves a plugin to index among the strip's icons (known, switched-on plugins, in order). Every other saved id
+    // keeps its slot: switched-off plugins, and plugins that aren't loaded right now.
+    public static PanelSettings WithMoved(
+        PanelSettings settings, IReadOnlyList<PluginDescriptor> known, string id, int index)
+    {
+        var knownIds = known.Select(plugin => plugin.Id).ToHashSet(StringComparer.Ordinal);
+        var full = settings.PluginOrder
+            .Concat(known.Select(plugin => plugin.Id)
+                .Where(knownId => !settings.PluginOrder.Contains(knownId, StringComparer.Ordinal)))
+            .ToList();
+        bool OnStrip(string other) => knownIds.Contains(other) && IsEnabled(settings, other);
+
+        var strip = full.Where(OnStrip).ToList();
+        if (!strip.Remove(id))
+        {
+            return settings;
+        }
+
+        strip.Insert(Math.Clamp(index, 0, strip.Count), id);
+        var order = new List<string>(full.Count);
+        var nextStripId = 0;
+        foreach (var other in full)
+        {
+            order.Add(OnStrip(other) ? strip[nextStripId++] : other);
+        }
+
+        return order.SequenceEqual(settings.PluginOrder)
+            ? settings
+            : settings with { PluginOrder = Array.AsReadOnly(order.ToArray()) };
+    }
+
+    public static PanelSettings WithOpened(PanelSettings settings, string id) =>
+        settings.OpenPlugin == id && settings.PluginsSidebarExpanded
+            ? settings
+            : settings with { OpenPlugin = id, PluginsSidebarExpanded = true };
+
+    public static PanelSettings WithClosed(PanelSettings settings) =>
+        settings.PluginsSidebarExpanded ? settings with { PluginsSidebarExpanded = false } : settings;
+
+    // Load-time cleanup: blank ids and repeats go (the first wins), and at most 256 ids stay.
+    public static IReadOnlyList<string> CleanIds(IReadOnlyList<string>? ids) =>
+        Array.AsReadOnly((ids ?? Array.Empty<string>())
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .Take(MaximumIds)
+            .ToArray());
+}

@@ -6,5 +6,7 @@ public enum OverlayAddOnKind
     Xp = 0,
     Timer = 1,
     Stats = 2,
-    XpCalc = 3
+    XpCalc = 3,
+    // A community plugin's card; OverlayCardPlacement.PluginCard says which.
+    Plugin = 4
 }

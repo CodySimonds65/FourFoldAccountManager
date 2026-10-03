@@ -30,6 +30,9 @@ public partial class FullscreenOverlayTray : UserControl
     private bool _isFullScreen;
     private bool _isEditing;
     private bool _ignoreEdgeTabMouseEnterUntilLeave;
+    private bool _switchClicked;
+    private OverlayTraySwitch[] _globalSwitches = [];
+    private OverlayTrayAccountRow[] _accountRows = [];
 
     public FullscreenOverlayTray()
     {
@@ -44,14 +47,29 @@ public partial class FullscreenOverlayTray : UserControl
 
     public event EventHandler? SecondMonitorRequested;
 
-    // Rows are rebuilt from saved settings after every toggle, so a failed save shows the persisted state.
+    // Rows are rebuilt from saved settings after every toggle, so a failed save shows the persisted state. Rows that
+    // show what the tray already shows are left alone, so a click that lands during a refresh isn't lost to a rebuild;
+    // after a click on a switch the next rows are always applied, since the box may no longer match them.
     public void SetRows(IReadOnlyList<OverlayTraySwitch> globalSwitches, IReadOnlyList<OverlayTrayAccountRow> accountRows)
     {
         ArgumentNullException.ThrowIfNull(globalSwitches);
         ArgumentNullException.ThrowIfNull(accountRows);
-        GlobalSwitchesControl.ItemsSource = globalSwitches.ToArray();
-        GlobalSection.Visibility = globalSwitches.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        AccountRowsControl.ItemsSource = accountRows.ToArray();
+        var globals = globalSwitches.ToArray();
+        var accounts = accountRows.ToArray();
+        if (!_switchClicked && globals.SequenceEqual(_globalSwitches) && accounts.Length == _accountRows.Length &&
+            accounts.Zip(_accountRows, (next, shown) =>
+                next.AccountId == shown.AccountId && next.AccountLabel == shown.AccountLabel &&
+                next.Switches.SequenceEqual(shown.Switches)).All(same => same))
+        {
+            return;
+        }
+
+        _switchClicked = false;
+        _globalSwitches = globals;
+        _accountRows = accounts;
+        GlobalSwitchesControl.ItemsSource = globals;
+        GlobalSection.Visibility = globals.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        AccountRowsControl.ItemsSource = accounts;
     }
 
     public void SetFullscreen(bool isFullScreen)
@@ -102,6 +120,7 @@ public partial class FullscreenOverlayTray : UserControl
     {
         if (sender is CheckBox { DataContext: OverlayTraySwitch item } checkBox)
         {
+            _switchClicked = true;
             RequestToggle(item.Key, checkBox.IsChecked == true);
         }
     }

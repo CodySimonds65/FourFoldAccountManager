@@ -131,4 +131,17 @@ public sealed class OverlayCardPolicyTests
         Assert.Equal(floatingSpot, returnedCard.FloatingBounds);
         Assert.True(OverlayCardPolicy.Get(returned, timerKey)!.Enabled);
     }
+
+    [Fact]
+    public void TwoCardsFromOnePluginAreKeptApartThroughALoad()
+    {
+        var one = new OverlayCardKey(OverlayAddOnKind.Plugin, null, "cody.goal-tracker/one");
+        var two = new OverlayCardKey(OverlayAddOnKind.Plugin, null, "cody.goal-tracker/two");
+
+        var settings = OverlayCardPolicy.WithEnabled(PanelSettings.Default, one, true);
+        settings = OverlayCardPolicy.WithBounds(settings, two, Second);
+        var loaded = OverlayCardPolicy.Normalize(settings.OverlayCards, null);
+
+        Assert.Equal(["cody.goal-tracker/one", "cody.goal-tracker/two"], loaded.Select(card => card.PluginCard));
+    }
 }
