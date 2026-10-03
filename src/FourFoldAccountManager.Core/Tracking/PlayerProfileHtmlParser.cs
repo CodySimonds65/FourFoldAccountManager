@@ -10,8 +10,8 @@ public static class PlayerProfileHtmlParser
     {
         ArgumentNullException.ThrowIfNull(html);
         var document = new HtmlParser().ParseDocument(html);
-        var username = document.QuerySelector(".hero-title")?.TextContent.Trim();
-        var cards = document.QuerySelectorAll(".class-grid .class-card .class-body");
+        var username = document.QuerySelector(".social-profile-identity h1")?.TextContent.Trim();
+        var cards = document.QuerySelectorAll(".social-class-panels .social-loadout-card");
         if (string.IsNullOrWhiteSpace(username) || cards.Length == 0)
         {
             throw new InvalidDataException("The player profile is missing its identity or class progression.");
@@ -24,13 +24,15 @@ public static class PlayerProfileHtmlParser
 
         foreach (var card in cards)
         {
-            var className = card.QuerySelector("h3")?.TextContent.Trim();
+            var head = card.QuerySelector(".social-loadout-head");
+            var className = head?.QuerySelector("h3")?.TextContent.Trim();
             if (string.IsNullOrWhiteSpace(className) || !seen.Add(className))
             {
                 throw new InvalidDataException("The player profile has duplicate or unnamed classes.");
             }
 
-            if (card.QuerySelectorAll(".badge").Any(badge => badge.TextContent.Trim() == "Active Class"))
+            if (head!.QuerySelectorAll("span").Any(label =>
+                    string.Equals(label.TextContent.Trim(), "Active class", StringComparison.OrdinalIgnoreCase)))
             {
                 if (activeClassName is not null)
                 {
@@ -40,7 +42,7 @@ public static class PlayerProfileHtmlParser
                 activeClassName = className;
             }
 
-            var levelText = ReadMeta(card, "Level");
+            var levelText = head.QuerySelector("strong")?.TextContent.Replace("Level", "").Trim();
             var expText = ReadMeta(card, "EXP");
             var xpParts = expText?.Split('/', 2);
             var stats = ReadStats(card);
@@ -54,7 +56,8 @@ public static class PlayerProfileHtmlParser
                 continue;
             }
 
-            classes.Add(className, new ClassProfileSnapshot(level, currentXp, nextLevelXp, ReadMeta(card, "Updated"))
+            // The social profile page no longer shows a per-class updated time.
+            classes.Add(className, new ClassProfileSnapshot(level, currentXp, nextLevelXp, null)
             {
                 ClassName = className,
                 Hp = stats.Hp,
@@ -99,12 +102,10 @@ public static class PlayerProfileHtmlParser
         return equipment;
     }
 
-    private static string? ReadMeta(IElement card, string label)
-    {
-        var item = card.QuerySelectorAll(".meta-item")
-            .FirstOrDefault(element => element.QuerySelector("strong")?.TextContent.Trim() == label);
-        return item is null ? null : item.TextContent.Trim()[label.Length..].Trim();
-    }
+    // Every value is a <strong> whose label is the text or <span> right before it.
+    private static string? ReadMeta(IElement card, string label) =>
+        card.QuerySelectorAll(".social-loadout-vitals strong, .social-equipment-grid strong, .social-stat-strip strong")
+            .FirstOrDefault(value => value.PreviousSibling?.TextContent.Trim() == label)?.TextContent.Trim();
 
     private static bool TryParsePositiveInt(string? value, out int result) =>
         int.TryParse(value?.Replace(",", ""), NumberStyles.None, CultureInfo.InvariantCulture, out result) && result > 0;

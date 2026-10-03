@@ -25,12 +25,13 @@ public sealed class FourFoldPublicProfileSourceTests
     public async Task ConfiguredHttpsRouteParsesPublicProfile()
     {
         var html = """
-            <h1 class="hero-title">Alice</h1>
-            <div class="class-grid"><div class="class-card"><div class="class-body">
-            <h3>Warrior</h3>
-            <div class="meta-item"><strong>Level</strong> 1</div>
-            <div class="meta-item"><strong>EXP</strong> 5 / 10</div>
-            </div></div></div>
+            <div class="social-profile-identity"><h1><span class="social-name">Alice</span></h1></div>
+            <div class="social-class-panels"><article class="social-loadout-card">
+            <div class="social-loadout-head"><div><span>Active class</span><h3>Warrior</h3><strong>Level 1</strong></div></div>
+            <div class="social-loadout-vitals"><span>HP <strong>9 / 1,200</strong></span><span>EXP <strong>5 / 10</strong></span></div>
+            <div class="social-equipment-grid"><div><span>Weapon</span><strong>Sword</strong></div></div>
+            <div class="social-stat-strip"><span>ATT<strong>7</strong></span></div>
+            </article></div>
             """;
         var handler = new StubHandler(html);
         var source = new FourFoldPublicProfileSource(new LeaderboardCollectionOptions
@@ -43,7 +44,14 @@ public sealed class FourFoldPublicProfileSourceTests
         var snapshot = await source.FetchAsync(42, default);
 
         Assert.Equal("Alice", snapshot.Username);
-        Assert.Equal(5, snapshot.Classes["Warrior"].CurrentXp);
+        var warrior = snapshot.Classes["Warrior"];
+        Assert.Equal("Warrior", snapshot.ActiveClassName);
+        Assert.Equal(1, warrior.Level);
+        Assert.Equal(5, warrior.CurrentXp);
+        Assert.Equal(10, warrior.NextLevelXp);
+        Assert.Equal(1200, warrior.Hp);
+        Assert.Equal(7, warrior.Attack);
+        Assert.Equal("Sword", warrior.Equipment["Weapon"]);
         Assert.Equal("https://example.invalid/player.php?id=42", handler.LastUrl);
     }
 
