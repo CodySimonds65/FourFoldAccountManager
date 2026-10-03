@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using FourFoldAccountManager.Core.Overlay;
@@ -123,9 +124,9 @@ public static partial class PluginManifestReader
                     return Reject("The description must be at most 200 characters.");
                 }
 
-                if (HasControlCharacter(name, shortLabel, author, description))
+                if (new[] { name, shortLabel, author, description }.Any(PluginText.HasUnsafeCharacter))
                 {
-                    return Reject("The name, shortLabel, author and description can't contain control characters.");
+                    return Reject("The name, shortLabel, author and description can't contain control characters or invisible formatting characters.");
                 }
 
                 if (!root.TryGetProperty("apiVersion", out var apiElement) || apiElement.ValueKind != JsonValueKind.Number ||
@@ -150,9 +151,9 @@ public static partial class PluginManifestReader
                 if (icon is not null &&
                     (icon.Contains('\\') || !icon.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
                      !PluginPaths.TryResolveInside(folder, icon, out var iconPath) || !File.Exists(iconPath) ||
-                     new FileInfo(iconPath).Length > MaximumIconBytes))
+                     new FileInfo(iconPath).Length > MaximumIconBytes || !IsSmallPng(iconPath)))
                 {
-                    return Reject("The icon must be a .png inside the plugin folder, at most 64 KB.");
+                    return Reject("The icon must be a PNG inside the plugin folder, at most 256 by 256 pixels and 64 KB.");
                 }
 
                 if (!TryReadSites(root, out var sites, out var siteError))
@@ -192,9 +193,19 @@ public static partial class PluginManifestReader
         return result.Length >= minimum && result.Length <= maximum;
     }
 
-    // The text a manifest supplies is drawn in the app (the plugin list, the Overlays panel), so a line break or a bell
-    // character in it is never wanted.
-    private static bool HasControlCharacter(params string[] values) => values.Any(value => value.Any(char.IsControl));
+    // The app decodes the icon on every render of the strip, and a tiny file can declare an enormous image (a 274-byte
+    // PNG declaring 1 by 100000 pixels made it commit 215 MB), so the header is checked first, not the file's content.
+    // A PNG's first 24 bytes are the signature, then the IHDR chunk's length and name, then its width and height.
+    private static bool IsSmallPng(string path)
+    {
+        Span<byte> header = stackalloc byte[24];
+        using var stream = File.OpenRead(path);
+        return stream.ReadAtLeast(header, header.Length, throwOnEndOfStream: false) == header.Length &&
+               header[..8].SequenceEqual(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }) &&
+               header[12..16].SequenceEqual("IHDR"u8) &&
+               BinaryPrimitives.ReadUInt32BigEndian(header[16..]) is >= 1 and <= 256 &&
+               BinaryPrimitives.ReadUInt32BigEndian(header[20..]) is >= 1 and <= 256;
+    }
 
     private static bool TryReadSites(JsonElement root, out IReadOnlyList<Uri> sites, out string error)
     {
@@ -245,7 +256,7 @@ public static partial class PluginManifestReader
     private static bool TryReadCards(JsonElement root, out IReadOnlyList<PluginCardManifest> cards, out string error)
     {
         cards = [];
-        error = "Each card needs an id (lowercase letters, digits, dashes), a name (1 to 24 characters, no control characters) and a scope of account or global.";
+        error = "Each card needs an id (lowercase letters, digits, dashes), a name (1 to 24 characters, no control or invisible formatting characters) and a scope of account or global.";
         if (!root.TryGetProperty("cards", out var element) || element.ValueKind == JsonValueKind.Null)
         {
             return true;
@@ -267,7 +278,7 @@ public static partial class PluginManifestReader
             var id = Text(item, "id");
             var scope = Text(item, "scope");
             if (id is null || id.Length > 32 || !CardIdRegex().IsMatch(id) ||
-                !InRange(Text(item, "name"), 1, 24, out var name) || HasControlCharacter(name) ||
+                !InRange(Text(item, "name"), 1, 24, out var name) || PluginText.HasUnsafeCharacter(name) ||
                 scope is not ("account" or "global") || result.Any(card => card.Id == id))
             {
                 return false;

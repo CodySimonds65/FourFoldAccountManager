@@ -1,4 +1,5 @@
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -27,6 +28,9 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
     private const long MaximumFileBytes = 8 * 1024 * 1024;
     private const long MaximumServedBytesPerSecond = 32 * 1024 * 1024;
 
+    // Without a cap, IndexedDB, the Cache API and the origin-private file system get a share of the disk (10 GB in tests).
+    private const int MaximumBrowserStorageBytes = 5 * 1024 * 1024;
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     private readonly PluginTrust _trust;
@@ -48,6 +52,10 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
 
     // A disposed plugin is never started again, whoever still holds it (a manager loop that was mid-await, say).
     private bool _disposed;
+
+    // How many navigations the page has begun. A reply is for the page that made the call, and a new page's call ids
+    // start again at 1, so a reply that finishes after a navigation is dropped.
+    private int _navigations;
 
     // The current one-second window of the flood limits.
     private long _windowStart;
@@ -74,7 +82,8 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             manifest, host, new PluginStorage(Path.Combine(paths.PluginDataRoot, manifest.Id + ".json")), _http, cards,
             TimeProvider.System);
         _contentSecurityPolicy = PluginNetworkPolicy.BuildContentSecurityPolicy(manifest, trust);
-        Descriptor = new PluginDescriptor(manifest.Id, manifest.Name, manifest.ShortLabel, "", [], [])
+        // A plugin with no icon image shows the default Segoe glyph, a puzzle piece.
+        Descriptor = new PluginDescriptor(manifest.Id, manifest.Name, manifest.ShortLabel, "\uEA86", [], [])
         {
             Cards = manifest.Cards.Select(card => new PluginCardDescriptor(card.Id, card.Name, card.Scope)).ToArray(),
             IconPath = manifest.Icon is null ? null : Path.Combine(manifest.Folder, manifest.Icon),
@@ -155,6 +164,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             }
 
             var core = view.CoreWebView2;
+            UnhookWindowClose(view, core);
             var developer = _trust == PluginTrust.Developer;
             core.Settings.AreDevToolsEnabled = developer;
             core.Settings.AreDefaultContextMenusEnabled = developer;
@@ -166,8 +176,15 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             core.Settings.AreDefaultScriptDialogsEnabled = false;
             core.AddWebResourceRequestedFilter(
                 "*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
-            core.WebResourceRequested += (sender, args) => OnWebResourceRequested(sender, environment, args);
-            core.NavigationStarting += (_, args) => args.Cancel = !IsOwnOrigin(args.Uri);
+            core.WebResourceRequested += (_, args) => OnWebResourceRequested(view, environment, args);
+            core.NavigationStarting += (_, args) =>
+            {
+                args.Cancel = !IsOwnOrigin(args.Uri);
+                if (!args.Cancel)
+                {
+                    _navigations++;
+                }
+            };
             core.FrameNavigationStarting += (_, args) => args.Cancel = true;
             core.NewWindowRequested += (_, args) => args.Handled = true;
             core.DownloadStarting += (_, args) => args.Cancel = true;
@@ -189,11 +206,12 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
                     args.Accept();
                 }
             };
-            core.WebMessageReceived += OnWebMessageReceived;
-            // The GPU and utility processes recover on their own and are shared with other plugins' pages.
-            core.ProcessFailed += (sender, args) =>
+            core.WebMessageReceived += (_, args) => OnWebMessageReceived(view, args);
+            // The GPU and utility processes recover on their own and are shared with other plugins' pages. Controls are
+            // compared, not their CoreWebView2: once the browser process has died the control throws from that getter.
+            core.ProcessFailed += (_, args) =>
             {
-                if (ReferenceEquals(sender, _view?.CoreWebView2) &&
+                if (ReferenceEquals(view, _view) &&
                     args.ProcessFailedKind is CoreWebView2ProcessFailedKind.BrowserProcessExited
                     or CoreWebView2ProcessFailedKind.RenderProcessExited
                     or CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
@@ -202,6 +220,11 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
                 }
             };
             await core.AddScriptToExecuteOnDocumentCreatedAsync(PluginSdk.Build(Manifest));
+            var origin = PluginNetworkPolicy.Origin(Manifest.Id);
+            await core.CallDevToolsProtocolMethodAsync(
+                "Storage.overrideQuotaForOrigin",
+                JsonSerializer.Serialize(
+                    new { origin = origin.GetLeftPart(UriPartial.Authority), quotaSize = MaximumBrowserStorageBytes }, Json));
             if (generation != _generation)
             {
                 return;
@@ -212,7 +235,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             // The panel may have been shown or hidden while the view was starting.
             MoveView(_root.IsVisible ? _viewHost : _parkingHost);
             _stoppedNotice.Visibility = Visibility.Collapsed;
-            core.Navigate(new Uri(PluginNetworkPolicy.Origin(Manifest.Id), Manifest.Panel.Replace('\\', '/')).AbsoluteUri);
+            core.Navigate(new Uri(origin, Manifest.Panel).AbsoluteUri);
             started = true;
             RunningChanged?.Invoke();
         }
@@ -307,6 +330,23 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         view.Dispose();
     }
 
+    // The WPF web view closes its own parent window when a page calls window.close(), before any handler of ours runs,
+    // so a plugin could quit FourFold with one line. This removes that handler; a close request from a plugin page is
+    // then ignored. It reaches into the control's private members, so re-check it on every WebView2 SDK update: when they
+    // are renamed it throws, the plugin doesn't start, and the lost lock is noticed at once.
+    private static void UnhookWindowClose(WebView2CompositionControl view, CoreWebView2 core)
+    {
+        const BindingFlags NonPublic = BindingFlags.Instance | BindingFlags.NonPublic;
+        var field = typeof(WebView2CompositionControl).GetField("m_webview2Base", NonPublic);
+        var handler = field?.FieldType.GetMethod("CoreWebView2_WindowCloseRequested", NonPublic);
+        if (field?.GetValue(view) is not { } webViewBase || handler is null)
+        {
+            throw new InvalidOperationException("The WebView2 control's window.close() handler wasn't found.");
+        }
+
+        core.WindowCloseRequested -= handler.CreateDelegate<EventHandler<object>>(webViewBase);
+    }
+
     // Counts one page event (a request, or a message of the given length) and says whether the page has now gone past
     // a flood limit within the current second.
     private bool IsFlooding(int messageCharacters = 0)
@@ -359,7 +399,8 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
     // Serves the plugin's own files, with the content security policy on every response, and refuses any outside
     // request the policy wouldn't allow. Anything unexpected is refused too, never let through.
     private void OnWebResourceRequested(
-        object? sender, CoreWebView2Environment environment, CoreWebView2WebResourceRequestedEventArgs args)
+        WebView2CompositionControl? source, CoreWebView2Environment environment,
+        CoreWebView2WebResourceRequestedEventArgs args)
     {
         try
         {
@@ -368,7 +409,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             // handler refuses them. This comes before the flood count so another page's traffic never counts here;
             // so does a late request from a view that was stopped.
             if (args.RequestedSourceKind != CoreWebView2WebResourceRequestSourceKinds.Document ||
-                !ReferenceEquals(sender, _view?.CoreWebView2))
+                !ReferenceEquals(source, _view))
             {
                 args.Response = Respond(environment, null, 403, "Blocked");
                 return;
@@ -455,12 +496,12 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             $"Content-Security-Policy: {_contentSecurityPolicy}\r\nX-Content-Type-Options: nosniff\r\n" +
             "Cache-Control: no-store");
 
-    private async void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs args)
+    private async void OnWebMessageReceived(WebView2CompositionControl? source, CoreWebView2WebMessageReceivedEventArgs args)
     {
         try
         {
             // A late event from a view that was stopped must neither act nor be answered into a newer view.
-            if (!ReferenceEquals(sender, _view?.CoreWebView2))
+            if (!ReferenceEquals(source, _view))
             {
                 return;
             }
@@ -478,9 +519,10 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             }
 
             var view = _view;
+            var navigations = _navigations;
             var reply = await _api.HandleAsync(message);
-            // A reply for a page that was stopped or reloaded while the call ran is dropped.
-            if (reply is not null && view is not null && ReferenceEquals(view, _view))
+            // A reply for a page that was stopped, reloaded or navigated while the call ran is dropped.
+            if (reply is not null && view is not null && ReferenceEquals(view, _view) && navigations == _navigations)
             {
                 if (IsReplyFlooding(reply.Length))
                 {

@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Text;
 using FourFoldAccountManager.Core.Overlay;
 using FourFoldAccountManager.Core.Plugins;
 using Xunit;
@@ -44,6 +46,24 @@ public sealed class PluginManifestReaderTests : IDisposable
     {
         File.WriteAllText(Path.Combine(_folder, "plugin.json"), json);
         return PluginManifestReader.Read(_folder);
+    }
+
+    private PluginManifestResult ReadWithIcon(byte[] iconBytes)
+    {
+        File.WriteAllBytes(Path.Combine(_folder, "icon.png"), iconBytes);
+        return Read(Manifest(", \"icon\": \"icon.png\""));
+    }
+
+    // The first 24 bytes of a PNG: the signature, the IHDR chunk's length and name, then its width and height.
+    private static byte[] PngHeader(uint width, uint height)
+    {
+        var header = new byte[24];
+        new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }.CopyTo(header, 0);
+        BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(8), 13);
+        "IHDR"u8.CopyTo(header.AsSpan(12));
+        BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(16), width);
+        BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(20), height);
+        return header;
     }
 
     private static string Manifest(string overrides = "") => $$"""
@@ -102,6 +122,8 @@ public sealed class PluginManifestReaderTests : IDisposable
     // that rejects these, not the JSON parser.
     [InlineData("\"name\": \"Goal\\u0007tracker\"")]
     [InlineData("\"cards\": [{ \"id\": \"goal\", \"name\": \"Go\\u0007al\", \"scope\": \"account\" }]")]
+    // U+202E is a right-to-left override, which would make FourFold draw the rest of the name backwards.
+    [InlineData("\"name\": \"Goal\\u202Etracker\"")]
     // A zero-width joiner in a host makes Uri.IdnHost throw rather than return a name.
     [InlineData("\"sites\": [\"https://a\u200Db.example\"]")]
     [InlineData("\"cards\": [{ \"id\": \"Goal\", \"name\": \"Goal\", \"scope\": \"account\" }]")]
@@ -130,6 +152,34 @@ public sealed class PluginManifestReaderTests : IDisposable
 
         Assert.Null(result.Manifest);
         Assert.Equal("plugin.json is too large.", result.Error);
+    }
+
+    [Fact]
+    public void AnIconThatDeclaresAHugeImageIsRejectedWithoutBeingDecoded()
+    {
+        // A 274-byte PNG declaring 1 by 100000 pixels made the app commit 215 MB the moment it drew the strip.
+        var result = ReadWithIcon(PngHeader(width: 1, height: 100000));
+
+        Assert.Null(result.Manifest);
+        Assert.Contains("icon", result.Error);
+    }
+
+    [Fact]
+    public void AnIconThatIsNotAPngIsRejectedWhateverItIsNamed()
+    {
+        var result = ReadWithIcon(Encoding.ASCII.GetBytes("This is text, not a PNG image."));
+
+        Assert.Null(result.Manifest);
+        Assert.Contains("icon", result.Error);
+    }
+
+    [Fact]
+    public void AnIconWithASmallPngHeaderIsAccepted()
+    {
+        var result = ReadWithIcon(PngHeader(width: 64, height: 64));
+
+        Assert.Null(result.Error);
+        Assert.Equal("icon.png", result.Manifest!.Icon);
     }
 
     [Fact]

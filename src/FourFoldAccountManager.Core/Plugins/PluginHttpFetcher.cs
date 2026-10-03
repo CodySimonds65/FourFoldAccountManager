@@ -135,10 +135,6 @@ public sealed class PluginHttpFetcher : IDisposable
         {
             throw new PluginApiException(refused.Code, refused.Message);
         }
-        catch (HttpRequestException)
-        {
-            throw new PluginApiException("unavailable", "The request failed.");
-        }
         catch (Exception exception) when (exception is not PluginApiException and not OperationCanceledException)
         {
             throw new PluginApiException("unavailable", "The request failed.");

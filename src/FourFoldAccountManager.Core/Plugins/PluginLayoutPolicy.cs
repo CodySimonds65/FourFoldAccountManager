@@ -32,9 +32,6 @@ public static class PluginLayoutPolicy
     public static bool IsShortcutSuppressed(PanelSettings settings, GlobalShortcutAction action) =>
         BuiltInPlugins.All.Any(plugin => plugin.Shortcuts.Contains(action) && !IsEnabled(settings, plugin.Id));
 
-    public static bool IsPluginCardSuppressed(PanelSettings settings, string pluginCard) =>
-        PluginCardId.PluginId(pluginCard) is not { } pluginId || !IsEnabled(settings, pluginId);
-
     // The saved open plugin when it is known and switched on; otherwise null.
     public static PluginDescriptor? OpenPlugin(PanelSettings settings, IReadOnlyList<PluginDescriptor> known) =>
         known.FirstOrDefault(plugin => plugin.Id == settings.OpenPlugin && IsEnabled(settings, plugin.Id));

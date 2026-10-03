@@ -58,7 +58,7 @@ Dev plugins are not reviewed, and FourFold honors their `plugin.json` as written
 }
 ```
 
-A `plugin.json` that breaks any rule below is rejected: the plugin doesn't load, and the plugin list shows the reason. Text values are trimmed. The `name`, `shortLabel`, `author` and `description` fields, and a card's `name`, can't contain control characters (a line break or a bell character, say), because FourFold shows them. Fields not listed here are ignored. The file can be at most 64 KB, and it is never served to your page.
+A `plugin.json` that breaks any rule below is rejected: the plugin doesn't load, and the plugin list shows the reason. Text values are trimmed. The `name`, `shortLabel`, `author` and `description` fields, and a card's `name`, can't contain control characters (a line break or a bell character, say) or invisible formatting characters (a right-to-left override, say), because FourFold shows them. Fields not listed here are ignored. The file can be at most 64 KB, and it is never served to your page.
 
 | Field | Required | Rule |
 |---|---|---|
@@ -70,7 +70,7 @@ A `plugin.json` that breaks any rule below is rejected: the plugin doesn't load,
 | `description` | no | At most 200 characters. |
 | `apiVersion` | yes | A whole number. FourFold supports `1`. A higher number is rejected with "Update FourFold to use this plugin." |
 | `panel` | yes | Path to an existing `.html` file inside the plugin folder. Forward slashes only. |
-| `icon` | no | Path to a `.png` inside the plugin folder, at most 64 KB. Forward slashes only. Without one, the strip shows just the `shortLabel`. |
+| `icon` | no | Path to a PNG inside the plugin folder, at most 256 by 256 pixels and 64 KB. Forward slashes only. Without one, the strip shows a default icon. |
 | `sites` | no | At most 10 websites the plugin may contact. Each is an origin: `https://host` or `https://host:port`, with no path, query or `user@`. The host must be a DNS name: no IP address, no trailing dot, and no name that only works on the local network. `localhost`, `.localhost`, `.local`, `.internal`, `.lan` and `.home.arpa` names are refused, and so is a single-label name such as `router`. A subdomain is its own site, so `https://example.com` doesn't cover `https://www.example.com`. |
 | `anySite` | no | `true` lets the plugin contact any `https` site. Default `false`. FourFold honors it for plugins in the dev folder. |
 | `cards` | no | At most 6 overlay cards. See [Cards](#cards). |
@@ -218,6 +218,8 @@ Each plugin has a private key-value store that is kept between runs.
 - `set` and `remove` together are limited to 120 a minute (`limit-exceeded`).
 - The data is saved in `%LOCALAPPDATA%\FourFoldAccountManager\plugin-data\<id>.json`. If that file can't be read at the moment (it is locked, say), the call is rejected with `unavailable`. A missing or damaged file loads as empty.
 
+The page's own browser storage (IndexedDB, the Cache API, `localStorage`) is capped at about 5 MB per plugin, and a write past the cap fails with a `QuotaExceededError`. Keep settings in `fourfold.storage`: it is the supported place for them.
+
 ### Card calls
 
 ```js
@@ -269,6 +271,7 @@ body { background: var(--ff-surface); color: var(--ff-text); }
 | Calls waiting for an answer at once | 32. More are rejected with `limit-exceeded`. |
 | `http.fetch` | 60 requests a minute, 5 redirects, 15 seconds, 2 MB response. |
 | Storage | 256 KB in all, 120 writes a minute, keys up to 64 characters. |
+| Browser storage | About 5 MB per plugin in IndexedDB, the Cache API and `localStorage`. |
 | `openExternal` | One link every 2 seconds. |
 | Card text | Summary up to 40 characters, up to 8 rows, label and value up to 40 characters each. |
 | Card redraws | At most four a second. |
@@ -323,7 +326,7 @@ FourFold refuses local names and addresses for page requests and for `http.fetch
 
 - Navigating to any other site is cancelled. Links between your own pages work. New windows are blocked. Downloads are cancelled.
 - Every permission request is denied: camera, microphone, location, clipboard read, notifications, screen capture and the rest.
-- `alert`, `confirm` and `prompt` do nothing.
+- `alert`, `confirm` and `prompt` do nothing, and so do `window.close()` and `window.print()`.
 - Password saving and autofill are off. Sign-in prompts and links to other apps (`mailto:`, say) are cancelled.
 - The page has no access to FourFold's objects, to a game's cookies or pages, or to any other plugin.
 
@@ -360,7 +363,7 @@ A card is a small box FourFold draws over the game, or in a floating window. You
 | `summary` | Optional text, at most 40 characters. |
 | `rows` | At most 8 rows. Each is `{ label, value, progress }`. `label` and `value` are strings of at most 40 characters (anything that isn't a string is drawn empty, so convert numbers with `String()`). `progress` is optional: `null`, or a number from 0 to 1. |
 
-Text with control characters (line breaks, for example) fails with `invalid-argument`. A text too long, or too many rows, fails with `limit-exceeded`.
+Text with control characters (line breaks, for example) or invisible formatting characters (a right-to-left override, say) fails with `invalid-argument`. A text too long, or too many rows, fails with `limit-exceeded`.
 
 **Clear** it with `fourfold.cards.clear(cardId, accountId)`.
 
@@ -386,7 +389,7 @@ If the user switches the plugin off in the plugin list, its cards are hidden eve
 - Draw custom cards. Cards are FourFold's data cards.
 - Add a settings page behind the cog. Keep settings in your own panel.
 - Run while FourFold is closed or the plugin is switched off. (A plugin's page does keep running while its panel is hidden.)
-- Rely on printing or file pickers. They open the system's own dialogs.
+- Print (`window.print()` does nothing), or rely on file pickers, which open the system's own dialog.
 
 ## Getting on the hub
 

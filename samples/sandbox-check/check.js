@@ -1,9 +1,11 @@
 // Each check tries something a plugin must not be able to do. PASS means FourFold stopped it.
 const results = document.getElementById('results');
 const violations = [];
-document.addEventListener('securitypolicyviolation', event => violations.push(event.effectiveDirective));
+document.addEventListener('securitypolicyviolation', event =>
+  violations.push({ directive: event.effectiveDirective, blocked: event.blockedURI }));
 const settle = () => new Promise(resolve => setTimeout(resolve, 1000));
-const violated = directive => violations.filter(found => found.startsWith(directive)).length;
+const violated = (directive, blocked = '') =>
+  violations.filter(found => found.directive.startsWith(directive) && found.blocked.startsWith(blocked)).length;
 
 function report(name, passed, detail = '') {
   const item = document.createElement('li');
@@ -47,13 +49,20 @@ async function run() {
     serviceWorkerRegistered = true;
   } catch { /* blocked */ }
   await settle();
-  report('A script from another site is blocked, even a declared one', violated('script-src-elem') > 0);
+  report('A script from another site is blocked, even a declared one',
+    violated('script-src-elem', 'https://example.com') > 0);
   report('Page fetch and WebSocket to an undeclared site are blocked', violated('connect-src') >= 2);
   report('Frames are blocked', violated('frame-src') > 0);
   report('Web Workers are blocked', !workerMade || violated('worker-src') > 0);
   report('Service workers are blocked', !serviceWorkerRegistered);
   report('WebRTC is removed', typeof RTCPeerConnection === 'undefined');
-  report('alert() does nothing', alert('This should not appear') === undefined);
+  report('alert() shows nothing (check by eye)', alert('This should not appear') === undefined);
+
+  // If window.close() worked, FourFold would be closing instead of getting here.
+  let stillRunning = false;
+  window.close();
+  stillRunning = true;
+  report('window.close() does nothing', stillRunning);
 
   report('New windows are blocked', popup === null || popup.closed);
 

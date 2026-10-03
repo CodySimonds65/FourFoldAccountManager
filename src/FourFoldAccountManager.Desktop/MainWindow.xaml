@@ -228,7 +228,7 @@
               HorizontalAlignment="Left" VerticalAlignment="Top" />
         <!-- Community plugin pages wait here while their panel isn't showing, so they keep running. -->
         <Grid x:Name="PluginParkingHost" Width="2" Height="2" Opacity="0" IsHitTestVisible="False"
-              HorizontalAlignment="Left" VerticalAlignment="Top" />
+              KeyboardNavigation.TabNavigation="None" HorizontalAlignment="Left" VerticalAlignment="Top" />
         <Button x:Name="FullScreenExitButton" Panel.ZIndex="1000" Grid.RowSpan="2" Width="74" Height="34" Margin="10"
                 HorizontalAlignment="Right" VerticalAlignment="Top" Content="Exit" Click="FullScreenExit_Click"
                 Visibility="Collapsed" Opacity="0.78" Style="{StaticResource AppButtonStyle}" ToolTip="Exit full screen (Esc)"

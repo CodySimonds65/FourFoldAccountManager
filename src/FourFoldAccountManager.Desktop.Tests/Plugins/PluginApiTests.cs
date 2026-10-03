@@ -96,6 +96,16 @@ public sealed class PluginApiTests : IDisposable
         Assert.Equal(
             "invalid-argument", ErrorCode(await Call("cards.set", new { cardId = "goal", accountId = Guid.NewGuid() })));
 
+        // A right-to-left override (U+202E) in a label would reverse the text drawn after it.
+        Assert.Equal(
+            "invalid-argument",
+            ErrorCode(await Call("cards.set", new
+            {
+                cardId = "goal",
+                accountId = KnownAccount,
+                rows = new[] { new { label = "Done\u202E", value = "3" } }
+            })));
+
         var key = new OverlayCardKey(OverlayAddOnKind.Plugin, KnownAccount, "cody.goal-tracker/goal");
         Assert.Null(_cards.Get(key));
 

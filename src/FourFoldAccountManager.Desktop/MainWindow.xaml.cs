@@ -860,11 +860,12 @@ public partial class MainWindow : Window
         PluginSidebar.Render(_panelSettings);
         if (refreshEffects)
         {
-            await _communityPlugins.ApplyAsync(_panelSettings);
             _shortcuts?.ApplyPluginStates(_panelSettings);
             RefreshPlainKeyBindings();
             UpdateTimerHotkeys();
             RefreshTrackerRows();
+            // Last, so a built-in plugin's switch never waits on a community plugin starting.
+            await _communityPlugins.ApplyAsync(_panelSettings);
         }
     }
 

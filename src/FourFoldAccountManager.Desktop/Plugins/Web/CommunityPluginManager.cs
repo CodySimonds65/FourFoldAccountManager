@@ -142,18 +142,7 @@ public sealed class CommunityPluginManager : IDisposable
             }
 
             var folderName = Path.GetFileName(folder);
-            PluginManifestResult result;
-            try
-            {
-                result = PluginManifestReader.Read(folder);
-            }
-            catch (Exception)
-            {
-                // One folder that can't be read must never take the others down.
-                _rejected.Add(new RejectedPlugin(folderName, "plugin.json couldn't be read."));
-                continue;
-            }
-
+            var result = PluginManifestReader.Read(folder);
             if (result.Manifest is not { } manifest)
             {
                 _rejected.Add(new RejectedPlugin(folderName, result.Error ?? "plugin.json couldn't be read."));
@@ -166,7 +155,18 @@ public sealed class CommunityPluginManager : IDisposable
                 continue;
             }
 
-            var webPlugin = new WebPlugin(manifest, PluginTrust.Developer, _browser, _parkingHost, _host, _cards, _paths);
+            WebPlugin webPlugin;
+            try
+            {
+                webPlugin = new WebPlugin(manifest, PluginTrust.Developer, _browser, _parkingHost, _host, _cards, _paths);
+            }
+            catch (Exception)
+            {
+                // One folder that can't be loaded must never take the others down.
+                _rejected.Add(new RejectedPlugin(folderName, "The plugin couldn't be loaded."));
+                continue;
+            }
+
             // A plugin stops or restarts by itself (a flood, a crash, its Reload button). That can happen inside a web
             // view event or while SyncRunningAsync is mid-loop, and Changed re-renders the sidebar, so it is raised later.
             webPlugin.RunningChanged += () => _dispatcher.BeginInvoke(() =>
@@ -336,6 +336,8 @@ public sealed class CommunityPluginManager : IDisposable
             return;
         }
 
+        // Before the plugins start, so the strip never shows the ones that were just disposed.
+        Changed?.Invoke();
         await SyncRunningAsync();
         Changed?.Invoke();
     }
