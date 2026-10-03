@@ -346,8 +346,7 @@ public partial class MainWindow : Window
             LaunchVisibleButton.IsEnabled = false;
             TogglePluginsButton.IsEnabled = false;
             GlobalStatusText.Text = "Account data could not be loaded. The original local files were left unchanged.";
-            MessageBox.Show(this, exception.Message, "FourFold profile data",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError(exception.Message, "FourFold profile data");
         }
         catch
         {
@@ -358,8 +357,7 @@ public partial class MainWindow : Window
             LaunchVisibleButton.IsEnabled = false;
             TogglePluginsButton.IsEnabled = false;
             GlobalStatusText.Text = "The manager could not load local profile data.";
-            MessageBox.Show(this, "The local account or panel settings could not be loaded.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The local account or panel settings could not be loaded.");
         }
     }
 
@@ -475,8 +473,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The saved login could not be stored in Windows Credential Manager.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The saved login could not be stored in Windows Credential Manager.");
             return;
         }
 
@@ -498,8 +495,7 @@ public partial class MainWindow : Window
             }
 
             UpdateAccountActions();
-            MessageBox.Show(this, "The account profile could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The account profile could not be saved.");
             return;
         }
 
@@ -546,8 +542,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The saved login could not be read from Windows Credential Manager.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The saved login could not be read from Windows Credential Manager.");
             return;
         }
 
@@ -583,8 +578,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The saved login could not be updated in Windows Credential Manager.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The saved login could not be updated in Windows Credential Manager.");
             return;
         }
 
@@ -607,8 +601,7 @@ public partial class MainWindow : Window
                 // The original local account metadata remains visible if a storage rollback fails.
             }
 
-            MessageBox.Show(this, "The account profile could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The account profile could not be saved.");
             return;
         }
 
@@ -639,8 +632,7 @@ public partial class MainWindow : Window
         {
             ReplaceAccount(account);
             AccountsListBox.SelectedItem = account;
-            MessageBox.Show(this, "The account profile could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The account profile could not be saved.");
         }
     }
 
@@ -675,8 +667,7 @@ public partial class MainWindow : Window
         {
             RestoreAccountOrder(previous);
             AccountsListBox.SelectedItem = _accounts.FirstOrDefault(item => item.Id == account.Id);
-            MessageBox.Show(this, "The account order could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The account order could not be saved.");
         }
     }
 
@@ -706,8 +697,8 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The profile's saved login could not be removed from Windows Credential Manager.",
-                "Profile removal failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The profile's saved login could not be removed from Windows Credential Manager.",
+                "Profile removal failed");
             return;
         }
 
@@ -737,9 +728,8 @@ public partial class MainWindow : Window
             }
 
             await ReloadLocalDataAfterFailureAsync();
-            MessageBox.Show(this,
-                "The profile could not be fully cleared or saved. Review the account list and try again.",
-                "Profile removal failed", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The profile could not be fully cleared or saved. Review the account list and try again.",
+                "Profile removal failed");
         }
     }
 
@@ -854,8 +844,7 @@ public partial class MainWindow : Window
         catch
         {
             LayoutPicker.SelectedValue = _panelSettings.Layout;
-            MessageBox.Show(this, "The selected layout could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The selected layout could not be saved.");
         }
     }
 
@@ -1143,8 +1132,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The settings could not be applied.",
-                "FourFold settings", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The settings could not be applied.", "FourFold settings");
         }
         finally
         {
@@ -1244,8 +1232,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The card setting could not be saved.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The card setting could not be saved.");
         }
         finally
         {
@@ -1269,9 +1256,7 @@ public partial class MainWindow : Window
         catch
         {
             _floatingCards.Restore(args.Key, OverlayCardPolicy.Get(_panelSettings, args.Key)?.FloatingBounds);
-            MessageBox.Show(this,
-                "The overlay placement could not be saved. Its previous position was restored.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The overlay placement could not be saved. Its previous position was restored.");
         }
     }
 
@@ -1663,9 +1648,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this,
-                "The overlay card setting could not be saved. Its previous setting was restored.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The overlay card setting could not be saved. Its previous setting was restored.");
         }
         finally
         {
@@ -1690,9 +1673,7 @@ public partial class MainWindow : Window
         catch
         {
             layer.RestoreSavedBounds();
-            MessageBox.Show(this,
-                "The overlay placement could not be saved. Its previous position was restored.",
-                "FourFold Account Manager", MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The overlay placement could not be saved. Its previous position was restored.");
         }
     }
 
@@ -2024,8 +2005,7 @@ public partial class MainWindow : Window
                     .FirstOrDefault(item => item.AccountId == _panelSettings.SlotAccountIds[slotIndex]);
             }
 
-            MessageBox.Show(this, "The slot assignment could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The slot assignment could not be saved.");
         }
     }
 
@@ -2197,8 +2177,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The tab could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The tab could not be saved.");
         }
     }
 
@@ -2230,8 +2209,7 @@ public partial class MainWindow : Window
         }
         catch
         {
-            MessageBox.Show(this, "The tab could not be closed.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            ShowError("The tab could not be closed.");
         }
     }
 
@@ -2305,8 +2283,7 @@ public partial class MainWindow : Window
                     PanelLayoutPolicy.WithSplitState(currentSettings, state));
                 GlobalStatusText.Text = "The layout sizes were saved.";
             },
-            () => MessageBox.Show(this, "The row heights could not be saved.", "FourFold Account Manager",
-                MessageBoxButton.OK, MessageBoxImage.Error),
+            () => ShowError("The row heights could not be saved."),
             _layoutDividerResizeController);
 
     internal static FrameworkElement BuildLayoutNode(
@@ -3352,6 +3329,9 @@ public partial class MainWindow : Window
         });
         UpdateSlotPresentation(slot);
     }
+
+    private void ShowError(string message, string title = "FourFold Account Manager") =>
+        MessageBox.Show(this, message, title, MessageBoxButton.OK, MessageBoxImage.Error);
 
     private static string SafeBrowserError(Exception exception) => exception switch
     {
