@@ -121,9 +121,25 @@ public sealed class PluginNetworkPolicyTests
         Assert.Equal(local, PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse(address)));
 
     [Fact]
-    public void Ipv6EmbeddedAddressesAreLocal()
+    public void AnIpv6ScopeIdDoesNotHideALocalAddress()
     {
-        Assert.True(PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse("::1")));
-        Assert.False(PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse("2001:4860:4860::8888")));
+        Assert.True(PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse("::1%1")));
+        Assert.True(PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse("fe80::1%5")));
+    }
+
+    [Fact]
+    public void AnIpv6AddressEmbeddingAPublicIpv4IsNotLocal()
+    {
+        Assert.False(PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse("64:ff9b::808:808")));
+        Assert.False(PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse("2002:808:808::")));
+        Assert.False(PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse("::ffff:0:8.8.8.8")));
+    }
+
+    [Fact]
+    public void AnIpv6AddressEmbeddingALocalIpv4IsLocal()
+    {
+        Assert.True(PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse("64:ff9b::c0a8:1")));
+        Assert.True(PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse("2002:a00:1::")));
+        Assert.True(PluginNetworkPolicy.IsLocalAddress(IPAddress.Parse("::ffff:0:127.0.0.1")));
     }
 }

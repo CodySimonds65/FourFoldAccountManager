@@ -59,6 +59,12 @@ public static partial class PluginManifestReader
                     return Reject("The id must look like author.plugin-name (lowercase letters, digits, dots and dashes).");
                 }
 
+                var label = id.Replace(".", "--");
+                if (label.Length > 63 || label.StartsWith("xn--", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Reject("The id must look like author.plugin-name (lowercase letters, digits, dots and dashes).");
+                }
+
                 if (!InRange(Text(root, "name"), 1, 40, out var name))
                 {
                     return Reject("The name must be 1 to 40 characters.");
