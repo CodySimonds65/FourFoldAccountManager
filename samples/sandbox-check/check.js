@@ -1,0 +1,93 @@
+// Each check tries something a plugin must not be able to do. PASS means FourFold stopped it.
+const results = document.getElementById('results');
+const violations = [];
+document.addEventListener('securitypolicyviolation', event => violations.push(event.effectiveDirective));
+const settle = () => new Promise(resolve => setTimeout(resolve, 1000));
+const violated = directive => violations.filter(found => found.startsWith(directive)).length;
+
+function report(name, passed, detail = '') {
+  const item = document.createElement('li');
+  item.textContent = `${passed ? 'PASS' : 'FAIL'}: ${name}${detail ? ` (${detail})` : ''}`;
+  item.style.color = passed ? 'var(--ff-accent)' : 'var(--ff-danger)';
+  results.append(item);
+}
+
+async function rejects(name, action, expectedCode) {
+  try {
+    await action();
+    report(name, false, 'it was allowed');
+  } catch (error) {
+    report(name, !expectedCode || error.code === expectedCode, error.code ?? error.message);
+  }
+}
+
+async function run() {
+  report('Inline script is blocked', window.inlineScriptRan !== true);
+
+  let evalRan = false;
+  try { evalRan = new Function('return true')(); } catch { /* blocked */ }
+  report('eval is blocked', evalRan !== true);
+
+  // These are stopped by the content security policy, which reports each one as a violation.
+  const remote = document.createElement('script');
+  remote.src = 'https://example.com/remote.js';
+  document.head.append(remote);
+  fetch('https://example.org/').catch(() => {});
+  try { new WebSocket('wss://example.org/').onerror = () => {}; } catch { /* also blocked */ }
+  const frame = document.createElement('iframe');
+  frame.src = 'https://example.com/';
+  frame.hidden = true;
+  document.body.append(frame);
+  let workerMade = false;
+  try { new Worker('check.js'); workerMade = true; } catch { /* blocked */ }
+  let serviceWorkerRegistered = false;
+  try {
+    await navigator.serviceWorker.register('check.js');
+    serviceWorkerRegistered = true;
+  } catch { /* blocked */ }
+  await settle();
+  report('A script from another site is blocked, even a declared one', violated('script-src') > 0);
+  report('Page fetch and WebSocket to an undeclared site are blocked', violated('connect-src') >= 2);
+  report('Frames are blocked', violated('frame-src') > 0);
+  report('Web Workers are blocked', !workerMade || violated('worker-src') > 0);
+  report('Service workers are blocked', !serviceWorkerRegistered);
+  report('WebRTC is removed', typeof RTCPeerConnection === 'undefined');
+  report('alert() does nothing', alert('This should not appear') === undefined);
+
+  report('New windows are blocked', window.open('https://example.com/') === null);
+
+  await rejects('FourFold-run fetch to an undeclared site is refused',
+    () => fourfold.http.fetch('https://example.org/'), 'site-not-allowed');
+  await rejects('FourFold-run fetch to the local network is refused',
+    () => fourfold.http.fetch('https://localhost/'), 'site-not-allowed');
+  await rejects('Only GET and POST are accepted',
+    () => fourfold.http.fetch('https://example.com/', { method: 'DELETE' }), 'invalid-argument');
+
+  try {
+    const response = await fourfold.http.fetch('https://example.com/');
+    report('FourFold-run fetch to a declared site works', response.status === 200, `status ${response.status}`);
+  } catch (error) {
+    report('FourFold-run fetch to a declared site works', false, error.code ?? error.message);
+  }
+
+  await rejects('An undeclared card is refused',
+    () => fourfold.cards.set('nope', null, { rows: [] }), 'not-declared');
+  await rejects('openExternal without a click is refused', () => fourfold.openExternal('https://example.com/'));
+
+  await fourfold.storage.set('probe', { at: Date.now() });
+  report('Storage round-trips', (await fourfold.storage.get('probe')) !== null);
+  await rejects('Storage over 256 KB is refused',
+    () => fourfold.storage.set('big', 'x'.repeat(300 * 1024)), 'limit-exceeded');
+
+  // FourFold answers a read at once, so these may never overlap: each is answered, or refused past 32 at a time.
+  const many = await Promise.allSettled(Array.from({ length: 40 }, () => fourfold.storage.get('probe')));
+  report('More than 32 calls at once are refused or answered',
+    many.every(result => result.status === 'fulfilled' || result.reason.code === 'limit-exceeded'));
+}
+
+document.getElementById('open').addEventListener('click', () => fourfold.openExternal('https://example.com/'));
+document.getElementById('leave').addEventListener('click', () => { location.href = 'https://example.com/'; });
+document.getElementById('flood').addEventListener('click', () => {
+  for (let i = 0; i < 20000; i++) window.chrome.webview.postMessage({ id: -1 - i, method: 'timer.get' });
+});
+run().catch(error => report('The check itself ran', false, error.message));
