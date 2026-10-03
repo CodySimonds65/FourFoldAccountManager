@@ -15,6 +15,9 @@ public static partial class PluginManifestReader
 
     public const string CardIdPattern = "[a-z0-9]+(-[a-z0-9]+)*";
 
+    // What a plugin that asks for a newer apiVersion is told. The hub's install step matches on it.
+    public const string NeedsNewerFourFold = "Update FourFold to use this plugin.";
+
     private const int MaximumIconBytes = 64 * 1024;
 
     private const int MaximumManifestBytes = 64 * 1024;
@@ -148,7 +151,7 @@ public static partial class PluginManifestReader
 
                 if (apiVersion > SupportedApiVersion)
                 {
-                    return Reject("Update FourFold to use this plugin.");
+                    return Reject(NeedsNewerFourFold);
                 }
 
                 var panel = Text(root, "panel");

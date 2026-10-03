@@ -23,7 +23,8 @@ public partial class PluginSidebar : UserControl
     // A private drag format, so only a strip icon can be dropped on the strip.
     private const string DragFormat = "FourFold.PluginId";
     // The hub page builds every row it shows each time it refreshes, so it shows only this many matches. Installed
-    // plugins sort first, so they are always among them. A virtualising list is the upgrade if the hub outgrows this.
+    // plugins sort first, so they are among them unless more than 50 are installed. A virtualising list is the upgrade
+    // if the hub outgrows this.
     private const int HubRowLimit = 50;
     private IReadOnlyList<IFourFoldPlugin> _plugins = [];
     private PanelSettings _settings = PanelSettings.Default;

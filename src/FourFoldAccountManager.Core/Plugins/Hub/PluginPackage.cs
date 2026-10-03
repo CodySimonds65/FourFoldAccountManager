@@ -1,12 +1,17 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Text.RegularExpressions;
 
 namespace FourFoldAccountManager.Core.Plugins.Hub;
 
 // A plugin as the hub ships it: a zip of plugin.json and the files FourFold serves.
-public static class PluginPackage
+public static partial class PluginPackage
 {
     private static readonly DateTimeOffset EntryTime = new(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    // Windows treats these names as devices, alone or before a dot (aux.js), in any case.
+    [GeneratedRegex("^(con|prn|aux|nul|com[0-9]|lpt[0-9])$", RegexOptions.IgnoreCase)]
+    private static partial Regex DeviceNameRegex();
 
     // Builds the package for the plugin in folder. README, LICENSE, dot-files and other file types are left out. The
     // same files always give the same bytes. Throws InvalidDataException when the plugin is past the limits, contains
@@ -67,6 +72,12 @@ public static class PluginPackage
                 {
                     return $"{name} can't be unpacked on Windows: a file or folder name can't contain \\ : < > \" | ? * " +
                            "or a control character, or end with a dot or a space.";
+                }
+
+                if (DeviceNameRegex().IsMatch(part.Split('.')[0]))
+                {
+                    return $"{name} can't be unpacked on Windows: a file or folder name can't be con, prn, aux, nul, " +
+                           "com0 to com9 or lpt0 to lpt9, alone or before a dot.";
                 }
             }
 

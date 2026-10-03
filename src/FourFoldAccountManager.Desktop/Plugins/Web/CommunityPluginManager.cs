@@ -261,6 +261,20 @@ public sealed class CommunityPluginManager : IDisposable
                 _changedQueued = false;
                 if (!_disposed)
                 {
+                    // The Reload notice starts a plugin directly. If the user switched it off while it was starting,
+                    // the sync has already passed, so it is stopped here. Stopping raises RunningChanged and queues
+                    // one more pass, which finds nothing running that is switched off.
+                    if (_settingsGiven)
+                    {
+                        foreach (var loaded in Plugins)
+                        {
+                            if (loaded.IsRunning && !PluginLayoutPolicy.IsEnabled(_settings, loaded.Descriptor.Id))
+                            {
+                                loaded.Stop();
+                            }
+                        }
+                    }
+
                     Changed?.Invoke();
                 }
             });

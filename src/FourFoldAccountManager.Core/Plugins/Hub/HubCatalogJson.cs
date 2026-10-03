@@ -32,7 +32,8 @@ public static partial class HubCatalogJson
     {
         repository = null!;
         if (value is null || !RepositoryRegex().IsMatch(value) ||
-            value.EndsWith("/.", StringComparison.Ordinal) || value.EndsWith("/..", StringComparison.Ordinal))
+            value.EndsWith("/.", StringComparison.Ordinal) || value.EndsWith("/..", StringComparison.Ordinal) ||
+            value.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -165,6 +166,9 @@ public static partial class HubCatalogJson
         },
         AtomicJsonFile.Options);
 
+    // An entry that breaks a rule is skipped, so an entry this version of the app can't read is skipped too, and an
+    // installed plugin whose entry is skipped counts as no longer on the hub and is switched off on that machine. A
+    // rule here may therefore only be loosened once users have the version that accepts the looser entries.
     private static HubPlugin? TryReadPlugin(JsonElement item)
     {
         try

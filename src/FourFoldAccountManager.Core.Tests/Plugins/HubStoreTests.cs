@@ -1,4 +1,5 @@
 using FourFoldAccountManager.Core.Data;
+using FourFoldAccountManager.Core.Plugins;
 using FourFoldAccountManager.Core.Plugins.Hub;
 using Xunit;
 
@@ -23,13 +24,14 @@ public sealed class HubStoreTests : IDisposable
     public void Dispose() => Directory.Delete(_root, recursive: true);
 
     // A real package for a small plugin, and the catalog record that names it.
-    private (HubPlugin Plugin, byte[] Package) Build(string id, string version, string commit, string page = "<p>v</p>")
+    private (HubPlugin Plugin, byte[] Package) Build(
+        string id, string version, string commit, string page = "<p>v</p>", int apiVersion = 1)
     {
         var source = Path.Combine(_root, "source-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(source);
         File.WriteAllText(
             Path.Combine(source, "plugin.json"),
-            $$"""{"id":"{{id}}","name":"Goal tracker","shortLabel":"Goals","version":"{{version}}","author":"cody","apiVersion":1,"panel":"index.html"}""");
+            $$"""{"id":"{{id}}","name":"Goal tracker","shortLabel":"Goals","version":"{{version}}","author":"cody","apiVersion":{{apiVersion}},"panel":"index.html"}""");
         File.WriteAllText(Path.Combine(source, "index.html"), page);
         var package = PluginPackage.Build(source);
         return (
@@ -93,6 +95,39 @@ public sealed class HubStoreTests : IDisposable
         Assert.Equal([new HubInstalled("cody.goal-tracker", CommitA)], _store.LoadInstalled());
         Assert.True(_store.IsIntact("cody.goal-tracker"));
         Assert.Empty(DotFolders());
+    }
+
+    [Fact]
+    public async Task AFailureBeforeTheSwapLeavesNoStagingFolderBehind()
+    {
+        var (first, firstPackage) = Build("cody.goal-tracker", "1.0.0", CommitA, "<p>one</p>");
+        await InstallAsync(first, firstPackage);
+        var (second, secondPackage) = Build("cody.goal-tracker", "1.1.0", CommitB, "<p>two</p>");
+        Assert.Null(_store.Stage(second, secondPackage, out var staging));
+
+        // A file of the installed version held open, so its folder can't be set aside and the swap never starts.
+        var held = Path.Combine(_store.FolderOf("cody.goal-tracker"), "index.html");
+        using (new FileStream(held, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            await Assert.ThrowsAnyAsync<IOException>(
+                () => _store.CommitAsync(second, staging, CancellationToken.None));
+        }
+
+        Assert.Equal("<p>one</p>", File.ReadAllText(held));
+        Assert.Equal([new HubInstalled("cody.goal-tracker", CommitA)], _store.LoadInstalled());
+        Assert.True(_store.IsIntact("cody.goal-tracker"));
+        Assert.Empty(DotFolders());
+    }
+
+    [Fact]
+    public void APluginThatNeedsANewerFourFoldIsRefusedAsThat()
+    {
+        var (plugin, package) = Build(
+            "cody.goal-tracker", "1.0.0", CommitA, apiVersion: PluginManifestReader.SupportedApiVersion + 1);
+
+        Assert.Equal("This version needs a newer FourFold.", _store.Stage(plugin, package, out var staging));
+
+        Assert.False(Directory.Exists(staging));
     }
 
     [Fact]
@@ -263,6 +298,35 @@ public sealed class HubStoreTests : IDisposable
         var listed = Assert.Single(loaded.Plugins);
         Assert.Equal((plugin.Id, plugin.Commit, plugin.Sha256), (listed.Id, listed.Commit, listed.Sha256));
         Assert.Equal(new HubRemoval("pulled.plugin", "Sent data away."), Assert.Single(loaded.Removed));
+    }
+
+    [Fact]
+    public void WhatTheToolPublishesTheAppInstalls()
+    {
+        // If the tool, the catalog's reader and the app ever disagree about a plugin, either nothing installs or an
+        // installed plugin reads as unlisted. This one has two sites (one an international name with a port), a card
+        // and any-website clearance, which is everything the catalog carries.
+        var folder = Path.Combine(_root, "repository");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(
+            Path.Combine(folder, "plugin.json"),
+            """{"id":"cody.goal-tracker","name":"Goal tracker","shortLabel":"Goals","version":"1.0.0","author":"cody","apiVersion":1,"panel":"index.html","anySite":true,"sites":["https://example.com","https://bücher.example:8443"],"cards":[{"id":"goals","name":"Goals","scope":"account"}]}""");
+        File.WriteAllText(Path.Combine(folder, "index.html"), "<p>v</p>");
+        var entry = new HubEntry(
+            "cody.goal-tracker", new Uri("https://github.com/cody/goal-tracker"), CommitA, "", true);
+
+        var build = HubSubmission.BuildCatalog(
+            [entry], [], null, item => HubSubmission.Check(item, folder, null, "2026-10-09"));
+        Assert.Empty(build.Errors);
+        var (_, package) = Assert.Single(build.Packages);
+        var published = HubCatalogJson.Parse(HubCatalogJson.Write(build.Catalog!));
+
+        var listed = Assert.Single(published!.Plugins);
+        Assert.Equal(2, listed.Sites.Count);
+        Assert.Contains(listed.Sites, site => site.IdnHost == "xn--bcher-kva.example" && site.Port == 8443);
+        Assert.True(listed.AnySite);
+        Assert.Single(listed.Cards);
+        Assert.Null(_store.Stage(listed, package, out _));
     }
 
     [Fact]

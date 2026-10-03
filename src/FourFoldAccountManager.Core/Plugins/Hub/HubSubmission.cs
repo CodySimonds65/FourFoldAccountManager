@@ -15,8 +15,9 @@ public static class HubSubmission
 {
     private const int MaximumListedFiles = 100;
 
-    // Every character Markdown could act on in the summary.
-    private const string MarkdownCharacters = "\\`*_[]<>&|~!()#";
+    // Every character Markdown could act on in the summary. "$" is here because GitHub draws $...$ as maths, which
+    // could restyle the text between two values on one line.
+    private const string MarkdownCharacters = "\\`*_[]<>&|~!()#$";
 
     // Checks one entry against its repository, unpacked at the entry's commit in repositoryFolder, and builds its
     // package. today is the review date recorded for it (yyyy-MM-dd).
@@ -49,7 +50,7 @@ public static class HubSubmission
         // ever pass the "must raise" rule below.
         if (!System.Version.TryParse(manifest.Version, out _))
         {
-            return Fail("Each number in the version must be below 2147483647, for example 1.4.0.");
+            return Fail("Each number in the version must be at most 2147483647, for example 1.4.0.");
         }
 
         var listed = current?.Plugins.FirstOrDefault(plugin => plugin.Id == entry.Id);

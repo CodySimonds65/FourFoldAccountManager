@@ -28,10 +28,11 @@ public sealed class HubStore(LocalDataPaths paths)
     // plugin needs is gone. The next hub check installs it again.
     public bool IsIntact(string id) => PluginManifestReader.Read(FolderOf(id)).Manifest is not null;
 
-    // No file means nothing is installed. A file that can't be read as a record (not JSON, empty, one wrong entry) is
-    // rebuilt from the plugin folders on disk, so a damaged record never makes the next install forget the others. A
-    // file that exists but can't be opened throws (IOException, or UnauthorizedAccessException when access is denied),
-    // so a locked record is never mistaken for "nothing installed" and then written over.
+    // No file means nothing is installed. A record that is not JSON, is empty, or holds an entry of the wrong shape is
+    // rebuilt from the plugin folders on disk, so a damaged record never makes the next install forget the others; an
+    // entry whose id or commit isn't valid is left out. A file that exists but can't be opened throws (IOException, or
+    // UnauthorizedAccessException when access is denied), so a locked record is never mistaken for "nothing installed"
+    // and then written over.
     public IReadOnlyList<HubInstalled> LoadInstalled()
     {
         if (!File.Exists(paths.HubInstalledFilePath))
@@ -113,12 +114,15 @@ public sealed class HubStore(LocalDataPaths paths)
 
         // The hash matched, but it must also be the plugin the user asked for, asking for the websites the hub page
         // showed: the catalog's sites are what the user saw, and the plugin.json is what the sandbox enforces.
-        var manifest = PluginManifestReader.Read(stagingFolder).Manifest;
+        var read = PluginManifestReader.Read(stagingFolder);
+        var manifest = read.Manifest;
         if (manifest is null || manifest.Id != plugin.Id || manifest.Version != plugin.Version ||
             !manifest.Sites.ToHashSet().SetEquals(plugin.Sites) || (plugin.AnySite && !manifest.AnySite))
         {
             TryDeleteFolder(stagingFolder);
-            return "The package isn't the plugin the hub listed.";
+            return read.Error == PluginManifestReader.NeedsNewerFourFold
+                ? "This version needs a newer FourFold."
+                : "The package isn't the plugin the hub listed.";
         }
 
         return null;
@@ -132,14 +136,25 @@ public sealed class HubStore(LocalDataPaths paths)
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            // Read before anything moves: a record that can't be read stops the install here.
-            var records = LoadInstalled();
             // The id is in the name so CleanUp can put the folder back if a crash comes between the two moves.
             var previous = Path.Combine(paths.HubPluginsRoot, $"{OldPrefix}{plugin.Id}-{Guid.NewGuid():N}");
-            var hadPrevious = Directory.Exists(target);
-            if (hadPrevious)
+            IReadOnlyList<HubInstalled> records;
+            bool hadPrevious;
+            try
             {
-                Directory.Move(target, previous);
+                // Read before anything moves: a record that can't be read stops the install here.
+                records = LoadInstalled();
+                hadPrevious = Directory.Exists(target);
+                if (hadPrevious)
+                {
+                    Directory.Move(target, previous);
+                }
+            }
+            catch
+            {
+                // Nothing was swapped, so only the staged files need to go.
+                TryDeleteFolder(stagingFolder);
+                throw;
             }
 
             try
@@ -181,7 +196,8 @@ public sealed class HubStore(LocalDataPaths paths)
 
     // The record goes first, so a crash partway leaves files nothing points at, never a record without its files. The
     // folder is renamed before it is deleted: a delete that fails partway then leaves a leftover CleanUp finishes at
-    // the next start, never a half-deleted plugin folder that could be loaded.
+    // the next start, never a half-deleted plugin folder that could be loaded. A folder that can't be renamed stays
+    // under its own name, unrecorded, and installing the plugin again replaces it.
     public async Task UninstallAsync(string id, CancellationToken cancellationToken)
     {
         var folder = FolderOf(id);
