@@ -3,6 +3,7 @@ using FourFoldAccountManager.Core.Calculation;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Overlay;
 using FourFoldAccountManager.Core.Panel;
+using FourFoldAccountManager.Core.Plugins;
 
 namespace FourFoldAccountManager.Core.Data;
 
@@ -116,7 +117,10 @@ public sealed class SettingsStore
             ToolsWindow = settings.ToolsWindow is { IsUsable: true } ? settings.ToolsWindow : null,
             SecondMonitorMode = Enum.IsDefined(settings.SecondMonitorMode)
                 ? settings.SecondMonitorMode
-                : SecondMonitorMode.AccountToolsWindow
+                : SecondMonitorMode.AccountToolsWindow,
+            PluginOrder = PluginLayoutPolicy.CleanIds(settings.PluginOrder),
+            DisabledPlugins = PluginLayoutPolicy.CleanIds(settings.DisabledPlugins),
+            OpenPlugin = string.IsNullOrWhiteSpace(settings.OpenPlugin) ? BuiltInPlugins.XpTrackerId : settings.OpenPlugin
         };
     }
 
