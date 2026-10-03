@@ -31,13 +31,12 @@
         <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
     </Style>
 
-    <Style x:Key="Typography.Caption" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+    <Style x:Key="QuietTextStyle" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
         <Setter Property="FontSize" Value="11" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextMuted}" />
     </Style>
-    <Style x:Key="QuietTextStyle" TargetType="TextBlock" BasedOn="{StaticResource Typography.Caption}" />
 
-    <Style x:Key="Card" TargetType="Border">
+    <Style x:Key="SidebarCardStyle" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
         <Setter Property="BorderThickness" Value="1" />
@@ -45,14 +44,12 @@
         <Setter Property="Padding" Value="16" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
     </Style>
-    <Style x:Key="Panel.Card" TargetType="Border" BasedOn="{StaticResource Card}">
+    <Style x:Key="PanelCardStyle" TargetType="Border" BasedOn="{StaticResource SidebarCardStyle}">
         <Setter Property="CornerRadius" Value="10" />
         <Setter Property="Padding" Value="10" />
     </Style>
-    <Style x:Key="SidebarCardStyle" TargetType="Border" BasedOn="{StaticResource Card}" />
-    <Style x:Key="PanelCardStyle" TargetType="Border" BasedOn="{StaticResource Panel.Card}" />
 
-    <Style x:Key="Button.Base" TargetType="Button">
+    <Style x:Key="AppButtonStyle" TargetType="Button">
         <Setter Property="FontFamily" Value="Segoe UI" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="FontWeight" Value="SemiBold" />
@@ -102,8 +99,7 @@
             </Setter.Value>
         </Setter>
     </Style>
-    <Style x:Key="Button.Secondary" TargetType="Button" BasedOn="{StaticResource Button.Base}" />
-    <Style x:Key="Button.Primary" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+    <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AppButtonStyle}">
         <Setter Property="Foreground" Value="#FF17191D" />
         <Setter Property="Background" Value="{DynamicResource Brush.AccentGold}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.AccentGold}" />
@@ -118,7 +114,7 @@
             </Trigger>
         </Style.Triggers>
     </Style>
-    <Style x:Key="Button.Danger" TargetType="Button" BasedOn="{StaticResource Button.Base}">
+    <Style x:Key="DangerButtonStyle" TargetType="Button" BasedOn="{StaticResource AppButtonStyle}">
         <Setter Property="Foreground" Value="{DynamicResource Brush.Danger}" />
         <Setter Property="BorderBrush" Value="#FF704D56" />
         <Style.Triggers>
@@ -128,9 +124,6 @@
             </Trigger>
         </Style.Triggers>
     </Style>
-    <Style x:Key="AppButtonStyle" TargetType="Button" BasedOn="{StaticResource Button.Secondary}" />
-    <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource Button.Primary}" />
-    <Style x:Key="DangerButtonStyle" TargetType="Button" BasedOn="{StaticResource Button.Danger}" />
 
     <Style TargetType="ContextMenu">
         <Setter Property="FontFamily" Value="Segoe UI" />
@@ -250,7 +243,7 @@
     <DataTemplate x:Key="ChoiceLabelTemplate">
         <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
     </DataTemplate>
-    <Style x:Key="Input.ComboBox" TargetType="ComboBox">
+    <Style x:Key="ComboBoxStyle" TargetType="ComboBox">
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
         <Setter Property="Background" Value="{DynamicResource Brush.SurfaceRaised}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
@@ -318,7 +311,6 @@
             </Setter.Value>
         </Setter>
     </Style>
-    <Style x:Key="ComboBoxStyle" TargetType="ComboBox" BasedOn="{StaticResource Input.ComboBox}" />
 
     <Style x:Key="Input.ListBoxItem" TargetType="ListBoxItem">
         <Setter Property="Margin" Value="0,0,0,6" />
@@ -348,7 +340,7 @@
             </Setter.Value>
         </Setter>
     </Style>
-    <Style x:Key="Input.ListBox" TargetType="ListBox">
+    <Style x:Key="ListBoxStyle" TargetType="ListBox">
         <Setter Property="Background" Value="{DynamicResource Brush.Surface}" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.Border}" />
@@ -358,9 +350,8 @@
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
         <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
     </Style>
-    <Style x:Key="ListBoxStyle" TargetType="ListBox" BasedOn="{StaticResource Input.ListBox}" />
 
-    <Style x:Key="Input.TextBox" TargetType="TextBox">
+    <Style x:Key="InputStyle" TargetType="TextBox">
         <Setter Property="FontFamily" Value="Segoe UI" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
@@ -397,7 +388,6 @@
             </Setter.Value>
         </Setter>
     </Style>
-    <Style x:Key="InputStyle" TargetType="TextBox" BasedOn="{StaticResource Input.TextBox}" />
     <Style x:Key="PasswordInputStyle" TargetType="PasswordBox">
         <Setter Property="Foreground" Value="{DynamicResource Brush.TextPrimary}" />
         <Setter Property="Background" Value="{DynamicResource Brush.SurfaceRaised}" />
