@@ -23,12 +23,18 @@ public sealed class AccountBrowserSessionService
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly Dictionary<Guid, SessionView> _views = [];
     private readonly Dictionary<Guid, GameViewportSize> _gameViewportSizes = [];
+    private readonly Func<bool> _blockStorePages;
     private Task<CoreWebView2Environment>? _environmentTask;
     private bool _fillGameToPanel = true;
 
-    public AccountBrowserSessionService(LocalDataPaths paths)
+    /// <param name="blockStorePages">
+    /// Read on every navigation. When true, the store and gold pages don't load: the game opens them as popups that
+    /// would replace it in its panel.
+    /// </param>
+    public AccountBrowserSessionService(LocalDataPaths paths, Func<bool> blockStorePages)
     {
         _paths = paths ?? throw new ArgumentNullException(nameof(paths));
+        _blockStorePages = blockStorePages;
         _dispatcher = Dispatcher.CurrentDispatcher;
     }
 
@@ -38,6 +44,9 @@ public sealed class AccountBrowserSessionService
     /// URL, which could contain sensitive query values.
     /// </summary>
     public event Action<Guid>? NavigationBlocked;
+
+    /// <summary>Raised when a slot is stopped from opening the store or gold page.</summary>
+    public event Action<Guid>? StorePageBlocked;
 
     public Task<WebView2CompositionControl> CreateViewAsync(Guid accountId, Panel host) =>
         InvokeOnDispatcherAsync(() => CreateViewCoreAsync(accountId, host));
@@ -101,13 +110,19 @@ public sealed class AccountBrowserSessionService
             }
             EventHandler<CoreWebView2NavigationStartingEventArgs> navigationStarting = (sender, args) =>
             {
-                if (IsApproved(args.Uri))
+                if (!IsApproved(args.Uri))
                 {
+                    args.Cancel = true;
+                    RaiseNavigationBlocked(accountId);
                     return;
                 }
 
-                args.Cancel = true;
-                RaiseNavigationBlocked(accountId);
+                // Store popups reach here too: the popup handler below navigates this view to them.
+                if (_blockStorePages() && FourFoldNavigationPolicy.IsStorePage(new Uri(args.Uri)))
+                {
+                    args.Cancel = true;
+                    StorePageBlocked?.Invoke(accountId);
+                }
             };
 
             EventHandler<CoreWebView2NewWindowRequestedEventArgs> newWindowRequested = (_, args) =>

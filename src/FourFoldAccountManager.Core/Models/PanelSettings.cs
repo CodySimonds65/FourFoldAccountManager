@@ -26,6 +26,8 @@ public sealed record PanelSettings
 
     public bool ShowOverlaysInTheatreMode { get; init; } = true;
 
+    public bool BlockStorePages { get; init; }
+
     [JsonConverter(typeof(LenientObjectJsonConverter<GlobalHotkeyChord>))]
     public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =
         GlobalHotkeyChord.DefaultRevealXpOverlayTab;
