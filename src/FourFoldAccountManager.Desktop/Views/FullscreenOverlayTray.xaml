@@ -14,7 +14,7 @@
                           Click="Switch_Click" VerticalAlignment="Center" FontSize="11"
                           Foreground="{DynamicResource Brush.TextPrimary}"
                           AutomationProperties.Name="{Binding AccessibleName}">
-                    <TextBlock Text="{Binding Label}" />
+                    <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
                 </CheckBox>
                 <TextBlock Grid.Column="1" Text="{Binding Detail}" FontSize="10" FontWeight="SemiBold"
                            Foreground="{DynamicResource Brush.AccentGold}" Margin="8,0,0,0"

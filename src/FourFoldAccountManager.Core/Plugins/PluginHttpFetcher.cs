@@ -27,6 +27,10 @@ public sealed class PluginHttpFetcher : IDisposable
 
     private const string HeaderSeparators = "()<>@,;:\\\"/[]?={}";
 
+    // Many public APIs refuse a request that has no User-Agent. This is a FourFold default, not a plugin header, so it
+    // goes on every hop (a redirect to another host drops the plugin's headers, not this), and a plugin's own wins.
+    private const string DefaultUserAgent = "FourFold-Plugin/1";
+
     private static readonly string[] ForbiddenHeaders =
         ["Cookie", "Host", "Content-Length", "Transfer-Encoding", "Connection"];
 
@@ -222,6 +226,11 @@ public sealed class PluginHttpFetcher : IDisposable
                 message.Content.Headers.Remove(name);
                 message.Content.Headers.TryAddWithoutValidation(name, value);
             }
+        }
+
+        if (!message.Headers.Contains("User-Agent"))
+        {
+            message.Headers.TryAddWithoutValidation("User-Agent", DefaultUserAgent);
         }
     }
 

@@ -13,21 +13,27 @@ The page runs in its own sandboxed browser. It talks to FourFold only through `w
 - a small private store;
 - overlay cards, drawn by FourFold.
 
-The page keeps running while its panel is closed, so its cards stay up to date. It stops when the user switches the plugin off or closes FourFold.
+The page keeps running while its panel is closed, so its cards stay up to date. It stops when the user switches the plugin off or closes FourFold. It runs whenever the plugin is switched on: when FourFold starts, on **Reload**, and on every file save in the dev folder. Keep start-up work light.
+
+The panel is narrow: about 250 px wide in the main window, and as wide as the window allows in the pop-out tools window. Design a single narrow column.
 
 ## Quick start
 
 1. Open the plugin list (the wrench in the plugin strip).
 2. Switch on **Developer mode**, at the bottom of the list.
 3. Press **Open dev plugins folder**. It is `%LOCALAPPDATA%\FourFoldAccountManager\dev-plugins`.
-4. Copy the `samples/goal-tracker` folder into it, so that `plugin.json` sits at `dev-plugins\goal-tracker\plugin.json`.
+4. Copy the `samples/goal-tracker` folder into it, so that `plugin.json` sits at `dev-plugins\goal-tracker\plugin.json`. The [`samples`](samples) folder is in the GitHub repository, not in the release download.
 5. The plugin appears in the strip and the plugin list with a **DEV** badge.
+
+When you build on a copy of a sample, change its `id` and `author` in `plugin.json` first.
+
+The other sample, `samples/sandbox-check`, contacts example.com each time it runs. See [Check your own plugin](#check-your-own-plugin).
 
 Every folder directly inside `dev-plugins` is one plugin.
 
 - **Saving a file** in a plugin's folder reloads the plugin within about a second. A changed `plugin.json` is read again, including its cards and sites.
 - **A rejected `plugin.json`** still gets a row in the plugin list, with the folder name and the reason. Fix the file and it loads.
-- **Right-click, Inspect** opens the browser developer tools. This works for plugins in the dev folder only. Blocked requests and rejected calls show up in the console.
+- **Right-click, Inspect** opens the browser developer tools. This works for plugins in the dev folder only. Blocked requests show up in the console, and so does a rejected call that your code doesn't catch.
 - **F5** reloads the plugin's page.
 - **Developer mode off** stops every dev plugin and removes it from the strip. Order and on/off state are kept.
 
@@ -64,18 +70,18 @@ A `plugin.json` that breaks any rule below is rejected: the plugin doesn't load,
 | `description` | no | At most 200 characters. |
 | `apiVersion` | yes | A whole number. FourFold supports `1`. A higher number is rejected with "Update FourFold to use this plugin." |
 | `panel` | yes | Path to an existing `.html` file inside the plugin folder. Forward slashes only. |
-| `icon` | no | Path to a `.png` inside the plugin folder, at most 64 KB. Forward slashes only. Without one, the strip shows a default icon. |
+| `icon` | no | Path to a `.png` inside the plugin folder, at most 64 KB. Forward slashes only. Without one, the strip shows just the `shortLabel`. |
 | `sites` | no | At most 10 websites the plugin may contact. Each is an origin: `https://host` or `https://host:port`, with no path, query or `user@`. The host must be a DNS name: no IP address, no trailing dot, and no name that only works on the local network. `localhost`, `.localhost`, `.local`, `.internal`, `.lan` and `.home.arpa` names are refused, and so is a single-label name such as `router`. A subdomain is its own site, so `https://example.com` doesn't cover `https://www.example.com`. |
 | `anySite` | no | `true` lets the plugin contact any `https` site. Default `false`. FourFold honors it for plugins in the dev folder. |
 | `cards` | no | At most 6 overlay cards. See [Cards](#cards). |
 
 Each entry in `cards`:
 
-| Field | Rule |
-|---|---|
-| `id` | Lowercase letters and digits, with single dashes allowed between them. 1 to 32 characters. Unique in the plugin. |
-| `name` | 1 to 24 characters. It is the card's title. |
-| `scope` | `account` (one card per open account) or `global` (one card). |
+| Field | Required | Rule |
+|---|---|---|
+| `id` | yes | Lowercase letters and digits, with single dashes allowed between them. 1 to 32 characters. Unique in the plugin. |
+| `name` | yes | 1 to 24 characters. It is the card's title. |
+| `scope` | yes | `account` (one card per open account) or `global` (one card). |
 
 ## The API
 
@@ -85,6 +91,7 @@ Each entry in `cards`:
 - An `on...` call takes a callback and returns a function that stops the callback.
 - A call that is refused rejects with an `Error`. Its `code` property is one of the [error codes](#error-codes) and its `message` says which rule was broken.
 - A rejected call never stops your plugin.
+- Events can arrive in bursts (`xp.onUpdated` fires once per account), so a handler can start while the last run is still waiting for answers. Run redraws one after another, as the `queue` in `samples/goal-tracker/app.js` does.
 
 ### Accounts
 
@@ -129,9 +136,9 @@ fourfold.xp.onUpdated(({ accountId }) => console.log('new XP data for', accountI
 | `sessionXp` | number | XP gained this session. `0` when unknown. |
 | `classes` | array | `{ className, level, currentXp, nextLevelXp }` for every class. May be empty. |
 | `updatedAt` | string or null | Time of the last successful read, as an ISO 8601 date. |
-| `isStale` | boolean | `true` when the last read failed, or there is no data. |
+| `isStale` | boolean | `true` when there is no XP data yet, when the last read failed, and for a closed account. |
 
-FourFold reads an account's XP only while that account is open. For a closed account the number and text fields are `null`, `classes` is empty and `isStale` is `true`. An id that isn't one of the user's accounts is rejected with `invalid-argument`.
+FourFold reads an account's XP only while that account is open, and only if FourFold's own XP tracker can read it. If the XP tracker plugin shows no data for an account, neither will yours. For a closed account the number and text fields are `null`, `classes` is empty and `isStale` is `true`. An id that isn't one of the user's accounts is rejected with `invalid-argument`.
 
 `fourfold.xp.onUpdated(callback)` calls `callback({ accountId })` when that account's XP data changes, about once a minute for each open account.
 
@@ -142,7 +149,7 @@ const stats = await fourfold.stats.get(account.id);
 if (stats) console.log(stats.className, stats.level, stats.hp, stats.attack);
 ```
 
-`fourfold.stats.get(accountId)` returns `{ className, level, hp, sp, attack, magic, skill, speed, luck, defense, resistance }` for the account's active class, or `null` before the account's first read. `hp` to `resistance` are numbers, or `null` when unknown. An unknown account id is rejected with `invalid-argument`.
+`fourfold.stats.get(accountId)` returns `{ className, level, hp, sp, attack, magic, skill, speed, luck, defense, resistance }` for the account's active class, or `null` when the account is closed or hasn't been read yet. There is no stats event: read `stats.get` again when `xp.onUpdated` fires. `hp` to `resistance` are numbers, or `null` when unknown. An unknown account id is rejected with `invalid-argument`.
 
 ### Timer
 
@@ -172,11 +179,11 @@ console.log(response.status, response.text.length);
 
 - **Where:** a site in your `sites`, or any `https` site if the plugin has `anySite`. The host name must match exactly. Plain `http` never works. A site on the local network never works, and FourFold also checks the addresses the host name resolves to.
 - **Method:** `GET` (default) or `POST`.
-- **`body`:** a string. It is sent as UTF-8 with a `text/plain` content type unless you set `Content-Type` in `headers`.
-- **`headers`:** an object of strings. A name must be a valid header name, and a value must be printable ASCII, or the call fails with `invalid-argument`. `Cookie`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Proxy-*` and `Sec-*` are dropped.
+- **`body`:** must be a string, so `JSON.stringify` an object yourself. A body that isn't a string is sent empty, and `body` is ignored for `GET`. It is sent as UTF-8 with a `text/plain` content type unless you set `Content-Type` in `headers`.
+- **`headers`:** an object of strings. A name must be a valid header name, and a value must be printable ASCII, or the call fails with `invalid-argument`. `Cookie`, `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Proxy-*` and `Sec-*` are dropped. FourFold sends `User-Agent: FourFold-Plugin/1` unless you set your own.
 - **No shared state:** no cookies are kept or sent, and no FourFold credentials are attached.
 - **Redirects:** followed up to 5 times. Each one must go to an allowed site. Your headers are not sent again once a redirect leaves the original host or port. `301` and `302` on a `POST`, and `303`, turn the request into a `GET`.
-- **Response:** `status` is the HTTP status. A `404` or `500` still resolves, so check `status`. `headers` is an object of the response headers (`Set-Cookie` is left out). `text` is the body read as UTF-8, so it only suits text.
+- **Response:** `status` is the HTTP status. A `404` or `500` still resolves, so check `status`. `headers` is an object of the response headers (`Set-Cookie` is left out). Header names come in whatever case the server used, so compare them case-insensitively. `text` is the body read as UTF-8, so it only suits text.
 - **Limits:** at most 60 requests a minute (each redirect counts), a 15 second timeout, a 2 MB response.
 
 ### Opening a link
@@ -211,7 +218,7 @@ Each plugin has a private key-value store that is kept between runs.
 - `set` and `remove` together are limited to 120 a minute (`limit-exceeded`).
 - The data is saved in `%LOCALAPPDATA%\FourFoldAccountManager\plugin-data\<id>.json`. If that file can't be read at the moment (it is locked, say), the call is rejected with `unavailable`. A missing or damaged file loads as empty.
 
-### Cards
+### Card calls
 
 ```js
 await fourfold.cards.set('goal', account.id, {
@@ -266,7 +273,7 @@ body { background: var(--ff-surface); color: var(--ff-text); }
 | Card text | Summary up to 40 characters, up to 8 rows, label and value up to 40 characters each. |
 | Card redraws | At most four a second. |
 | One served file | 8 MB. |
-| Flood stop | See [The sandbox](#the-sandbox). |
+| Flood stop | More than 2,000 requests or messages, more than 8 MB of messages, or more than 64 MB of replies, in a second. See [When a plugin is stopped](#when-a-plugin-is-stopped). |
 
 ## The sandbox
 
@@ -297,7 +304,7 @@ Every response carries a content security policy. For a plugin that declares `ht
 default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: https://example.com; connect-src 'self' https://example.com wss://example.com; frame-src 'none'; worker-src 'none'; webrtc 'block'; object-src 'none'; base-uri 'none'; form-action 'none'
 ```
 
-With `anySite`, `img-src` and `connect-src` accept `https:` in place of the declared sites. WebSockets still need a declared site.
+With `anySite`, `img-src` and `connect-src` accept `https:` in place of the declared sites. WebSockets still need a declared site. The developer tools console may warn about an unknown `webrtc` directive in this policy. It is harmless.
 
 What that means for you:
 
@@ -310,11 +317,11 @@ What that means for you:
 
 ### The local network
 
-No page request and no `http.fetch` can reach the user's own network. That covers `localhost`, `.localhost`, `.local`, `.internal`, `.lan` and `.home.arpa` names, single-label names such as `router`, and addresses in `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7` and `fe80::/10`, in any spelling. Page requests are checked by host name or address. `http.fetch` also checks every address a host name resolves to.
+FourFold refuses local names and addresses for page requests and for `http.fetch`. That covers `localhost`, `.localhost`, `.local`, `.internal`, `.lan` and `.home.arpa` names, single-label names such as `router`, and addresses in `127.0.0.0/8`, `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `::1`, `fc00::/7` and `fe80::/10`, in any spelling. Only `http.fetch` also checks what a host name resolves to, so declare only hosts you trust.
 
 ### The browser around your page
 
-- Leaving your plugin's page is cancelled. New windows are blocked. Downloads are cancelled.
+- Navigating to any other site is cancelled. Links between your own pages work. New windows are blocked. Downloads are cancelled.
 - Every permission request is denied: camera, microphone, location, clipboard read, notifications, screen capture and the rest.
 - `alert`, `confirm` and `prompt` do nothing.
 - Password saving and autofill are off. Sign-in prompts and links to other apps (`mailto:`, say) are cancelled.
@@ -325,7 +332,7 @@ No page request and no `http.fetch` can reach the user's own network. That cover
 FourFold stops a plugin that:
 
 - sends more than 2,000 requests or messages in one second (every request the page makes counts, including for its own files);
-- sends more than 8 MB of messages in one second, counting FourFold's replies too (a loop of `storage.get` calls on a big value can reach it);
+- sends more than 8 MB of messages in one second, or is sent more than 64 MB of FourFold's replies in one second (a loop of `storage.get` calls on a big value can reach it);
 - loads more than 32 MB of its own files in one second;
 - crashes, or stops responding.
 
@@ -333,7 +340,7 @@ The panel then shows "This plugin stopped." with a **Reload** button. The plugin
 
 ### Check your own plugin
 
-`samples/sandbox-check` tries everything above that a plugin must not be able to do, and prints PASS or FAIL for each. It needs an internet connection, because it makes one request to example.com. Its **Flood FourFold** button should stop the plugin.
+`samples/sandbox-check` tries the main things above that a plugin must not be able to do, and prints PASS or FAIL for each. It contacts example.com each time it runs, so it needs an internet connection. Its **Flood FourFold** button should stop the plugin.
 
 ## Cards
 

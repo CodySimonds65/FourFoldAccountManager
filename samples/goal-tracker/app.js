@@ -9,10 +9,21 @@ function progressTo(goal, xp) {
   return Math.min(1, (xp.level + withinLevel) / goal);
 }
 
-async function render() {
+// Events arrive in bursts (xp.onUpdated fires once per account), so redraws run one after another, never overlapping.
+let queue = Promise.resolve();
+const render = () => (queue = queue.then(draw).catch(error => console.warn(error.code ?? error.message)));
+
+async function draw() {
+  // Leave the list alone while the user is typing a goal.
+  if (container.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
   const accounts = await fourfold.accounts.list();
-  // Events can start a second render while this one is waiting, so the page is swapped once, at the end.
   const panels = [];
+  if (accounts.length === 0) {
+    const none = document.createElement('p');
+    none.className = 'muted';
+    none.textContent = 'No accounts yet. Add one in FourFold.';
+    panels.push(none);
+  }
   for (const account of accounts) {
     const xp = await fourfold.xp.get(account.id);
     const goal = goals[account.id] ?? null;
@@ -33,6 +44,7 @@ async function render() {
       if (Number.isFinite(value) && value > 0) goals[account.id] = value;
       else delete goals[account.id];
       await fourfold.storage.set('goals', goals);
+      input.blur();
       await render();
     });
     const bar = document.createElement('div');

@@ -38,6 +38,7 @@ async function run() {
   frame.src = 'https://example.com/';
   frame.hidden = true;
   document.body.append(frame);
+  const popup = window.open('https://example.com/');
   let workerMade = false;
   try { new Worker('check.js'); workerMade = true; } catch { /* blocked */ }
   let serviceWorkerRegistered = false;
@@ -46,7 +47,7 @@ async function run() {
     serviceWorkerRegistered = true;
   } catch { /* blocked */ }
   await settle();
-  report('A script from another site is blocked, even a declared one', violated('script-src') > 0);
+  report('A script from another site is blocked, even a declared one', violated('script-src-elem') > 0);
   report('Page fetch and WebSocket to an undeclared site are blocked', violated('connect-src') >= 2);
   report('Frames are blocked', violated('frame-src') > 0);
   report('Web Workers are blocked', !workerMade || violated('worker-src') > 0);
@@ -54,7 +55,7 @@ async function run() {
   report('WebRTC is removed', typeof RTCPeerConnection === 'undefined');
   report('alert() does nothing', alert('This should not appear') === undefined);
 
-  report('New windows are blocked', window.open('https://example.com/') === null);
+  report('New windows are blocked', popup === null || popup.closed);
 
   await rejects('FourFold-run fetch to an undeclared site is refused',
     () => fourfold.http.fetch('https://example.org/'), 'site-not-allowed');
@@ -72,7 +73,7 @@ async function run() {
 
   await rejects('An undeclared card is refused',
     () => fourfold.cards.set('nope', null, { rows: [] }), 'not-declared');
-  await rejects('openExternal without a click is refused', () => fourfold.openExternal('https://example.com/'));
+  await rejects('openExternal is refused while the checks run', () => fourfold.openExternal('https://example.com/'));
 
   await fourfold.storage.set('probe', { at: Date.now() });
   report('Storage round-trips', (await fourfold.storage.get('probe')) !== null);
@@ -88,6 +89,9 @@ async function run() {
 document.getElementById('open').addEventListener('click', () => fourfold.openExternal('https://example.com/'));
 document.getElementById('leave').addEventListener('click', () => { location.href = 'https://example.com/'; });
 document.getElementById('flood').addEventListener('click', () => {
-  for (let i = 0; i < 20000; i++) window.chrome.webview.postMessage({ id: -1 - i, method: 'timer.get' });
+  // Large messages first, so the budget for message text trips whatever the machine's speed.
+  const pad = 'x'.repeat(500000);
+  for (let i = 0; i < 20; i++) window.chrome.webview.postMessage({ id: -1 - i, method: 'timer.get', pad });
+  for (let i = 0; i < 20000; i++) window.chrome.webview.postMessage({ id: -100 - i, method: 'timer.get' });
 });
 run().catch(error => report('The check itself ran', false, error.message));
