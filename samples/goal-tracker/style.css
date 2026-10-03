@@ -1,0 +1,9 @@
+body { margin: 0; padding: 14px; background: var(--ff-surface); color: var(--ff-text); font: 13px "Segoe UI", sans-serif; }
+h1 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+.muted { color: var(--ff-text-muted); margin: 0 0 12px; }
+.account { background: var(--ff-surface-raised); border: 1px solid var(--ff-border); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+.account h2 { margin: 0 0 6px; font-size: 13px; }
+.account label { color: var(--ff-text-muted); margin-right: 6px; }
+.account input { width: 64px; background: var(--ff-background); color: var(--ff-text); border: 1px solid var(--ff-border); border-radius: 4px; padding: 3px 6px; }
+.bar { height: 4px; border-radius: 2px; background: var(--ff-border); margin-top: 8px; }
+.bar > div { height: 100%; border-radius: 2px; background: var(--ff-accent); }
