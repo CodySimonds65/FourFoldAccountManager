@@ -12,7 +12,8 @@ namespace FourFoldAccountManager.Desktop;
 public partial class MainWindow : IPluginHostData
 {
     private readonly PluginCardStore _pluginCards = new();
-    private readonly Dictionary<Guid, DateTimeOffset?> _postedXpUpdates = [];
+    private readonly Dictionary<Guid, (DateTimeOffset? LastUpdated, bool IsStale, double? RatePerHour, long SessionGain)>
+        _postedXpUpdates = [];
     private CommunityPluginManager _communityPlugins = null!;
     private string _postedAccounts = string.Empty;
 
@@ -59,7 +60,8 @@ public partial class MainWindow : IPluginHostData
         PluginSidebar.SetCommunityState(_communityPlugins.Rejected, _communityPlugins.StartupError);
     }
 
-    // Tells running plugins what changed since the last refresh: the account list, and each account's XP read.
+    // Tells running plugins what changed since the last refresh: the account list, and anything in an account's XP
+    // that xp.get would return differently.
     private void NotifyPluginsOfDataChanges()
     {
         var accounts = string.Join('|', _accounts.Select(
@@ -72,9 +74,11 @@ public partial class MainWindow : IPluginHostData
 
         foreach (var state in _xpTracker.GetStates())
         {
-            if (!_postedXpUpdates.TryGetValue(state.AccountId, out var posted) || posted != state.LastUpdated)
+            var current = (state.LastUpdated, state.IsStale, state.RatePerHour, state.SessionGain);
+            // Equals, not ==, so a NaN rate counts as unchanged instead of posting on every refresh.
+            if (!_postedXpUpdates.TryGetValue(state.AccountId, out var posted) || !posted.Equals(current))
             {
-                _postedXpUpdates[state.AccountId] = state.LastUpdated;
+                _postedXpUpdates[state.AccountId] = current;
                 _communityPlugins.PostEvent("xp.updated", new { accountId = state.AccountId });
             }
         }
@@ -83,12 +87,16 @@ public partial class MainWindow : IPluginHostData
     // A NaN or infinite number can't be written as JSON, so it goes to plugins as null.
     private static double? Finite(double? value) => value is { } number && double.IsFinite(number) ? number : null;
 
+    // The name plugins may see. With no ranking name saved, the profile is looked up by the saved login, so the
+    // name read from it is the login and stays private.
+    internal static string? PublicInGameName(string? rankingUsername, string? profileUsername) =>
+        string.IsNullOrWhiteSpace(rankingUsername) ? null : profileUsername ?? rankingUsername;
+
     IReadOnlyList<PluginAccountInfo> IPluginHostData.GetAccounts() =>
         _accounts.Select(account => new PluginAccountInfo(
             account.Id,
             account.Label,
-            // The public name from the profile page or the saved ranking name; never the saved login.
-            _xpTracker.GetLatestSnapshot(account.Id)?.Username ?? account.RankingUsername,
+            PublicInGameName(account.RankingUsername, _xpTracker.GetLatestSnapshot(account.Id)?.Username),
             _openAccountIds.Contains(account.Id))).ToArray();
 
     PluginXpInfo? IPluginHostData.GetXp(Guid accountId)

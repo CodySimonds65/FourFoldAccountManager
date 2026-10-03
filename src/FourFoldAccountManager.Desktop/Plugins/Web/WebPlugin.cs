@@ -43,6 +43,9 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
     private int _generation;
     private int _startingGeneration = -1;
 
+    // A disposed plugin is never started again, whoever still holds it (a manager loop that was mid-await, say).
+    private bool _disposed;
+
     // The current one-second window of the flood limits.
     private long _windowStart;
     private int _windowEvents;
@@ -97,9 +100,9 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         _root = new Border { BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(9), Child = _viewHost };
         _root.SetResourceReference(Border.BackgroundProperty, "Brush.Surface");
         _root.SetResourceReference(Border.BorderBrushProperty, "Brush.Border");
-        // The view lives in the panel while the panel is in a window, and in the parking host the rest of the time.
-        _root.Loaded += (_, _) => MoveView(_viewHost);
-        _root.Unloaded += (_, _) => MoveView(_parkingHost);
+        // The view lives in the panel while the panel is on screen, and in the parking host the rest of the time. A web
+        // view in a hidden tree is throttled by the browser, which would stall the page.
+        _root.IsVisibleChanged += (_, _) => MoveView(_root.IsVisible ? _viewHost : _parkingHost);
     }
 
     public PluginManifest Manifest { get; }
@@ -118,7 +121,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
 
     public async Task StartAsync()
     {
-        if (_view is not null || _startingGeneration == _generation)
+        if (_disposed || _view is not null || _startingGeneration == _generation)
         {
             return;
         }
@@ -136,7 +139,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
 
             // The panel's colour, so there is no white flash before the page's own background loads.
             view = new WebView2CompositionControl { DefaultBackgroundColor = System.Drawing.Color.FromArgb(0x17, 0x1D, 0x24) };
-            (_root.IsLoaded ? _viewHost : _parkingHost).Children.Add(view);
+            (_root.IsVisible ? _viewHost : _parkingHost).Children.Add(view);
             await view.EnsureCoreWebView2Async(environment);
             if (generation != _generation)
             {
@@ -199,7 +202,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             _view = view;
             ResetFloodWindow();
             // The panel may have been shown or hidden while the view was starting.
-            MoveView(_root.IsLoaded ? _viewHost : _parkingHost);
+            MoveView(_root.IsVisible ? _viewHost : _parkingHost);
             _stoppedNotice.Visibility = Visibility.Collapsed;
             core.Navigate(new Uri(PluginNetworkPolicy.Origin(Manifest.Id), Manifest.Panel.Replace('\\', '/')).AbsoluteUri);
             started = true;
@@ -207,6 +210,12 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         catch when (generation != _generation)
         {
             // Stopped while it was starting, so the failure no longer matters.
+        }
+        catch
+        {
+            // The panel would otherwise be blank with no way to try again.
+            _stoppedNotice.Visibility = Visibility.Visible;
+            throw;
         }
         finally
         {
@@ -250,6 +259,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         Stop();
         _http.Dispose();
     }

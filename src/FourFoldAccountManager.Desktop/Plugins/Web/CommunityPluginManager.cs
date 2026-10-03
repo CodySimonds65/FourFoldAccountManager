@@ -24,6 +24,7 @@ public sealed class CommunityPluginManager : IDisposable
     private readonly List<WebPlugin> _plugins = [];
     private readonly List<RejectedPlugin> _rejected = [];
     private FileSystemWatcher? _watcher;
+    private bool _disposed;
     private PanelSettings _settings = PanelSettings.Default;
 
     public CommunityPluginManager(LocalDataPaths paths, IPluginHostData host, Panel parkingHost, PluginCardStore cards)
@@ -34,7 +35,17 @@ public sealed class CommunityPluginManager : IDisposable
         _cards = cards;
         _browser = new PluginBrowser(paths);
         _reloadTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
-        _reloadTimer.Tick += async (_, _) => await ReloadChangedAsync();
+        _reloadTimer.Tick += async (_, _) =>
+        {
+            try
+            {
+                await ReloadChangedAsync();
+            }
+            catch (Exception)
+            {
+                // Nothing from a plugin folder may crash the app, and the app has no global exception handler.
+            }
+        };
     }
 
     public IReadOnlyList<WebPlugin> Plugins => _plugins;
@@ -51,6 +62,12 @@ public sealed class CommunityPluginManager : IDisposable
     // can't start, is reported through StartupError.
     public async Task ApplyAsync(PanelSettings settings)
     {
+        // A click while the window is closing must not build new web views.
+        if (_disposed)
+        {
+            return;
+        }
+
         _settings = settings;
         if (!settings.PluginDeveloperMode)
         {
@@ -97,7 +114,11 @@ public sealed class CommunityPluginManager : IDisposable
         }
     }
 
-    public void Dispose() => UnloadAll();
+    public void Dispose()
+    {
+        _disposed = true;
+        UnloadAll();
+    }
 
     // Re-reads the dev folder. A plugin whose folder is in changedFolders (or every plugin, when it is null) is
     // disposed and read again; the rest are kept running.
@@ -121,7 +142,18 @@ public sealed class CommunityPluginManager : IDisposable
             }
 
             var folderName = Path.GetFileName(folder);
-            var result = PluginManifestReader.Read(folder);
+            PluginManifestResult result;
+            try
+            {
+                result = PluginManifestReader.Read(folder);
+            }
+            catch (Exception)
+            {
+                // One folder that can't be read must never take the others down.
+                _rejected.Add(new RejectedPlugin(folderName, "plugin.json couldn't be read."));
+                continue;
+            }
+
             if (result.Manifest is not { } manifest)
             {
                 _rejected.Add(new RejectedPlugin(folderName, result.Error ?? "plugin.json couldn't be read."));
@@ -171,6 +203,12 @@ public sealed class CommunityPluginManager : IDisposable
         StartupError = null;
         foreach (var plugin in _plugins.ToArray())
         {
+            // A reload or developer mode switching off during an earlier await disposed this one.
+            if (!_plugins.Contains(plugin))
+            {
+                continue;
+            }
+
             var shouldRun = PluginLayoutPolicy.IsEnabled(_settings, plugin.Descriptor.Id);
             if (shouldRun && !plugin.IsRunning)
             {
@@ -211,8 +249,18 @@ public sealed class CommunityPluginManager : IDisposable
             QueueReload(args.OldFullPath);
             QueueReload(args.FullPath);
         };
-        // After a missed burst of changes, reload everything.
-        watcher.Error += (_, _) => QueueReload(null);
+        // After a missed burst of changes, or when the folder itself went away, start over with a fresh watcher.
+        watcher.Error += (sender, args) => _dispatcher.BeginInvoke(() =>
+        {
+            // Only the current watcher counts; a late error from a replaced one must not stop its successor.
+            if (!ReferenceEquals(sender, _watcher))
+            {
+                return;
+            }
+
+            StopWatching();
+            _ = ApplyAsync(_settings);
+        });
         watcher.EnableRaisingEvents = true;
         _watcher = watcher;
     }
@@ -229,14 +277,13 @@ public sealed class CommunityPluginManager : IDisposable
     }
 
     // Watcher events arrive on a background thread; a save often fires several, so reloads are debounced.
-    private void QueueReload(string? fullPath)
+    private void QueueReload(string fullPath)
     {
-        var relative = fullPath is null ? null : Path.GetRelativePath(_paths.DevPluginsRoot, fullPath);
-        var folderName = relative?.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
+        var relative = Path.GetRelativePath(_paths.DevPluginsRoot, fullPath);
+        var folderName = relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0];
         lock (_changedFolders)
         {
-            // An empty name means "reload everything".
-            _changedFolders.Add(folderName ?? string.Empty);
+            _changedFolders.Add(folderName);
         }
 
         _dispatcher.BeginInvoke(() =>
@@ -263,7 +310,7 @@ public sealed class CommunityPluginManager : IDisposable
 
         try
         {
-            Rescan(changed.Contains(string.Empty) ? null : changed);
+            Rescan(changed);
         }
         catch (Exception)
         {
