@@ -25,6 +25,8 @@ public sealed class PluginHttpFetcher : IDisposable
 
     public static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(15);
 
+    private const string HeaderSeparators = "()<>@,;:\\\"/[]?={}";
+
     private static readonly string[] ForbiddenHeaders =
         ["Cookie", "Host", "Content-Length", "Transfer-Encoding", "Connection"];
 
@@ -32,14 +34,17 @@ public sealed class PluginHttpFetcher : IDisposable
     private readonly PluginTrust _trust;
     private readonly HttpClient _http;
     private readonly TimeProvider _clock;
+    private readonly TimeSpan _timeout;
     private readonly Queue<DateTimeOffset> _recent = new();
 
     public PluginHttpFetcher(
-        PluginManifest manifest, PluginTrust trust, HttpMessageHandler? handler = null, TimeProvider? clock = null)
+        PluginManifest manifest, PluginTrust trust, HttpMessageHandler? handler = null, TimeProvider? clock = null,
+        TimeSpan? timeout = null)
     {
         _manifest = manifest;
         _trust = trust;
         _clock = clock ?? TimeProvider.System;
+        _timeout = timeout ?? RequestTimeout;
         _http = new HttpClient(handler ?? CreateHandler()) { Timeout = Timeout.InfiniteTimeSpan };
     }
 
@@ -57,11 +62,13 @@ public sealed class PluginHttpFetcher : IDisposable
             throw new PluginApiException("invalid-argument", "The URL isn't valid.");
         }
 
+        ValidateHeaders(request.Headers);
         EnsureAllowed(uri);
         TakeRateSlot();
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(RequestTimeout);
+        timeout.CancelAfter(_timeout);
         var body = request.Body;
+        var originalHost = uri.IdnHost;
         try
         {
             for (var redirects = 0; ; redirects++)
@@ -72,7 +79,11 @@ public sealed class PluginHttpFetcher : IDisposable
                     message.Content = new StringContent(body ?? string.Empty, Encoding.UTF8);
                 }
 
-                ApplyHeaders(message, request.Headers);
+                // Don't forward plugin headers to a different host after redirects.
+                var headersToSend = uri.IdnHost.Equals(originalHost, StringComparison.OrdinalIgnoreCase)
+                    ? request.Headers
+                    : null;
+                ApplyHeaders(message, headersToSend);
                 using var response = await _http.SendAsync(
                     message, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
                 if ((int)response.StatusCode is 301 or 302 or 303 or 307 or 308 &&
@@ -83,8 +94,14 @@ public sealed class PluginHttpFetcher : IDisposable
                         throw new PluginApiException("limit-exceeded", "The request was redirected too many times.");
                     }
 
-                    uri = location.IsAbsoluteUri ? location : new Uri(uri, location);
+                    if (!Uri.TryCreate(uri, location, out var next))
+                    {
+                        throw new PluginApiException("unavailable", "The site sent a redirect that isn't valid.");
+                    }
+
+                    uri = next;
                     EnsureAllowed(uri);
+                    TakeRateSlot();
                     if ((int)response.StatusCode == 303 ||
                         (method == HttpMethod.Post && (int)response.StatusCode is 301 or 302))
                     {
@@ -95,8 +112,10 @@ public sealed class PluginHttpFetcher : IDisposable
                     continue;
                 }
 
+                var text = await ReadTextAsync(response, timeout.Token);
+                text = text.TrimStart('﻿');
                 return new PluginHttpResponse(
-                    (int)response.StatusCode, FlattenHeaders(response), await ReadTextAsync(response, timeout.Token));
+                    (int)response.StatusCode, FlattenHeaders(response), text);
             }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -110,6 +129,27 @@ public sealed class PluginHttpFetcher : IDisposable
         catch (HttpRequestException)
         {
             throw new PluginApiException("unavailable", "The request failed.");
+        }
+        catch (Exception exception) when (exception is not PluginApiException and not OperationCanceledException)
+        {
+            throw new PluginApiException("unavailable", "The request failed.");
+        }
+    }
+
+    // A header name must be an HTTP token, and a value printable ASCII or a tab: no line breaks, control characters
+    // or non-ASCII, any of which could smuggle extra headers or a second request onto the connection.
+    private static void ValidateHeaders(IReadOnlyDictionary<string, string>? headers)
+    {
+        foreach (var (name, value) in headers ?? new Dictionary<string, string>())
+        {
+            var validName = name.Length > 0 &&
+                            name.All(character => character is > ' ' and < '\x7f' && !HeaderSeparators.Contains(character));
+            var validValue = value is not null &&
+                             value.All(character => character == '\t' || character is >= ' ' and <= '~');
+            if (!validName || !validValue)
+            {
+                throw new PluginApiException("invalid-argument", "A request header's name or value isn't valid.");
+            }
         }
     }
 
@@ -240,9 +280,9 @@ public sealed class PluginHttpFetcher : IDisposable
                     await socket.ConnectAsync(new IPEndPoint(address, context.DnsEndPoint.Port), cancellationToken);
                     return new NetworkStream(socket, ownsSocket: true);
                 }
-                catch (Exception ex)
+                catch (Exception exception) when (exception is not OperationCanceledException)
                 {
-                    lastException = ex;
+                    lastException = exception;
                     socket.Dispose();
                 }
             }
