@@ -19,8 +19,10 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
     private const int MaximumEventsPerSecond = 2_000;
     private const int MaximumMessageCharactersPerSecond = 8 * 1024 * 1024;
 
-    // Serving a file reads it whole on the UI thread, so a larger one is treated as missing.
+    // Serving a file reads it whole on the UI thread, so a larger one is treated as missing, and a page that asks for
+    // more than this much of its own files within one second is stopped like any other flood.
     private const long MaximumFileBytes = 8 * 1024 * 1024;
+    private const long MaximumServedBytesPerSecond = 32 * 1024 * 1024;
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
@@ -45,6 +47,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
     private long _windowStart;
     private int _windowEvents;
     private long _windowCharacters;
+    private long _windowServedBytes;
 
     public WebPlugin(
         PluginManifest manifest,
@@ -152,7 +155,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             core.Settings.AreDefaultScriptDialogsEnabled = false;
             core.AddWebResourceRequestedFilter(
                 "*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
-            core.WebResourceRequested += (_, args) => OnWebResourceRequested(environment, args);
+            core.WebResourceRequested += (sender, args) => OnWebResourceRequested(sender, environment, args);
             core.NavigationStarting += (_, args) => args.Cancel = !IsOwnOrigin(args.Uri);
             core.FrameNavigationStarting += (_, args) => args.Cancel = true;
             core.NewWindowRequested += (_, args) => args.Handled = true;
@@ -177,9 +180,10 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             };
             core.WebMessageReceived += OnWebMessageReceived;
             // The GPU and utility processes recover on their own and are shared with other plugins' pages.
-            core.ProcessFailed += (_, args) =>
+            core.ProcessFailed += (sender, args) =>
             {
-                if (args.ProcessFailedKind is CoreWebView2ProcessFailedKind.BrowserProcessExited
+                if (ReferenceEquals(sender, _view?.CoreWebView2) &&
+                    args.ProcessFailedKind is CoreWebView2ProcessFailedKind.BrowserProcessExited
                     or CoreWebView2ProcessFailedKind.RenderProcessExited
                     or CoreWebView2ProcessFailedKind.RenderProcessUnresponsive)
                 {
@@ -299,6 +303,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         _windowStart = Environment.TickCount64;
         _windowEvents = 0;
         _windowCharacters = 0;
+        _windowServedBytes = 0;
     }
 
     private bool IsOwnOrigin(string value) =>
@@ -317,15 +322,17 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
 
     // Serves the plugin's own files, with the content security policy on every response, and refuses any outside
     // request the policy wouldn't allow. Anything unexpected is refused too, never let through.
-    private void OnWebResourceRequested(CoreWebView2Environment environment, CoreWebView2WebResourceRequestedEventArgs args)
+    private void OnWebResourceRequested(
+        object? sender, CoreWebView2Environment environment, CoreWebView2WebResourceRequestedEventArgs args)
     {
         try
         {
             // Plugins get no workers. A service worker would answer the page's requests itself, out of reach of this
             // handler, and worker requests are raised on every web view in the shared environment, so every plugin's
-            // handler refuses them. This comes before the flood count so another page's traffic never counts here.
+            // handler refuses them. This comes before the flood count so another page's traffic never counts here;
+            // so does a late request from a view that was stopped.
             if (args.RequestedSourceKind != CoreWebView2WebResourceRequestSourceKinds.Document ||
-                args.Request.Headers.Contains("Service-Worker"))
+                !ReferenceEquals(sender, _view?.CoreWebView2))
             {
                 args.Response = Respond(environment, null, 403, "Blocked");
                 return;
@@ -335,6 +342,13 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             {
                 args.Response = Respond(environment, null, 403, "Blocked");
                 ShowStopped();
+                return;
+            }
+
+            // The page can put this header on its own requests, so it is refused after the flood count, not before.
+            if (args.Request.Headers.Contains("Service-Worker"))
+            {
+                args.Response = Respond(environment, null, 403, "Blocked");
                 return;
             }
 
@@ -353,6 +367,11 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             if (PluginNetworkPolicy.IsOwnOrigin(uri, Manifest.Id))
             {
                 args.Response = ServeFile(environment, args.Request.Method, uri);
+                if (_windowServedBytes > MaximumServedBytesPerSecond)
+                {
+                    ShowStopped();
+                }
+
                 return;
             }
 
@@ -375,8 +394,10 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             try
             {
                 // A file over the limit falls through to the 404, the same as a missing one.
-                if (new FileInfo(path).Length <= MaximumFileBytes)
+                var length = new FileInfo(path).Length;
+                if (length <= MaximumFileBytes)
                 {
+                    _windowServedBytes += length;
                     return Respond(environment, new MemoryStream(File.ReadAllBytes(path)), 200, "OK", type);
                 }
             }

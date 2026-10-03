@@ -18,6 +18,13 @@ public sealed class PluginCardStore
 
     public void Set(OverlayCardKey key, PluginCardContent content)
     {
+        // Setting the same content again (a plugin repainting on a timer) isn't a change.
+        if (_cards.TryGetValue(key, out var current) && current.Summary == content.Summary &&
+            current.Rows.SequenceEqual(content.Rows))
+        {
+            return;
+        }
+
         _cards[key] = content;
         Changed?.Invoke();
     }
