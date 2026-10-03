@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using System.Windows;
 using System.Windows.Input;
 using FourFoldAccountManager.Core.Data;
 using FourFoldAccountManager.Core.Models;
@@ -47,7 +48,7 @@ public partial class MainWindow : IPluginHostData
         PluginSidebar.HubOpened += () => _ = _pluginHub.RefreshAsync(userAsked: false);
         PluginSidebar.HubRetryRequested += () => _ = _pluginHub.RefreshAsync(userAsked: true);
         PluginSidebar.HubInstallRequested += id => _ = _pluginHub.InstallAsync(id);
-        PluginSidebar.HubUninstallRequested += id => _ = _pluginHub.UninstallAsync(id);
+        PluginSidebar.HubUninstallRequested += ConfirmPluginUninstall;
         // The catalog reader only lets through https://github.com/<owner>/<repo>, and OpenInBrowser opens https only.
         PluginSidebar.HubSourceRequested += uri => ((IPluginHostData)this).OpenInBrowser(uri);
         _pluginCards.Changed += QueuePluginCardRefresh;
@@ -72,6 +73,27 @@ public partial class MainWindow : IPluginHostData
                 GlobalStatusText.Text = "The dev plugins folder couldn't be opened.";
             }
         };
+    }
+
+    // Uninstalling deletes the plugin's saved data, so it asks first, and No is the answer Enter gives. The name comes from
+    // the catalog or the plugin, so it only ever goes into the message as it is.
+    private void ConfirmPluginUninstall(string id)
+    {
+        var state = _pluginHub.ViewState;
+        var name = state.Plugins.FirstOrDefault(plugin => plugin.Id == id)?.Name
+                   ?? state.Pulled.FirstOrDefault(plugin => plugin.Id == id)?.Name
+                   ?? id;
+        var answer = MessageBox.Show(
+            this,
+            $"Uninstall {name}? Its saved data on this computer will be deleted.",
+            "Uninstall plugin",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning,
+            MessageBoxResult.No);
+        if (answer == MessageBoxResult.Yes)
+        {
+            _ = _pluginHub.UninstallAsync(id);
+        }
     }
 
     private void RefreshPluginSidebar()

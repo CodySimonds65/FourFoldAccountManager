@@ -18,8 +18,15 @@ public sealed class PluginHub : IDisposable
 
     private const string RemoveFailed = "The plugin couldn't be removed.";
 
+    // How long one whole download, body included, may take. The client's own timeout covers only the wait for the
+    // response headers, so a connection that goes quiet partway through a body would otherwise hold the gate, and with
+    // it every other hub operation, until the app is restarted.
+    private static readonly TimeSpan DownloadLimit = TimeSpan.FromMinutes(2);
+
     private readonly HubStore _store;
     private readonly CommunityPluginManager _manager;
+
+    // Its timeout bounds only the wait for a response to start; DownloadLimit bounds a whole download.
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(60) };
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromHours(6) };
 
@@ -208,8 +215,7 @@ public sealed class PluginHub : IDisposable
         try
         {
             Notify();
-            var bytes = await HubHttp.DownloadAsync(
-                _http, HubAddresses.Catalog, HubLimits.MaximumCatalogBytes, CancellationToken.None);
+            var bytes = await DownloadAsync(HubAddresses.Catalog, HubLimits.MaximumCatalogBytes);
             if (_disposed)
             {
                 return;
@@ -235,37 +241,44 @@ public sealed class PluginHub : IDisposable
                 // Offline starts fall back to the older copy; the next check saves again.
             }
 
-            // Approved updates install without asking, and an install a crash left without its files is repaired.
-            var due = HubPolicy.Updates(catalog, _installed)
-                .Concat(catalog.Plugins.Where(plugin =>
-                    _installed.Any(other => other.Id == plugin.Id) && !_store.IsIntact(plugin.Id)))
-                .DistinctBy(plugin => plugin.Id)
-                .ToArray();
-            foreach (var plugin in due)
+            try
             {
-                if (_disposed)
+                // Approved updates install without asking, and an install a crash left without its files is repaired.
+                var due = HubPolicy.Updates(catalog, _installed)
+                    .Concat(catalog.Plugins.Where(plugin =>
+                        _installed.Any(other => other.Id == plugin.Id) && !_store.IsIntact(plugin.Id)))
+                    .DistinctBy(plugin => plugin.Id)
+                    .ToArray();
+                foreach (var plugin in due)
                 {
-                    return;
-                }
+                    if (_disposed)
+                    {
+                        return;
+                    }
 
-                // A plugin the user has already asked to install or remove is theirs to finish.
-                if (!_busy.Add(plugin.Id))
-                {
-                    continue;
-                }
+                    // A plugin the user has already asked to install or remove is theirs to finish.
+                    if (!_busy.Add(plugin.Id))
+                    {
+                        continue;
+                    }
 
-                try
-                {
-                    await InstallCoreAsync(plugin);
-                }
-                finally
-                {
-                    _busy.Remove(plugin.Id);
-                    Notify();
+                    try
+                    {
+                        await InstallCoreAsync(plugin);
+                    }
+                    finally
+                    {
+                        _busy.Remove(plugin.Id);
+                        Notify();
+                    }
                 }
             }
-
-            PushLoads();
+            finally
+            {
+                // However the updates end: a plugin that was swapped and stopped runs again, and one the new catalog
+                // pulled stops. Once, after all of them, so a plugin waiting for its own update isn't restarted early.
+                PushLoads();
+            }
         }
         catch (Exception)
         {
@@ -287,9 +300,8 @@ public sealed class PluginHub : IDisposable
         try
         {
             Notify();
-            var package = await HubHttp.DownloadAsync(
-                _http, HubAddresses.Package(plugin.Id, plugin.Commit),
-                Math.Min(plugin.Size, HubLimits.MaximumPackageBytes), CancellationToken.None);
+            var package = await DownloadAsync(
+                HubAddresses.Package(plugin.Id, plugin.Commit), Math.Min(plugin.Size, HubLimits.MaximumPackageBytes));
             if (_disposed)
             {
                 return;
@@ -320,8 +332,17 @@ public sealed class PluginHub : IDisposable
 
             // Nothing may be running from the folder while it is swapped.
             _manager.Unload(plugin.Id);
-            await _store.CommitAsync(plugin, staging, CancellationToken.None);
-            _installed = _store.LoadInstalled();
+            // Off the UI thread: the swap moves folders and flushes the record to disk.
+            await Task.Run(() => _store.CommitAsync(plugin, staging, CancellationToken.None));
+            try
+            {
+                _installed = _store.LoadInstalled();
+            }
+            catch (Exception)
+            {
+                // The plugin is installed; only the re-read failed. The list stays as it was, and is read again at the
+                // next install, uninstall or start. That is no failure to report.
+            }
         }
         catch (Exception)
         {
@@ -329,17 +350,25 @@ public sealed class PluginHub : IDisposable
         }
     }
 
+    // One whole download under DownloadLimit. Null when it fails, is cancelled or runs out of time.
+    private async Task<byte[]?> DownloadAsync(Uri address, long maximumBytes)
+    {
+        using var limit = new CancellationTokenSource(DownloadLimit);
+        return await HubHttp.DownloadAsync(_http, address, maximumBytes, limit.Token);
+    }
+
     // Gate held, and the plugin's id is in _busy. The record is written first by the store, so a step that fails later
-    // still takes the plugin out of the record. What the manager runs and what the saved settings forget follow the
-    // record as it is now, not how the removal ended.
+    // still takes the plugin out of the record. What the manager clears and forgets, and what the saved settings forget,
+    // follow the record as it is now, not how the removal ended: nothing of the plugin's is wiped while it is still
+    // installed.
     private async Task RemoveAsync(string id)
     {
         try
         {
             // Nothing may be running from the folder, or holding its settings file, while they are deleted.
             _manager.Unload(id);
-            await _manager.ClearBrowserDataAsync(id);
-            await _store.UninstallAsync(id, CancellationToken.None);
+            // Off the UI thread: the delete walks up to 500 files and the record is flushed to disk.
+            await Task.Run(() => _store.UninstallAsync(id, CancellationToken.None));
         }
         catch (Exception)
         {
@@ -360,8 +389,21 @@ public sealed class PluginHub : IDisposable
 
         if (!_disposed && _installed.All(plugin => plugin.Id != id))
         {
-            _manager.Forget(id);
-            Uninstalled?.Invoke(id);
+            try
+            {
+                await _manager.ClearBrowserDataAsync(id);
+            }
+            catch (Exception)
+            {
+                // Best effort: the plugin is gone from the record either way, and its settings must still be forgotten.
+            }
+
+            // The manager may have been disposed while the browser data was clearing.
+            if (!_disposed)
+            {
+                _manager.Forget(id);
+                Uninstalled?.Invoke(id);
+            }
         }
     }
 
