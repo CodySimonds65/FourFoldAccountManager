@@ -37,6 +37,9 @@
                     <Button x:Name="SettingsButton" Content="Settings" Click="Settings_Click"
                             Style="{StaticResource AppButtonStyle}" Height="34" Padding="14,0" Margin="0,0,8,0"
                             ToolTip="Adjust how the game fits each account panel." />
+                    <Button x:Name="SecondMonitorButton" Content="Pop out tools" Click="SecondMonitor_Click"
+                            Style="{StaticResource AppButtonStyle}" Height="34" Padding="14,0" Margin="0,0,8,0"
+                            ToolTip="Move the Account tools panel into its own window that you can put on another monitor." />
                     <Button x:Name="TheatreButton" Content="Theatre" Click="Theatre_Click"
                             Style="{StaticResource AppButtonStyle}" Height="34" Padding="14,0" Margin="0,0,8,0"
                             ToolTip="Hide the side panels and toolbars without leaving the window. Press Esc to return." />

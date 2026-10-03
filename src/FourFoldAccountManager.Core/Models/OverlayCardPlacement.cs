@@ -12,4 +12,11 @@ public sealed record OverlayCardPlacement(
 {
     [JsonIgnore]
     public OverlayCardKey Key => new(Kind, AccountId);
+
+    // Shown as its own floating window instead of over the game. Only meaningful while Enabled.
+    public bool IsFloating { get; init; }
+
+    // The floating window's spot on the desktop, kept apart from Bounds so a card moved between the two places
+    // returns to where it was in each.
+    public FloatingCardBounds? FloatingBounds { get; init; }
 }
