@@ -3,9 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:views="clr-namespace:FourFoldAccountManager.Desktop.Views"
         PreviewKeyDown="SettingsDialog_PreviewKeyDown" Focusable="True"
-        Title="FourFold settings" Width="500" MinWidth="500" SizeToContent="Height"
+        Title="FourFold settings" Width="500" MinWidth="500" Height="680" MinHeight="420"
         MaxHeight="{Binding Source={x:Static SystemParameters.WorkArea}, Path=Height}"
-        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
         Background="{DynamicResource Brush.AppBackground}" Foreground="{DynamicResource Brush.TextPrimary}"
         FontFamily="Segoe UI" UseLayoutRounding="True">
     <Grid Margin="26">
@@ -31,8 +31,7 @@
                     Style="{StaticResource AppButtonStyle}" />
         </UniformGrid>
 
-        <!-- Inactive pages are Hidden rather than Collapsed, so the dialog keeps the tallest page's height and
-             does not jump when switching tabs. Each page scrolls on its own when the screen is too short. -->
+        <!-- The dialog has a fixed, resizable height; each page scrolls on its own when it's taller. -->
         <Grid Grid.Row="2">
             <ScrollViewer x:Name="DisplayPage" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
@@ -127,7 +126,7 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <ScrollViewer x:Name="LayoutPage" Visibility="Hidden" VerticalScrollBarVisibility="Auto"
+            <ScrollViewer x:Name="LayoutPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <TextBlock Text="CLIENT LAYOUT" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}" Margin="0,0,0,9" />
@@ -145,7 +144,7 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <ScrollViewer x:Name="ShortcutsPage" Visibility="Hidden" VerticalScrollBarVisibility="Auto"
+            <ScrollViewer x:Name="ShortcutsPage" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"
                           HorizontalScrollBarVisibility="Disabled">
                 <StackPanel>
                     <TextBlock Margin="2,0,0,0" FontSize="11" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"

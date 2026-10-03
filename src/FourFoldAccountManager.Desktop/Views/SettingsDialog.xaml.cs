@@ -94,8 +94,7 @@ public partial class SettingsDialog : Window
         foreach (var (tab, candidate) in Tabs())
         {
             var active = ReferenceEquals(candidate, page);
-            // Hidden, not Collapsed: every page keeps its space, so the dialog height stays the same across tabs.
-            candidate.Visibility = active ? Visibility.Visible : Visibility.Hidden;
+            candidate.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
             tab.Opacity = active ? 1d : 0.65d;
         }
     }
