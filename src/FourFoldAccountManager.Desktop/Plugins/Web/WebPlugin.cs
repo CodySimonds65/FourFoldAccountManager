@@ -14,11 +14,13 @@ namespace FourFoldAccountManager.Desktop.Plugins.Web;
 public sealed class WebPlugin : IFourFoldPlugin, IDisposable
 {
     // A page can post messages or ask for files in a tight loop, faster than the UI thread can answer, which freezes
-    // the whole app (and again on every launch). More than this many events, or this much message and reply text,
-    // within one second stops the plugin; its Reload button starts it fresh. Replies count too: a loop of reads that
-    // each return a big stored value saturates the UI thread well before the event limit.
+    // the whole app (and again on every launch). More than this many events, or this much message text, within one
+    // second stops the plugin; its Reload button starts it fresh. Replies have a budget of their own, because one web
+    // request's reply can be several MB once JSON-escaped (non-ASCII text grows up to six-fold), but a loop of reads that
+    // each return a big stored value still saturates the UI thread well before the event limit.
     private const int MaximumEventsPerSecond = 2_000;
     private const int MaximumMessageCharactersPerSecond = 8 * 1024 * 1024;
+    private const int MaximumReplyCharactersPerSecond = 64 * 1024 * 1024;
 
     // Serving a file reads it whole on the UI thread, so a larger one is treated as missing, and a page that asks for
     // more than this much of its own files within one second is stopped like any other flood.
@@ -51,6 +53,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
     private long _windowStart;
     private int _windowEvents;
     private long _windowCharacters;
+    private long _windowReplyCharacters;
     private long _windowServedBytes;
 
     public WebPlugin(
@@ -304,18 +307,30 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         view.Dispose();
     }
 
-    // Counts page events (a request or message by default) and message or reply characters, and says whether the page
-    // has now gone past a flood limit within the current second.
-    private bool IsFlooding(int messageCharacters = 0, int events = 1)
+    // Counts one page event (a request, or a message of the given length) and says whether the page has now gone past
+    // a flood limit within the current second.
+    private bool IsFlooding(int messageCharacters = 0)
     {
         if (Environment.TickCount64 - _windowStart >= 1000)
         {
             ResetFloodWindow();
         }
 
-        _windowEvents += events;
+        _windowEvents++;
         _windowCharacters += messageCharacters;
         return _windowEvents > MaximumEventsPerSecond || _windowCharacters > MaximumMessageCharactersPerSecond;
+    }
+
+    // Counts the text of one reply against the reply budget of the current second. A reply is not a page event.
+    private bool IsReplyFlooding(int replyCharacters)
+    {
+        if (Environment.TickCount64 - _windowStart >= 1000)
+        {
+            ResetFloodWindow();
+        }
+
+        _windowReplyCharacters += replyCharacters;
+        return _windowReplyCharacters > MaximumReplyCharactersPerSecond;
     }
 
     private void ResetFloodWindow()
@@ -323,6 +338,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         _windowStart = Environment.TickCount64;
         _windowEvents = 0;
         _windowCharacters = 0;
+        _windowReplyCharacters = 0;
         _windowServedBytes = 0;
     }
 
@@ -466,8 +482,7 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
             // A reply for a page that was stopped or reloaded while the call ran is dropped.
             if (reply is not null && view is not null && ReferenceEquals(view, _view))
             {
-                // The reply's text is counted, but it is not a second event.
-                if (IsFlooding(reply.Length, events: 0))
+                if (IsReplyFlooding(reply.Length))
                 {
                     ShowStopped();
                     return;

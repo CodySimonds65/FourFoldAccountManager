@@ -101,6 +101,25 @@ public sealed class PluginHttpFetcherTests
     }
 
     [Fact]
+    public async Task ARequestCarriesTheFourFoldUserAgentUnlessThePluginSetsItsOwn()
+    {
+        var sent = new List<HttpRequestMessage>();
+        var handler = new FakeHandler(request =>
+        {
+            sent.Add(request);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        using var fetcher = new PluginHttpFetcher(Manifest, PluginTrust.Developer, handler);
+
+        await fetcher.FetchAsync(Get("https://wiki.example.com/api"));
+        await fetcher.FetchAsync(new PluginHttpRequest("https://wiki.example.com/api", "GET",
+            new Dictionary<string, string> { ["user-agent"] = "mine/2" }, null));
+
+        Assert.Equal("FourFold-Plugin/1", sent[0].Headers.GetValues("User-Agent").Single());
+        Assert.Equal("mine/2", sent[1].Headers.GetValues("User-Agent").Single());
+    }
+
+    [Fact]
     public async Task AResponseOverTwoMegabytesIsRefused()
     {
         var handler = new FakeHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)

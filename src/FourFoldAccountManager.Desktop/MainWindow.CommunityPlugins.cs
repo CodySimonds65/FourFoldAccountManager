@@ -198,7 +198,8 @@ public partial class MainWindow : IPluginHostData
                     entry.Key, entry.Value.Level, entry.Value.CurrentXp, entry.Value.NextLevelXp))
                 .ToArray() ?? [],
             state?.LastUpdated,
-            state?.IsStale ?? true);
+            // No XP data yet reads as stale, for an open account as for a closed one.
+            state is null || state.IsStale || state.LastUpdated is null);
     }
 
     PluginStatsInfo? IPluginHostData.GetStats(Guid accountId)

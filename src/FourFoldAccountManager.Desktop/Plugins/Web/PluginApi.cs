@@ -147,7 +147,8 @@ internal sealed class PluginApi(
         }
     }
 
-    // A rolling minute on the same monotonic clock as openExternal. A refused call isn't recorded, so it doesn't count.
+    // A rolling minute on the same monotonic clock as openExternal. Only a call refused by this limit isn't recorded; one
+    // that is refused later, for its size or its key, has already taken a slot.
     private void TakeStorageWriteSlot()
     {
         lock (_storageWrites)
