@@ -70,6 +70,10 @@ pg_restore --list leaderboard.dump
 
 </details>
 
+## Contributors
+
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for the people whose work has gone into FourFold.
+
 ## License
 
 Copyright 2026 Cody Simonds. Licensed under the [Apache License 2.0](LICENSE).
