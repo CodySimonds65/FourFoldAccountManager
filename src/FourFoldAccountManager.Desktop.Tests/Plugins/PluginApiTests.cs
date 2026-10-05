@@ -285,6 +285,8 @@ public sealed class PluginApiTests : IDisposable
 
         public PluginStatsInfo? GetStats(Guid accountId) => null;
 
+        public PluginProfileInfo? GetProfile(Guid accountId) => null;
+
         public PluginTimerInfo GetTimer() => new("stopped", 0, []);
 
         public bool IsPanelShowing(string pluginId) => PanelShowing;

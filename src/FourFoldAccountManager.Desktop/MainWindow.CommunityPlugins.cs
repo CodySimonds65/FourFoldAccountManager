@@ -200,7 +200,33 @@ public partial class MainWindow : IPluginHostData
     // The name plugins may see. With no ranking name saved, the profile is looked up by the saved login, so the
     // name read from it is the login and stays private.
     internal static string? PublicInGameName(string? rankingUsername, string? profileUsername) =>
-        string.IsNullOrWhiteSpace(rankingUsername) ? null : profileUsername ?? rankingUsername;
+        string.IsNullOrWhiteSpace(rankingUsername) ? null
+        : IsRankingProfile(rankingUsername, profileUsername) ? profileUsername : rankingUsername;
+
+    // The player id plugins may see, under the same rule as the name: with no ranking name saved the profile was
+    // looked up by the saved login, and the id leads straight to a public page that shows it.
+    internal static int? PublicPlayerId(string? rankingUsername, string? profileUsername, int? playerId) =>
+        IsRankingProfile(rankingUsername, profileUsername) ? playerId : null;
+
+    // Whether the last profile read was made under the ranking name. Just after a ranking name is saved, the tracker
+    // still holds what it read for the saved login, and that belongs to the login until the next read.
+    private static bool IsRankingProfile(string? rankingUsername, string? profileUsername) =>
+        !string.IsNullOrWhiteSpace(rankingUsername) && profileUsername is not null &&
+        string.Equals(profileUsername.Trim(), rankingUsername.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    // Text the game's site wrote (a location, an item's name), made safe to hand to a plugin: trimmed, at most 64
+    // characters, and dropped if it could rearrange or hide the text a plugin draws around it.
+    internal static string? PublicGameText(string? text)
+    {
+        text = text?.Trim();
+        if (string.IsNullOrEmpty(text) || PluginText.HasUnsafeCharacter(text))
+        {
+            return null;
+        }
+
+        // Never cut between the two halves of a character outside the basic plane.
+        return text.Length <= 64 ? text : text[..(char.IsHighSurrogate(text[63]) ? 63 : 64)];
+    }
 
     IReadOnlyList<PluginAccountInfo> IPluginHostData.GetAccounts() =>
         _accounts.Select(account => new PluginAccountInfo(
@@ -244,8 +270,37 @@ public partial class MainWindow : IPluginHostData
         var snapshot = _xpTracker.GetLatestSnapshot(accountId);
         return snapshot?.ActiveClassName is { } className && snapshot.Classes.TryGetValue(className, out var active)
             ? new PluginStatsInfo(className, active.Level, active.Hp, active.Sp, active.Attack, active.Magic,
-                active.Skill, active.Speed, active.Luck, active.Defense, active.Resistance)
+                active.Skill, active.Speed, active.Luck, active.Defense, active.Resistance,
+                new PluginEquipmentInfo(
+                    PublicGameText(active.Equipment.GetValueOrDefault("Armor")),
+                    PublicGameText(active.Equipment.GetValueOrDefault("Helmet")),
+                    PublicGameText(active.Equipment.GetValueOrDefault("Hair")),
+                    PublicGameText(active.Equipment.GetValueOrDefault("Weapon"))))
             : null;
+    }
+
+    PluginProfileInfo? IPluginHostData.GetProfile(Guid accountId)
+    {
+        var account = _accounts.FirstOrDefault(candidate => candidate.Id == accountId);
+        if (account is null)
+        {
+            return null;
+        }
+
+        var state = _xpTracker.GetStates().FirstOrDefault(candidate => candidate.AccountId == accountId);
+        var snapshot = _xpTracker.GetLatestSnapshot(accountId);
+        var playerId = _xpTracker.GetActiveLeaderboardProfiles()
+            .Where(profile => profile.AccountId == accountId)
+            .Select(profile => (int?)profile.PlayerId)
+            .FirstOrDefault();
+        return new PluginProfileInfo(
+            PublicPlayerId(account.RankingUsername, snapshot?.Username, playerId),
+            snapshot?.Silver,
+            snapshot?.Gold,
+            PublicGameText(snapshot?.Location),
+            state?.LastUpdated,
+            // No data yet reads as stale, for an open account as for a closed one. The same rule as GetXp.
+            state is null || state.IsStale || state.LastUpdated is null);
     }
 
     PluginTimerInfo IPluginHostData.GetTimer()
