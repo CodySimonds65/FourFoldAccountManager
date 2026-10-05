@@ -57,6 +57,9 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
 
     public PlayerProfileService ProfileService => _profileService;
 
+    // Tests shorten the pause before the one retry of a failed profile read.
+    internal TimeSpan ProfileRetryDelay { get; init; } = TimeSpan.FromSeconds(5);
+
     public async Task<bool> VerifyPlayerAsync(int playerId, string username)
     {
         var result = await _profileService.ReadAsync(Guid.NewGuid(), username, playerId, CancellationToken.None);
@@ -220,7 +223,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
                     PlayerProfileReadStatus.ProfileUnavailable or PlayerProfileReadStatus.MalformedProfile)
             {
                 account.CanRetryProfileRead = false;
-                await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                await Task.Delay(ProfileRetryDelay, cancellationToken);
                 if (!_active.TryGetValue(account.Id, out current) || !ReferenceEquals(current, account)) return;
                 result = await _profileService.ReadAsync(account.Id, account.Username, playerId, cancellationToken);
             }
@@ -242,7 +245,8 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
                 }
                 else
                 {
-                    account.PlayerId = result.PlayerId;
+                    // A failed read can supply an id the account lacks, but never clears or replaces one.
+                    account.PlayerId ??= result.PlayerId;
                     account.Status = "Stale; could not refresh player data";
                     account.Session.MarkFetchFailed();
                 }
