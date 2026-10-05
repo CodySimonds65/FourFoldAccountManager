@@ -24,12 +24,12 @@ Users get plugins from the plugin hub: they open the plugin list (the wrench in 
 1. Open the plugin list (the wrench in the plugin strip).
 2. Switch on **Developer mode**, at the bottom of the list.
 3. Press **Open dev plugins folder**. It is `%LOCALAPPDATA%\FourFoldAccountManager\dev-plugins`.
-4. Copy the `samples/goal-tracker` folder into it, so that `plugin.json` sits at `dev-plugins\goal-tracker\plugin.json`. The [`samples`](samples) folder is in the GitHub repository, not in the release download.
+4. Make your own repository from the [plugin template](https://github.com/CodySimonds65/FourFoldAccountManager-plugin-template) (**Use this template** on GitHub), and clone it into that folder, so that `plugin.json` sits at `dev-plugins\my-plugin\plugin.json`.
 5. The plugin appears in the strip and the plugin list with a **DEV** badge.
 
-When you build on a copy of a sample, change its `id` and `author` in `plugin.json` first.
+Change `id`, `name`, `shortLabel` and `author` in `plugin.json` first. The template comes with `fourfold.d.ts`, which gives your editor autocomplete and inline documentation for the API.
 
-`samples/silver-tracker` is a fuller example: it reads `fourfold.profile`, keeps its maths in a module, and has a check that runs with Node. The third sample, `samples/sandbox-check`, contacts example.com each time it runs. See [Check your own plugin](#check-your-own-plugin).
+Two plugins from the hub are worked examples, each in its own repository. [Goal tracker](https://github.com/CodySimonds65/FourFoldAccountManager-goal-tracker) keeps a goal in storage and fills a card. [Silver tracker](https://github.com/CodySimonds65/FourFoldAccountManager-silver-tracker) reads `fourfold.profile`, keeps its maths in a module, and has a check that runs with Node. [`samples/sandbox-check`](samples/sandbox-check) is a different kind of sample: it tests the sandbox, and contacts example.com each time it runs. See [Check your own plugin](#check-your-own-plugin).
 
 Every folder directly inside `dev-plugins` is one plugin.
 
@@ -87,13 +87,13 @@ Each entry in `cards`:
 
 ## The API
 
-`window.fourfold` is there before your scripts run. It is frozen, so you can't change it.
+`window.fourfold` is there before your scripts run. It is frozen, so you can't change it. For autocomplete and inline documentation of everything below, the plugin template has a types file: [`fourfold.d.ts`](https://github.com/CodySimonds65/FourFoldAccountManager-plugin-template/blob/main/fourfold.d.ts).
 
 - Every call returns a promise.
 - An `on...` call takes a callback and returns a function that stops the callback.
 - A call that is refused rejects with an `Error`. Its `code` property is one of the [error codes](#error-codes) and its `message` says which rule was broken.
 - A rejected call never stops your plugin.
-- Events can arrive in bursts (`xp.onUpdated` fires once per account), so a handler can start while the last run is still waiting for answers. Run redraws one after another, as the `queue` in `samples/goal-tracker/app.js` does.
+- Events can arrive in bursts (`xp.onUpdated` fires once per account), so a handler can start while the last run is still waiting for answers. Run redraws one after another, as the `queue` in [Goal tracker's `app.js`](https://github.com/CodySimonds65/FourFoldAccountManager-goal-tracker/blob/main/app.js) does.
 
 ### Accounts
 
