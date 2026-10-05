@@ -151,7 +151,7 @@ const stats = await fourfold.stats.get(account.id);
 if (stats) console.log(stats.className, stats.level, stats.hp, stats.attack);
 ```
 
-`fourfold.stats.get(accountId)` returns `{ className, level, hp, sp, attack, magic, skill, speed, luck, defense, resistance, equipment }` for the account's active class, or `null` when the account is closed or hasn't been read yet. There is no stats event: read `stats.get` again when `xp.onUpdated` fires. `hp` to `resistance` are numbers, or `null` when unknown. `equipment` is `{ armor, helmet, hair, weapon }`: each is the item's name, or `null` when the slot is empty or unknown. A plugin that reads `equipment` needs `"apiVersion": 2`. An unknown account id is rejected with `invalid-argument`.
+`fourfold.stats.get(accountId)` returns `{ className, level, hp, sp, attack, magic, skill, speed, luck, defense, resistance, equipment }` for the account's active class, or `null` when the account is closed or hasn't been read yet. There is no stats event: read `stats.get` again when `xp.onUpdated` fires. `hp` to `resistance` are numbers, or `null` when unknown. `equipment` is `{ armor, helmet, hair, weapon }`: each is the slot as the profile page words it, at most 64 characters, or `null` when unknown. An empty slot comes through as the page's own word for it (`Empty`, say), not as `null`. A plugin that reads `equipment` needs `"apiVersion": 2`. An unknown account id is rejected with `invalid-argument`.
 
 ### Profile
 
@@ -167,11 +167,11 @@ if (!profile.isStale && profile.silver !== null) console.log(account.label, 'has
 | `silver` | number or null | The account's silver. |
 | `gold` | number or null | The account's gold. |
 | `location` | string or null | Where the character is, as the profile page words it. At most 64 characters. |
-| `playerId` | number or null | The account's public player id. Like `inGameName`, it is `null` unless the user has filled in that account's **Ranking username**. |
+| `playerId` | number or null | The account's public player id. Like `inGameName`, it is `null` unless the user has filled in that account's **Ranking username**. It is also `null` until the profile has been read under that name. |
 | `updatedAt` | string or null | Time of the last successful read, as an ISO 8601 date. |
 | `isStale` | boolean | `true` when there is no data yet, when the last read failed, and for a closed account. |
 
-The data comes from the same read as XP: about once a minute, for open accounts only. There is no profile event: read `profile.get` again when `xp.onUpdated` fires. That event also fires for changes that aren't a new read, and `updatedAt` only changes with a new one, so compare it to tell them apart. After a failed read the fields keep their last values and `isStale` is `true`. For a closed account the number and text fields are `null`. An unknown account id is rejected with `invalid-argument`.
+The data comes from the same read as XP: about once a minute, for open accounts only. There is no profile event: read `profile.get` again when `xp.onUpdated` fires. That event also fires for changes that aren't a new read, and `updatedAt` only changes with a new one, so compare it to tell them apart. After a failed read `silver`, `gold`, `location` and `updatedAt` keep their last values and `isStale` is `true`. For a closed account the number and text fields are `null`. An unknown account id is rejected with `invalid-argument`.
 
 ### Timer
 
