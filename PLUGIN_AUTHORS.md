@@ -8,7 +8,7 @@ A plugin is a folder with a `plugin.json` file and ordinary web files: HTML, Jav
 
 The page runs in its own sandboxed browser. It talks to FourFold only through `window.fourfold`, a small API that gives it:
 
-- read-only data from FourFold: the accounts, their XP and stats, and the timer (never logins);
+- read-only data from FourFold: the accounts, their XP, stats, equipment, silver, gold and location, and the timer (never logins);
 - web requests to the sites the plugin declares;
 - a small private store;
 - overlay cards, drawn by FourFold.
@@ -29,7 +29,7 @@ Users get plugins from the plugin hub: they open the plugin list (the wrench in 
 
 When you build on a copy of a sample, change its `id` and `author` in `plugin.json` first.
 
-The other sample, `samples/sandbox-check`, contacts example.com each time it runs. See [Check your own plugin](#check-your-own-plugin).
+`samples/silver-tracker` is a fuller example: it reads `fourfold.profile`, keeps its maths in a module, and has a check that runs with Node. The third sample, `samples/sandbox-check`, contacts example.com each time it runs. See [Check your own plugin](#check-your-own-plugin).
 
 Every folder directly inside `dev-plugins` is one plugin.
 
@@ -70,7 +70,7 @@ A `plugin.json` that breaks any rule below is rejected: the plugin doesn't load,
 | `version` | yes | `MAJOR.MINOR.PATCH`, digits only, such as `1.0.0`. |
 | `author` | yes | 1 to 40 characters. |
 | `description` | no | At most 200 characters. |
-| `apiVersion` | yes | A whole number. FourFold supports `1`. A higher number is rejected with "Update FourFold to use this plugin." |
+| `apiVersion` | yes | A whole number: the lowest API version the plugin needs. FourFold supports `1` and `2`. Declare `2` if the plugin calls `fourfold.profile` or reads `equipment`, so that an older FourFold tells the user to update instead of running a plugin that can't work. A higher number is rejected with "Update FourFold to use this plugin." |
 | `panel` | yes | Path to an existing `.html` file inside the plugin folder. Forward slashes only. |
 | `icon` | no | Path to a `.png` file inside the plugin folder, at most 256 by 256 pixels and 64 KB. Forward slashes only. Without one, the strip shows a default icon. |
 | `sites` | no | At most 10 websites the plugin may contact. Each is an origin: `https://host` or `https://host:port`, with no path, query or `user@`. The host must be a DNS name: no IP address, no trailing dot, and no name that only works on the local network. `localhost`, `.localhost`, `.local`, `.internal`, `.lan` and `.home.arpa` names are refused, and so is a single-label name such as `router`. A subdomain is its own site, so `https://example.com` doesn't cover `https://www.example.com`. An international host name is fine: FourFold converts it to its `xn--` form, and that form is what it shows users. After the conversion the host can contain only letters, digits, dots and dashes, so a name with an underscore or any other punctuation is refused. |
@@ -151,7 +151,27 @@ const stats = await fourfold.stats.get(account.id);
 if (stats) console.log(stats.className, stats.level, stats.hp, stats.attack);
 ```
 
-`fourfold.stats.get(accountId)` returns `{ className, level, hp, sp, attack, magic, skill, speed, luck, defense, resistance }` for the account's active class, or `null` when the account is closed or hasn't been read yet. There is no stats event: read `stats.get` again when `xp.onUpdated` fires. `hp` to `resistance` are numbers, or `null` when unknown. An unknown account id is rejected with `invalid-argument`.
+`fourfold.stats.get(accountId)` returns `{ className, level, hp, sp, attack, magic, skill, speed, luck, defense, resistance, equipment }` for the account's active class, or `null` when the account is closed or hasn't been read yet. There is no stats event: read `stats.get` again when `xp.onUpdated` fires. `hp` to `resistance` are numbers, or `null` when unknown. `equipment` is `{ armor, helmet, hair, weapon }`: each is the item's name, or `null` when the slot is empty or unknown. A plugin that reads `equipment` needs `"apiVersion": 2`. An unknown account id is rejected with `invalid-argument`.
+
+### Profile
+
+```js
+const profile = await fourfold.profile.get(account.id);
+if (!profile.isStale && profile.silver !== null) console.log(account.label, 'has', profile.silver, 'silver');
+```
+
+`fourfold.profile.get(accountId)` returns facts from the account's public profile page. It needs `"apiVersion": 2`.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `silver` | number or null | The account's silver. |
+| `gold` | number or null | The account's gold. |
+| `location` | string or null | Where the character is, as the profile page words it. At most 64 characters. |
+| `playerId` | number or null | The account's public player id. Like `inGameName`, it is `null` unless the user has filled in that account's **Ranking username**. |
+| `updatedAt` | string or null | Time of the last successful read, as an ISO 8601 date. |
+| `isStale` | boolean | `true` when there is no data yet, when the last read failed, and for a closed account. |
+
+The data comes from the same read as XP: about once a minute, for open accounts only. There is no profile event: read `profile.get` again when `xp.onUpdated` fires. That event also fires for changes that aren't a new read, and `updatedAt` only changes with a new one, so compare it to tell them apart. After a failed read the fields keep their last values and `isStale` is `true`. For a closed account the number and text fields are `null`. An unknown account id is rejected with `invalid-argument`.
 
 ### Timer
 
@@ -387,7 +407,7 @@ If the user switches the plugin off in the plugin list, its cards are hidden eve
 
 - Read or control the game, or see its pages, cookies or sessions.
 - See logins: usernames, emails and passwords are never exposed. Plugins can't see other plugins or any file outside their own folder either.
-- Get real-time data. XP data arrives about once a minute, and the timer sends no tick events.
+- Get real-time data. XP and profile data arrive about once a minute, and the timer sends no tick events.
 - Use shortcut keys, sounds or desktop notifications.
 - Draw custom cards. Cards are FourFold's data cards.
 - Add a settings page behind the cog. Keep settings in your own panel.
