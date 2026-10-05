@@ -99,7 +99,7 @@ public sealed class PluginManifestReaderTests : IDisposable
     [InlineData("\"id\": \"nul.tools\"")]
     [InlineData("\"id\": \"com1.tools\"")]
     [InlineData("\"id\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"")]
-    [InlineData("\"apiVersion\": 2")]
+    [InlineData("\"apiVersion\": 3")]
     [InlineData("\"apiVersion\": \"1\"")]
     [InlineData("\"panel\": \"missing.html\"")]
     [InlineData("\"panel\": \"plugin.json\"")]
