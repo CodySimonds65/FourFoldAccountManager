@@ -8,7 +8,8 @@ namespace FourFoldAccountManager.Core.Plugins;
 
 public static partial class PluginManifestReader
 {
-    public const int SupportedApiVersion = 1;
+    // 2 added fourfold.profile, and equipment on stats.get.
+    public const int SupportedApiVersion = 2;
 
     // author.plugin-name: lowercase letters, digits and dashes in dot-separated parts, with at least one dot.
     public const string IdPattern = @"[a-z0-9]+(-[a-z0-9]+)*(\.[a-z0-9]+(-[a-z0-9]+)*)+";

@@ -28,7 +28,18 @@ public sealed record PluginStatsInfo(
     long? Speed,
     long? Luck,
     long? Defense,
-    long? Resistance);
+    long? Resistance,
+    PluginEquipmentInfo Equipment);
+
+public sealed record PluginEquipmentInfo(string? Armor, string? Helmet, string? Hair, string? Weapon);
+
+public sealed record PluginProfileInfo(
+    int? PlayerId,
+    long? Silver,
+    long? Gold,
+    string? Location,
+    DateTimeOffset? UpdatedAt,
+    bool IsStale);
 
 public sealed record PluginLapInfo(int Number, long LapMs, long TotalMs);
 
@@ -44,6 +55,9 @@ public interface IPluginHostData
 
     // Null before the account's first profile read.
     PluginStatsInfo? GetStats(Guid accountId);
+
+    // Null when the account id isn't one of the user's accounts.
+    PluginProfileInfo? GetProfile(Guid accountId);
 
     PluginTimerInfo GetTimer();
 
