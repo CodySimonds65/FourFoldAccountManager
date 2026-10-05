@@ -29,11 +29,15 @@ public sealed class PlayerProfileService
         username = username?.Trim();
         if (string.IsNullOrWhiteSpace(username))
         {
-            return Failure(PlayerProfileReadStatus.MissingUsername, "Add a ranking username to read the public profile.", accountId);
+            return Failure(PlayerProfileReadStatus.MissingUsername, "Add a ranking username to read the public profile.");
         }
 
         var cached = GetCached(accountId);
         var resolvedId = playerId is > 0 ? playerId : cached?.PlayerId;
+        // A player's id survives a rename, so the cached id is still the one to try under a new username. Until
+        // that read succeeds it is unchecked for the new name, so a failed read must not hand it back.
+        var lastGood = string.Equals(cached?.Snapshot.Username.Trim(), username, StringComparison.OrdinalIgnoreCase)
+            ? cached : null;
         if (resolvedId is null)
         {
             IReadOnlyList<RankingEntry> ranking;
@@ -48,20 +52,20 @@ public sealed class PlayerProfileService
             catch
             {
                 return Failure(PlayerProfileReadStatus.RankingUnavailable,
-                    "Ranking data is unavailable; link a profile or try again.", accountId);
+                    "Ranking data is unavailable; link a profile or try again.");
             }
 
             var identity = RankingIdentityResolver.Resolve(username, ranking);
             if (identity.Status == IdentityResolutionStatus.Ambiguous)
             {
                 return Failure(PlayerProfileReadStatus.Ambiguous,
-                    "Multiple ranking matches found; link the exact player profile.", accountId);
+                    "Multiple ranking matches found; link the exact player profile.");
             }
 
             if (identity.Status != IdentityResolutionStatus.Matched)
             {
                 return Failure(PlayerProfileReadStatus.NotInTop200,
-                    "Player is not in the top 200; link the player profile.", accountId);
+                    "Player is not in the top 200; link the player profile.");
             }
 
             resolvedId = identity.PlayerId;
@@ -79,12 +83,12 @@ public sealed class PlayerProfileService
         catch (InvalidDataException)
         {
             return Failure(PlayerProfileReadStatus.MalformedProfile,
-                "The public profile is incomplete or malformed; try again later.", accountId, cached);
+                "The public profile is incomplete or malformed; try again later.", lastGood);
         }
         catch
         {
             return Failure(PlayerProfileReadStatus.ProfileUnavailable,
-                "The public profile could not be refreshed; showing the last successful read.", accountId, cached);
+                "The public profile could not be refreshed; showing the last successful read.", lastGood);
         }
 
         if (!string.Equals(snapshot.Username.Trim(), username, StringComparison.OrdinalIgnoreCase))
@@ -121,15 +125,11 @@ public sealed class PlayerProfileService
         }
     }
 
-    private PlayerProfileReadResult Failure(
+    private static PlayerProfileReadResult Failure(
         PlayerProfileReadStatus status,
         string message,
-        Guid accountId,
-        CachedProfile? cached = null)
-    {
-        cached ??= GetCached(accountId);
-        return new PlayerProfileReadResult(status, cached?.PlayerId, cached?.Snapshot, message);
-    }
+        CachedProfile? lastGood = null) =>
+        new(status, lastGood?.PlayerId, lastGood?.Snapshot, message);
 
     private sealed record CachedProfile(int PlayerId, PlayerProgressSnapshot Snapshot);
 }
