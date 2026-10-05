@@ -1,6 +1,6 @@
 // Silver tracker: silver earned per hour, session totals and a silver goal for each open account, in the panel and
 // on a card. The maths is in rate.mjs.
-import { applyRead, createSession, parseGoal, rateAt, toGoal } from './rate.mjs';
+import { applyRead, createSession, parseGoal, rateAt, statusOf, toGoal } from './rate.mjs';
 
 const container = document.getElementById('accounts');
 const empty = document.getElementById('empty');
@@ -27,7 +27,7 @@ function goalText(left) {
 }
 
 // Everything one account's block and card show.
-function describe(account, session, read) {
+function describe(account, session) {
   const tracked = session.lastAt !== null;
   const balance = tracked ? session.lastBalance : null;
   const rate = tracked ? rateAt(session, session.lastAt) : null;
@@ -41,9 +41,7 @@ function describe(account, session, read) {
     net: tracked ? balance - session.startBalance : null,
     goal,
     left: goal !== null && tracked ? toGoal(goal, balance, rate) : null,
-    status: !tracked ? 'No data yet'
-      : read.isStale ? 'Stale; the last read failed'
-      : rate === null ? 'Collecting baseline' : 'Tracking'
+    status: statusOf(session)
   };
 }
 
@@ -161,9 +159,8 @@ async function refresh() {
   for (const account of open) {
     let session = sessions.get(account.id);
     if (!session) sessions.set(account.id, (session = createSession()));
-    const read = await fourfold.profile.get(account.id);
-    applyRead(session, read);
-    const view = describe(account, session, read);
+    applyRead(session, await fourfold.profile.get(account.id));
+    const view = describe(account, session);
     // A refused card must not stop the panel from updating.
     await setCard(view).catch(error => console.warn(error.code ?? error.message));
     views.push(view);

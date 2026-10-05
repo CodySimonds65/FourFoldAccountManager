@@ -47,6 +47,13 @@ export function rateAt(session, now) {
   return covered > 0 ? gain / covered * HOUR_MS : null;
 }
 
+// The account's status line. A missed read shows as stale whatever the reason, so old numbers never pass as live.
+export function statusOf(session) {
+  if (session.lastAt === null) return 'No data yet';
+  if (session.missed) return 'Stale; the last read failed';
+  return rateAt(session, session.lastAt) === null ? 'Collecting baseline' : 'Tracking';
+}
+
 // A goal as the user typed it: digits, with commas or spaces as thousands separators. Null when it isn't a whole
 // number above zero. A dot is refused, not read as a separator: "1.5" must not become 15.
 export function parseGoal(text) {
