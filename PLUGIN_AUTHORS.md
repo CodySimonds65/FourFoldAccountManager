@@ -24,7 +24,7 @@ Users get plugins from the plugin hub: they open the plugin list (the wrench in 
 1. Open the plugin list (the wrench in the plugin strip).
 2. Switch on **Developer mode**, at the bottom of the list.
 3. Press **Open dev plugins folder**. It is `%LOCALAPPDATA%\FourFoldAccountManager\dev-plugins`.
-4. Make your own repository from the [plugin template](https://github.com/CodySimonds65/FourFoldAccountManager-plugin-template) (**Use this template** on GitHub), and clone it into that folder, so that `plugin.json` sits at `dev-plugins\my-plugin\plugin.json`.
+4. Put a copy of the [plugin template](https://github.com/CodySimonds65/FourFoldAccountManager-plugin-template) in that folder, so that `plugin.json` sits at `dev-plugins\my-plugin\plugin.json`. Either make your own repository from it (**Use this template** on GitHub) and clone that, or download it as a ZIP (**Code**, then **Download ZIP**) and unpack it. Getting on the hub needs the repository, but trying things out doesn't.
 5. The plugin appears in the strip and the plugin list with a **DEV** badge.
 
 Change `id`, `name`, `shortLabel` and `author` in `plugin.json` first. The template comes with `fourfold.d.ts`, which gives your editor autocomplete and inline documentation for the API.
