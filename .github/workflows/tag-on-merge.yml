@@ -4,6 +4,11 @@ on:
   pull_request_target:
     branches: [main]
     types: [closed]
+    # A merge that changes nothing in the app ships no update.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/**'
 
 permissions:
   contents: write
