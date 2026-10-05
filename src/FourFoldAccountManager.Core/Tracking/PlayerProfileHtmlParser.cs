@@ -73,8 +73,23 @@ public static class PlayerProfileHtmlParser
             });
         }
 
-        return new PlayerProgressSnapshot(username, activeClassName, classes, invalid);
+        return new PlayerProgressSnapshot(username, activeClassName, classes, invalid)
+        {
+            Silver = ReadGameNumber(document, "Silver"),
+            Gold = ReadGameNumber(document, "Gold"),
+            Location = ReadGameStat(document, "Location") is { Length: > 0 } location ? location : null
+        };
     }
+
+    // The strip of facts above the classes: <div class="social-game-stat"><span>Silver</span><strong>1,234</strong></div>.
+    // Nothing that tracks XP needs it, so a missing or changed strip gives null and never throws.
+    private static string? ReadGameStat(IDocument document, string label) =>
+        document.QuerySelectorAll(".social-game-stats .social-game-stat")
+            .FirstOrDefault(stat => stat.QuerySelector("span")?.TextContent.Trim() == label)
+            ?.QuerySelector("strong")?.TextContent.Trim();
+
+    private static long? ReadGameNumber(IDocument document, string label) =>
+        TryParseNonnegativeLong(ReadGameStat(document, label), out var value) ? value : null;
 
     private static ProfileStats ReadStats(IElement card) => new(
         ParseDisplayedStat(ReadMeta(card, "HP"), useMaximum: true),
