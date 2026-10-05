@@ -90,6 +90,7 @@ internal static class PluginSdk
               onUpdated: callback => on('xp.updated', callback)
             }),
             stats: Object.freeze({ get: accountId => call('stats.get', { accountId }) }),
+            profile: Object.freeze({ get: accountId => call('profile.get', { accountId }) }),
             timer: Object.freeze({
               get: () => call('timer.get'),
               onChanged: callback => on('timer.changed', callback)

@@ -111,6 +111,8 @@ internal sealed class PluginApi(
                     ? host.GetStats(accountId)
                     : throw UnknownAccount();
             }
+            case "profile.get":
+                return host.GetProfile(AccountId(parameters)) ?? throw UnknownAccount();
             case "timer.get":
                 return host.GetTimer();
             case "storage.get":
