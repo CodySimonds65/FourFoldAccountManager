@@ -7,6 +7,7 @@ namespace FourFoldAccountManager.Desktop.Updates;
 public sealed class UpdateInstaller
 {
     private const string ApplyUpdateArgument = "--apply-update";
+    private const string HelperNamePrefix = "FourFoldAccountManager-updater-";
 
     public UpdateInstallResult TryStart(string verifiedUpdatePath, string currentExecutablePath, int parentProcessId)
     {
@@ -26,7 +27,7 @@ public sealed class UpdateInstaller
             return UpdateInstallResult.Failed;
         }
 
-        var helperPath = Path.Combine(Path.GetTempPath(), $"FourFoldAccountManager-updater-{Guid.NewGuid():N}.exe");
+        var helperPath = Path.Combine(Path.GetTempPath(), $"{HelperNamePrefix}{Guid.NewGuid():N}.exe");
         try
         {
             File.Copy(currentExecutablePath, helperPath, overwrite: false);
@@ -78,6 +79,46 @@ public sealed class UpdateInstaller
 
         new UpdateInstaller().WaitForParentAndReplace(parentProcessId, args[2], args[3]);
         return true;
+    }
+
+    // A helper cannot delete its own running exe, so the next normal start clears what earlier updates left.
+    // A helper that is still running keeps its exe locked, and that keeps its extracted native libraries too.
+    public static void DeleteStaleHelpers(string? temporaryDirectory = null)
+    {
+        var directory = temporaryDirectory ?? Path.GetTempPath();
+        try
+        {
+            foreach (var helperPath in Directory.EnumerateFiles(directory, HelperNamePrefix + "*.exe"))
+            {
+                UpdateFiles.TryDelete(helperPath);
+            }
+
+            // The single-file build extracts its native libraries into one folder per exe name.
+            var extractionRoot = Path.Combine(directory, ".net");
+            if (!Directory.Exists(extractionRoot))
+            {
+                return;
+            }
+
+            foreach (var folder in Directory.EnumerateDirectories(extractionRoot, HelperNamePrefix + "*"))
+            {
+                if (File.Exists(Path.Combine(directory, Path.GetFileName(folder) + ".exe")))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    Directory.Delete(folder, recursive: true);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 
     public static bool ReplaceTargetFile(string verifiedUpdatePath, string targetExecutablePath)
