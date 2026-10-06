@@ -8,7 +8,8 @@ namespace FourFoldAccountManager.Core.Plugins;
 
 public static partial class PluginManifestReader
 {
-    // 2 added fourfold.profile, and equipment on stats.get.
+    // 2 added fourfold.profile, and equipment on stats.get. 3 added the live game feed: battle, location, session and
+    // live events.
     public const int SupportedApiVersion = 3;
 
     // author.plugin-name: lowercase letters, digits and dashes in dot-separated parts, with at least one dot.
