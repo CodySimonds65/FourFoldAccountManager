@@ -6,7 +6,7 @@ public abstract record GameEvent;
 
 public sealed record BattleStarted(int EnemyCount) : GameEvent;
 
-public sealed record BattleEnded(bool Victory) : GameEvent;
+public sealed record BattleEnded : GameEvent;
 
 public sealed record StatGains(int MaxHp, int MaxSp, int Hp, int Sp, int Att, int Mag, int Skl, int Spd, int Def, int Res, int Lck);
 

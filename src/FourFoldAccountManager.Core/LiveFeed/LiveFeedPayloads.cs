@@ -6,7 +6,9 @@ namespace FourFoldAccountManager.Core.LiveFeed;
 // a field that isn't in one of these records can't reach a plugin. Every string passes PublicGameText.
 public sealed record LiveBattleStarted(Guid AccountId, int EnemyCount, DateTimeOffset At);
 
-public sealed record LiveBattleEnded(Guid AccountId, bool Victory, DateTimeOffset At);
+// No victory flag: the game passes false to every TargetCloseHUD, even after a win. A plugin should read a following
+// battle.result as the win.
+public sealed record LiveBattleEnded(Guid AccountId, DateTimeOffset At);
 
 public sealed record LiveBattleResult(
     Guid AccountId,
@@ -43,7 +45,7 @@ public static class LiveFeedPayloads
         gameEvent switch
         {
             BattleStarted e => ("battle.started", new LiveBattleStarted(accountId, e.EnemyCount, at)),
-            BattleEnded e => ("battle.ended", new LiveBattleEnded(accountId, e.Victory, at)),
+            BattleEnded e => ("battle.ended", new LiveBattleEnded(accountId, at)),
             BattleResult e => ("battle.result", new LiveBattleResult(accountId, e.ExpGained, e.SilverGained,
                 e.ExpNeededToNextLevel, e.LeveledUp, e.ReachedLevel, PluginText.PublicGameText(e.ClassName),
                 PluginText.PublicGameText(e.UnlockedSkillName), e.Gains, at)),

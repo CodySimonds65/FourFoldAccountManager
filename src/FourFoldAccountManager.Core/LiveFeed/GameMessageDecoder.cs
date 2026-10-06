@@ -153,7 +153,8 @@ public static partial class GameMessageDecoder
         }
         else if (hash == CloseHud)
         {
-            result = new BattleEnded(reader.ReadBool());
+            reader.ReadBool(); // victory: always false from the server, not kept
+            result = new BattleEnded();
         }
         else if (hash == BattleResultHash)
         {

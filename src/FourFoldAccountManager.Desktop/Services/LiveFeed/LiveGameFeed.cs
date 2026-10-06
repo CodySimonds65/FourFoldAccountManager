@@ -338,8 +338,9 @@ internal sealed class LiveGameFeed : IAsyncDisposable
             {
                 switch (gameEvent)
                 {
-                    case LoggedIn:
+                    case LoggedIn login:
                         account.SawLogin = true;
+                        account.LoginPosted |= login.Success;
                         break;
                     case SceneLoaded scene:
                         account.SawScene = true;
@@ -388,8 +389,9 @@ internal sealed class LiveGameFeed : IAsyncDisposable
             }
 
             _accounts.Remove(accountId);
-            // A server kick already told plugins why; the socket closing after it isn't a second disconnect.
-            post = _state == LiveFeedState.Active && !account.DisconnectPosted;
+            // A server kick already told plugins why; the socket closing after it isn't a second disconnect. Plugins
+            // weren't told this session started (no successful login), so they aren't told it ended.
+            post = _state == LiveFeedState.Active && account.LoginPosted && !account.DisconnectPosted;
         }
 
         if (post)
@@ -458,6 +460,8 @@ internal sealed class LiveGameFeed : IAsyncDisposable
         public DateTimeOffset OpenedAt { get; } = openedAt;
 
         public bool SawLogin { get; set; }
+
+        public bool LoginPosted { get; set; }
 
         public bool SawScene { get; set; }
 

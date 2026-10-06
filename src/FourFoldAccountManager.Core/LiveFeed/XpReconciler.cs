@@ -30,9 +30,9 @@ public sealed class XpReconciler
         results.Add((at, className, expGained));
     }
 
-    // feedActiveSince: when the feed last became active, or null when it isn't active now.
+    // watchedSince: when the feed started watching this account's current game socket, or null when it isn't watching.
     public void RecordSample(
-        Guid accountId, PlayerProgressSnapshot snapshot, DateTimeOffset sampledAt, DateTimeOffset? feedActiveSince)
+        Guid accountId, PlayerProgressSnapshot snapshot, DateTimeOffset sampledAt, DateTimeOffset? watchedSince)
     {
         var hadPrevious = _lastSamples.TryGetValue(accountId, out var previous);
         _lastSamples[accountId] = (sampledAt, snapshot);
@@ -43,9 +43,9 @@ public sealed class XpReconciler
         results.RemoveAll(result => result.At <= sampledAt);
 
         // Only a window the feed watched from start to end, on one class at one level, can be compared exactly.
-        if (!hadPrevious || feedActiveSince is not { } since || since > previous.At ||
+        if (!hadPrevious || watchedSince is not { } since || since > previous.At ||
             ActiveClass(previous.Snapshot) is not { } before || ActiveClass(snapshot) is not { } after ||
-            !string.Equals(before.Name, after.Name, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(NormalizeClass(before.Name), NormalizeClass(after.Name), StringComparison.Ordinal) ||
             before.Class.Level != after.Class.Level)
         {
             Skipped++;
@@ -55,8 +55,17 @@ public sealed class XpReconciler
 
         var polled = after.Class.CurrentXp - before.Class.CurrentXp;
         var fed = inWindow
-            .Where(result => string.Equals(result.ClassName, after.Name, StringComparison.OrdinalIgnoreCase))
+            .Where(result => string.Equals(
+                NormalizeClass(result.ClassName), NormalizeClass(after.Name), StringComparison.Ordinal))
             .Sum(result => result.Exp);
+        if (polled == 0 && fed == 0)
+        {
+            // No battle and no XP change proves nothing about the feed, so it isn't evidence either way.
+            Skipped++;
+            _openMismatches.Remove(accountId);
+            return;
+        }
+
         var difference = fed - polled;
         if (difference == 0)
         {
@@ -75,6 +84,9 @@ public sealed class XpReconciler
         Mismatched++;
         _openMismatches[accountId] = difference;
     }
+
+    // Matches the game's SkillCatalog.Normalize, so "Dark_Knight" and "dark knight" are the same class.
+    private static string NormalizeClass(string? name) => (name ?? string.Empty).Trim().Replace('_', ' ').ToLowerInvariant();
 
     private static (string Name, ClassProfileSnapshot Class)? ActiveClass(PlayerProgressSnapshot snapshot) =>
         snapshot.ActiveClassName is { } name && snapshot.Classes.TryGetValue(name, out var found) ? (name, found) : null;
