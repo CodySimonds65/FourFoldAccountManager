@@ -174,11 +174,13 @@ public sealed class UpdateInstaller
     {
         try
         {
+            // Not through the shell: an exe that still carries its browser download mark makes the shell ask
+            // "Open File - Security Warning" in this hidden helper, which then waits forever.
             Process.Start(new ProcessStartInfo
             {
                 FileName = targetPath,
-                UseShellExecute = true
-            });
+                UseShellExecute = false
+            })?.Dispose();
         }
         catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
