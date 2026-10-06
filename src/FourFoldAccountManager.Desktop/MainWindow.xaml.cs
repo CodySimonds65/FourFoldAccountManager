@@ -132,6 +132,7 @@ public partial class MainWindow : Window
         _plugins.XpCalc.View.AccountSelectionRequested += SelectAccountFromPlugin;
         _plugins.Timer.ShortcutChangeRequested += TimerPlugin_ShortcutChangeRequested;
         InitializeCommunityPlugins(paths);
+        InitializeLiveFeed();
         RefreshPluginSidebar();
         PluginSidebar.OpenRequested += id =>
         {
@@ -301,6 +302,7 @@ public partial class MainWindow : Window
         {
             ReplaceAccounts(await _accountStore.LoadAsync());
             _panelSettings = await _settingsStore.LoadAsync();
+            _liveFeed.SetEnabled(_panelSettings.LiveGameFeed);
             try
             {
                 var apiOptions = LeaderboardApiOptions.FromEnvironment();
@@ -3432,6 +3434,8 @@ public partial class MainWindow : Window
             // First, so a download that finishes now can't reach the plugins that are being disposed.
             _pluginHub.Dispose();
             _communityPlugins.Dispose();
+            // After the plugins: nothing may be posted to a plugin that is being disposed.
+            await _liveFeed.DisposeAsync();
 
             try
             {

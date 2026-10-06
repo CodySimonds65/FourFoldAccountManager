@@ -1,3 +1,5 @@
+using FourFoldAccountManager.Core.LiveFeed;
+
 namespace FourFoldAccountManager.Desktop.Plugins.Web;
 
 public sealed record PluginAccountInfo(Guid Id, string Label, string? InGameName, bool IsOpen);
@@ -60,6 +62,12 @@ public interface IPluginHostData
     PluginProfileInfo? GetProfile(Guid accountId);
 
     PluginTimerInfo GetTimer();
+
+    // The account's current scene from the live feed. Null when the feed is off or unavailable, or the account's game
+    // isn't connected.
+    LiveLocation? GetLocation(Guid accountId);
+
+    LiveStatus GetLiveStatus();
 
     // True while this plugin's panel is the one showing in the strip.
     bool IsPanelShowing(string pluginId);
