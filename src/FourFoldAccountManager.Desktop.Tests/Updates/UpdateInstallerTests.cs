@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using FourFoldAccountManager.Desktop.Updates;
 using Xunit;
 
 namespace FourFoldAccountManager.Desktop.Tests.Updates;
@@ -44,4 +45,43 @@ public sealed class UpdateInstallerTests
         Assert.False(File.Exists(update));
         Directory.Delete(directory, recursive: true);
     }
+
+    // The cleanup deletes from the user's temp folder, so it must take only finished helpers: one that is
+    // still running keeps its exe locked and must keep the native libraries it extracted as well.
+    [Fact]
+    public void DeleteStaleHelpersRemovesFinishedHelpersAndLeavesRunningOnesAndOtherFiles()
+    {
+        var directory = Directory.CreateTempSubdirectory("FourFoldUpdateInstallerTests-").FullName;
+        var staleExe = CreateHelper(directory, "stale");
+        var runningExe = CreateHelper(directory, "running");
+        var orphanFolder = Directory.CreateDirectory(Path.Combine(directory, ".net", "FourFoldAccountManager-updater-orphan")).FullName;
+        var otherFile = Path.Combine(directory, "FourFoldAccountManager-notes.exe");
+        var otherFolder = Directory.CreateDirectory(Path.Combine(directory, ".net", "SomeOtherApp")).FullName;
+        File.WriteAllText(otherFile, "keep");
+
+        using (File.Open(runningExe, FileMode.Open, FileAccess.Read, FileShare.Read))
+        {
+            UpdateInstaller.DeleteStaleHelpers(directory);
+        }
+
+        Assert.False(File.Exists(staleExe));
+        Assert.False(Directory.Exists(ExtractionFolder(directory, "stale")));
+        Assert.False(Directory.Exists(orphanFolder));
+        Assert.True(File.Exists(runningExe));
+        Assert.True(File.Exists(Path.Combine(ExtractionFolder(directory, "running"), "native.dll")));
+        Assert.True(File.Exists(otherFile));
+        Assert.True(Directory.Exists(otherFolder));
+        Directory.Delete(directory, recursive: true);
+    }
+
+    private static string CreateHelper(string directory, string id)
+    {
+        var helperPath = Path.Combine(directory, $"FourFoldAccountManager-updater-{id}.exe");
+        File.WriteAllText(helperPath, "helper");
+        File.WriteAllText(Path.Combine(Directory.CreateDirectory(ExtractionFolder(directory, id)).FullName, "native.dll"), "native");
+        return helperPath;
+    }
+
+    private static string ExtractionFolder(string directory, string id) =>
+        Path.Combine(directory, ".net", $"FourFoldAccountManager-updater-{id}");
 }

@@ -377,6 +377,7 @@ public partial class MainWindow : Window
     {
         try
         {
+            _ = Task.Run(() => UpdateInstaller.DeleteStaleHelpers());
             var currentVersion = typeof(App).Assembly.GetName().Version ?? new Version(1, 1, 0);
             var currentExecutablePath = Environment.ProcessPath;
             if (string.IsNullOrWhiteSpace(currentExecutablePath))
