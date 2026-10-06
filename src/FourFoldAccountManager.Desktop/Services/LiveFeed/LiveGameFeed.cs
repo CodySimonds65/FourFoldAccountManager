@@ -45,7 +45,6 @@ internal sealed class LiveGameFeed : IAsyncDisposable
     private readonly XpReconciler _reconciler = new();
     private LiveFeedState _state = LiveFeedState.Off;
     private string? _reason;
-    private DateTimeOffset? _activeSince;
 
     private long _frames;
     private long _recognized;
@@ -112,7 +111,6 @@ internal sealed class LiveGameFeed : IAsyncDisposable
             _accounts.Clear();
             _state = enabled ? LiveFeedState.Active : LiveFeedState.Off;
             _reason = null;
-            _activeSince = enabled ? _clock.GetUtcNow() : null;
             status = CurrentStatus();
         }
 
@@ -192,8 +190,11 @@ internal sealed class LiveGameFeed : IAsyncDisposable
     {
         lock (_gate)
         {
-            _reconciler.RecordSample(
-                accountId, snapshot, sampledAt, _state == LiveFeedState.Active ? _activeSince : null);
+            // The window only counts when the feed watched this account's game socket for all of it.
+            var watchedSince = _state == LiveFeedState.Active && _accounts.TryGetValue(accountId, out var account)
+                ? account.OpenedAt
+                : (DateTimeOffset?)null;
+            _reconciler.RecordSample(accountId, snapshot, sampledAt, watchedSince);
         }
     }
 
@@ -201,10 +202,10 @@ internal sealed class LiveGameFeed : IAsyncDisposable
     {
         var tap = new GameFeedTap(core, accountId, Enqueue, _clock);
         _taps[accountId] = tap;
-        _ = AttachAsync(tap);
+        _ = AttachAsync(accountId, tap);
     }
 
-    private async Task AttachAsync(GameFeedTap tap)
+    private async Task AttachAsync(Guid accountId, GameFeedTap tap)
     {
         try
         {
@@ -212,7 +213,11 @@ internal sealed class LiveGameFeed : IAsyncDisposable
         }
         catch (Exception)
         {
-            MarkUnavailable("The live feed couldn't attach to a game panel.");
+            // Resumes on the UI thread, where _taps lives. A panel closed mid-attach isn't a feed failure.
+            if (_taps.TryGetValue(accountId, out var current) && ReferenceEquals(current, tap))
+            {
+                MarkUnavailable("The live feed couldn't attach to a game panel.");
+            }
         }
     }
 
@@ -405,7 +410,6 @@ internal sealed class LiveGameFeed : IAsyncDisposable
 
             _state = LiveFeedState.Unavailable;
             _reason = reason;
-            _activeSince = null;
             _accounts.Clear();
             status = CurrentStatus();
         }

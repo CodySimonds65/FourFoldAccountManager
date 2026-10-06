@@ -36,19 +36,26 @@ internal sealed class GameFeedTap(CoreWebView2 core, Guid accountId, Action<TapE
         }
 
         _detached = true;
-        if (_created is not null)
+        try
         {
-            _created.DevToolsProtocolEventReceived -= OnCreated;
-        }
+            if (_created is not null)
+            {
+                _created.DevToolsProtocolEventReceived -= OnCreated;
+            }
 
-        if (_frames is not null)
-        {
-            _frames.DevToolsProtocolEventReceived -= OnFrame;
-        }
+            if (_frames is not null)
+            {
+                _frames.DevToolsProtocolEventReceived -= OnFrame;
+            }
 
-        if (_closed is not null)
+            if (_closed is not null)
+            {
+                _closed.DevToolsProtocolEventReceived -= OnClosed;
+            }
+        }
+        catch (Exception)
         {
-            _closed.DevToolsProtocolEventReceived -= OnClosed;
+            // A view whose browser has died has nothing left to unsubscribe from.
         }
 
         _ = DisableAsync();
