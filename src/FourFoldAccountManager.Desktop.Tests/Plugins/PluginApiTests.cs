@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
+using FourFoldAccountManager.Core.LiveFeed;
 using FourFoldAccountManager.Core.Models;
 using FourFoldAccountManager.Core.Overlay;
 using FourFoldAccountManager.Core.Plugins;
@@ -288,6 +289,10 @@ public sealed class PluginApiTests : IDisposable
         public PluginProfileInfo? GetProfile(Guid accountId) => null;
 
         public PluginTimerInfo GetTimer() => new("stopped", 0, []);
+
+        public LiveLocation? GetLocation(Guid accountId) => null;
+
+        public LiveStatus GetLiveStatus() => new("off", null);
 
         public bool IsPanelShowing(string pluginId) => PanelShowing;
 

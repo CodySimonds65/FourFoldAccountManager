@@ -95,6 +95,24 @@ internal static class PluginSdk
               get: () => call('timer.get'),
               onChanged: callback => on('timer.changed', callback)
             }),
+            battle: Object.freeze({
+              onStarted: callback => on('battle.started', callback),
+              onEnded: callback => on('battle.ended', callback),
+              onResult: callback => on('battle.result', callback),
+              onSkillResult: callback => on('battle.skillResult', callback)
+            }),
+            location: Object.freeze({
+              get: accountId => call('location.get', { accountId }),
+              onChanged: callback => on('location.changed', callback)
+            }),
+            session: Object.freeze({
+              onLoggedIn: callback => on('session.loggedIn', callback),
+              onDisconnected: callback => on('session.disconnected', callback)
+            }),
+            live: Object.freeze({
+              getStatus: () => call('live.getStatus'),
+              onStatusChanged: callback => on('live.statusChanged', callback)
+            }),
             http: Object.freeze({ fetch: (url, options) => call('http.fetch', { url, ...(options ?? {}) }) }),
             openExternal: url => navigator.userActivation && !navigator.userActivation.isActive
               ? Promise.reject(Object.assign(new Error('openExternal needs a click.'), { code: 'unavailable' }))
