@@ -37,6 +37,8 @@ App shortcuts can be changed on the **Shortcuts** tab in Settings; the Timer's k
 | Reveal overlays tab | Ctrl+Alt+Shift+O |
 | Toggle divider resizing | Ctrl+Alt+Shift+L |
 
+A shortcut can be a key, the middle or a side mouse button, or the scroll wheel, each with or without Ctrl, Alt or Shift. A mouse shortcut still reaches the game and only works while FourFold is the window in front.
+
 **Esc** leaves full screen or theatre mode. **F5** reloads a game panel and can't be rebound.
 
 ## Install

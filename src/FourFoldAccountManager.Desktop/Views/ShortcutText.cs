@@ -30,6 +30,15 @@ internal static class ShortcutText
 
     private static string KeyName(ushort virtualKey)
     {
+        switch (virtualKey)
+        {
+            case GlobalHotkeyChord.MiddleClick: return "Middle click";
+            case GlobalHotkeyChord.MouseButton4: return "Mouse 4";
+            case GlobalHotkeyChord.MouseButton5: return "Mouse 5";
+            case GlobalHotkeyChord.ScrollUp: return "Scroll up";
+            case GlobalHotkeyChord.ScrollDown: return "Scroll down";
+        }
+
         var key = KeyInterop.KeyFromVirtualKey(virtualKey);
         var name = key switch
         {

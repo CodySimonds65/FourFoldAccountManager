@@ -75,12 +75,35 @@ public partial class TimerSettingsPage : UserControl
                 _rows[action].SetStatus(ShortcutCapture.InvalidKeysMessage);
                 break;
             case ShortcutKeyResult.Captured:
-                _capturing = null;
-                _rows[action].SetKeysText(ShortcutText.Format(chord!));
-                _rows[action].SetStatus(string.Empty);
-                ChangeRequested?.Invoke(action, chord!);
+                Capture(action, chord!);
                 break;
         }
+    }
+
+    private void TimerSettingsPage_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_capturing is { } action && ShortcutCapture.TryReadMouseButton(e, out var chord))
+        {
+            e.Handled = true;
+            Capture(action, chord!);
+        }
+    }
+
+    private void TimerSettingsPage_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (_capturing is { } action && ShortcutCapture.TryReadWheel(e, out var chord))
+        {
+            e.Handled = true;
+            Capture(action, chord!);
+        }
+    }
+
+    private void Capture(GlobalShortcutAction action, GlobalHotkeyChord chord)
+    {
+        _capturing = null;
+        _rows[action].SetKeysText(ShortcutText.Format(chord));
+        _rows[action].SetStatus(string.Empty);
+        ChangeRequested?.Invoke(action, chord);
     }
 
     // Clicking away, or leaving the page, ends a capture.
