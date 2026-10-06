@@ -48,4 +48,44 @@ public sealed class PlainKeyShortcutMatcherTests
 
         Assert.Equal(GlobalShortcutAction.TimerSplit, matcher.KeyDown(S));
     }
+
+    [Fact]
+    public void AMouseShortcutWithModifiersFiresOnlyWhenExactlyThoseModifiersAreHeld()
+    {
+        var matcher = new PlainKeyShortcutMatcher();
+        matcher.SetBindings(new Dictionary<GlobalShortcutAction, GlobalHotkeyChord>
+        {
+            [GlobalShortcutAction.NextTab] = new(GlobalHotkeyChord.MiddleClick, GlobalHotkeyModifiers.Control)
+        });
+
+        // A bare middle click is the game's own; it must not switch tabs.
+        Assert.Null(matcher.KeyDown(GlobalHotkeyChord.MiddleClick));
+        matcher.KeyUp(GlobalHotkeyChord.MiddleClick);
+
+        Assert.Null(matcher.KeyDown(LeftControl));
+        Assert.Equal(GlobalShortcutAction.NextTab, matcher.KeyDown(GlobalHotkeyChord.MiddleClick));
+        matcher.KeyUp(GlobalHotkeyChord.MiddleClick);
+
+        Assert.Null(matcher.KeyDown(LeftShift));
+        Assert.Null(matcher.KeyDown(GlobalHotkeyChord.MiddleClick));
+    }
+
+    [Fact]
+    public void APlainMouseShortcutFiresWithModifiersHeldUnlessThatComboIsAnotherShortcut()
+    {
+        var matcher = new PlainKeyShortcutMatcher();
+        matcher.SetBindings(new Dictionary<GlobalShortcutAction, GlobalHotkeyChord>
+        {
+            [GlobalShortcutAction.TimerSplit] = new(GlobalHotkeyChord.MouseButton4, GlobalHotkeyModifiers.None),
+            [GlobalShortcutAction.TimerReset] = new(GlobalHotkeyChord.MouseButton4, GlobalHotkeyModifiers.Shift)
+        });
+
+        Assert.Null(matcher.KeyDown(LeftShift));
+        Assert.Equal(GlobalShortcutAction.TimerReset, matcher.KeyDown(GlobalHotkeyChord.MouseButton4));
+        matcher.KeyUp(GlobalHotkeyChord.MouseButton4);
+        matcher.KeyUp(LeftShift);
+
+        Assert.Null(matcher.KeyDown(LeftControl));
+        Assert.Equal(GlobalShortcutAction.TimerSplit, matcher.KeyDown(GlobalHotkeyChord.MouseButton4));
+    }
 }

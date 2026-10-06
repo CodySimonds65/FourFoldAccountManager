@@ -137,12 +137,35 @@ public partial class SettingsDialog : Window
                 _rows[action].SetStatus(ShortcutCapture.InvalidKeysMessage);
                 break;
             case ShortcutKeyResult.Captured:
-                _shortcuts[action] = chord!;
-                _capturingShortcut = null;
-                _rows[action].SetKeysText(ShortcutText.Format(chord!));
-                UpdateShortcutStatus(action);
+                Capture(action, chord!);
                 break;
         }
+    }
+
+    private void SettingsDialog_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_capturingShortcut is { } action && ShortcutCapture.TryReadMouseButton(e, out var chord))
+        {
+            e.Handled = true;
+            Capture(action, chord!);
+        }
+    }
+
+    private void SettingsDialog_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (_capturingShortcut is { } action && ShortcutCapture.TryReadWheel(e, out var chord))
+        {
+            e.Handled = true;
+            Capture(action, chord!);
+        }
+    }
+
+    private void Capture(GlobalShortcutAction action, GlobalHotkeyChord chord)
+    {
+        _shortcuts[action] = chord;
+        _capturingShortcut = null;
+        _rows[action].SetKeysText(ShortcutText.Format(chord));
+        UpdateShortcutStatus(action);
     }
 
     private void CancelCapture()
