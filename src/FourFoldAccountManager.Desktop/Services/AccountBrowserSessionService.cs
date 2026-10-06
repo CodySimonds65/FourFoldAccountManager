@@ -48,6 +48,12 @@ public sealed class AccountBrowserSessionService
     /// <summary>Raised when a slot is stopped from opening the store or gold page.</summary>
     public event Action<Guid>? StorePageBlocked;
 
+    /// <summary>Raised on the UI thread when a new view is ready, before its first navigation.</summary>
+    public event Action<Guid, CoreWebView2>? ViewCreated;
+
+    /// <summary>Raised on the UI thread just before a view is disposed.</summary>
+    public event Action<Guid>? ViewClosing;
+
     public Task<WebView2CompositionControl> CreateViewAsync(Guid accountId, Panel host) =>
         InvokeOnDispatcherAsync(() => CreateViewCoreAsync(accountId, host));
 
@@ -141,6 +147,7 @@ public sealed class AccountBrowserSessionService
             view.CoreWebView2.NavigationStarting += navigationStarting;
             view.CoreWebView2.NewWindowRequested += newWindowRequested;
             _views.Add(accountId, new SessionView(view, navigationStarting, newWindowRequested, scalingScriptId));
+            ViewCreated?.Invoke(accountId, view.CoreWebView2);
             return view;
         }
         finally
@@ -491,6 +498,7 @@ public sealed class AccountBrowserSessionService
             return;
         }
 
+        ViewClosing?.Invoke(accountId);
         session.View.CoreWebView2.NavigationStarting -= session.NavigationStarting;
         session.View.CoreWebView2.NewWindowRequested -= session.NewWindowRequested;
         DetachFromParent(session.View);
