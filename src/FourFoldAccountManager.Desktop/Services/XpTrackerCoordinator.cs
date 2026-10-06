@@ -55,6 +55,9 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
 
     public event EventHandler? Changed;
 
+    // Raised after each successful profile read, on the poll's thread. The live feed checks its XP against it.
+    public event Action<Guid, PlayerProgressSnapshot, DateTimeOffset>? ProfileSampled;
+
     public PlayerProfileService ProfileService => _profileService;
 
     // Tests shorten the pause before the one retry of a failed profile read.
@@ -262,6 +265,9 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
             var sampledAt = DateTimeOffset.UtcNow;
             account.Session.ApplySnapshot(profile, sampledAt);
             account.LatestSnapshot = profile;
+            // A handler that throws must not turn a good read into a failed one.
+            try { ProfileSampled?.Invoke(account.Id, profile, sampledAt); }
+            catch (Exception) { }
             account.Status = account.Session.MissedPreviousSample
                 ? "Partial interval; previous tracker sample failed"
                 : account.Session.ActiveClassUnavailable
