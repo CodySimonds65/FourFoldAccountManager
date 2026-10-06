@@ -2,10 +2,11 @@ using FourFoldAccountManager.Core.Models;
 
 namespace FourFoldAccountManager.Desktop.Services;
 
-// RegisterHotKey takes its key from every other app, so plain keys never go there. They "register" by being
-// listened for through raw input: available exactly when the raw keyboard listener is, and refused on the
-// same key twice, like Windows refuses a duplicate chord. Modifier chords pass through unchanged, so the
-// coordinator's atomic replace covers both kinds.
+// RegisterHotKey takes its key from every other app and cannot take a mouse button at all, so plain keys and
+// mouse inputs never go there. They "register" by being listened for through raw input: available exactly
+// when the raw input listener is, and refused on the same input twice, like Windows refuses a duplicate
+// chord. Key chords with a modifier pass through unchanged, so the coordinator's atomic replace covers both
+// kinds.
 internal sealed class PlainKeyRoutingRegistrar(IGlobalHotkeyRegistrar chords, bool plainKeysAvailable)
     : IGlobalHotkeyRegistrar
 {
@@ -14,7 +15,7 @@ internal sealed class PlainKeyRoutingRegistrar(IGlobalHotkeyRegistrar chords, bo
     public bool TryRegister(int id, GlobalHotkeyChord chord)
     {
         ArgumentNullException.ThrowIfNull(chord);
-        if (!chord.IsPlainKey)
+        if (!chord.IsObserved)
         {
             return chords.TryRegister(id, chord);
         }

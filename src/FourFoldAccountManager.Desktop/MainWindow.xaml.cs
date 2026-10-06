@@ -53,7 +53,7 @@ public partial class MainWindow : Window
     private readonly BuiltInPluginSet _plugins;
     private HwndSource? _windowSource;
     private GlobalShortcutRegistry? _shortcuts;
-    private RawKeyboardListener? _rawKeyboard;
+    private RawInputListener? _rawInput;
     private readonly PlainKeyShortcutMatcher _plainKeys = new();
     // Recording a shortcut must not reveal overlays, toggle dividers, or change a live run.
     private bool _settingsDialogOpen;
@@ -188,9 +188,9 @@ public partial class MainWindow : Window
         }
 
         _windowSource.AddHook(MainWindow_HwndSourceHook);
-        _rawKeyboard = RawKeyboardListener.TryRegister(windowHandle);
+        _rawInput = RawInputListener.TryRegister(windowHandle, HandleObservedInput);
         _shortcuts = new GlobalShortcutRegistry(new PlainKeyRoutingRegistrar(
-            new WindowsGlobalHotkeyRegistrar(windowHandle), plainKeysAvailable: _rawKeyboard is not null));
+            new WindowsGlobalHotkeyRegistrar(windowHandle), plainKeysAvailable: _rawInput is not null));
     }
 
     private IntPtr MainWindow_HwndSourceHook(
@@ -202,12 +202,8 @@ public partial class MainWindow : Window
     {
         if (message == WmInput)
         {
-            // Plain keys are only observed; leaving WM_INPUT unhandled lets Windows finish with it.
-            if (_rawKeyboard is { } rawKeyboard && rawKeyboard.TryRead(lParam, out var virtualKey, out var isKeyDown))
-            {
-                HandlePlainKey(virtualKey, isKeyDown);
-            }
-
+            // Plain keys and mouse inputs are only observed; leaving WM_INPUT unhandled lets Windows finish with it.
+            _rawInput?.Read(lParam);
             return IntPtr.Zero;
         }
 
@@ -261,15 +257,18 @@ public partial class MainWindow : Window
         }
     }
 
-    private void HandlePlainKey(ushort virtualKey, bool isKeyDown)
+    // A plain key or a mouse input, as raw input reports it whichever app is in front.
+    private void HandleObservedInput(ushort input, bool isDown)
     {
-        if (!isKeyDown)
+        if (!isDown)
         {
-            _plainKeys.KeyUp(virtualKey);
+            _plainKeys.KeyUp(input);
             return;
         }
 
-        if (_plainKeys.KeyDown(virtualKey) is { } action && !IsTypingInFourFold())
+        // A mouse shortcut only acts while FourFold is in front: scrolling in another app must not switch tabs.
+        if (_plainKeys.KeyDown(input) is { } action &&
+            (GlobalHotkeyChord.IsMouseInput(input) ? RawInputListener.IsThisAppInFront() : !IsTypingInFourFold()))
         {
             HandleGlobalShortcut(action);
         }
@@ -281,9 +280,13 @@ public partial class MainWindow : Window
         System.Windows.Input.Keyboard.FocusedElement is TextBoxBase or PasswordBox &&
         Application.Current.Windows.OfType<Window>().Any(window => window.IsActive);
 
-    private void RefreshPlainKeyBindings() =>
-        _plainKeys.SetBindings(_shortcuts?.ActiveChords(_panelSettings) ??
-            new Dictionary<GlobalShortcutAction, GlobalHotkeyChord>());
+    private void RefreshPlainKeyBindings()
+    {
+        var bindings = _shortcuts?.ActiveChords(_panelSettings) ??
+            new Dictionary<GlobalShortcutAction, GlobalHotkeyChord>();
+        _plainKeys.SetBindings(bindings);
+        _rawInput?.SetMouseEnabled(bindings.Values.Any(chord => chord.IsMouse));
+    }
 
     private void UpdateTimerHotkeys()
     {
@@ -3488,11 +3491,11 @@ public partial class MainWindow : Window
             // Native hotkey cleanup must not prevent the manager from closing.
         }
 
-        var rawKeyboard = _rawKeyboard;
-        _rawKeyboard = null;
+        var rawInput = _rawInput;
+        _rawInput = null;
         try
         {
-            rawKeyboard?.Dispose();
+            rawInput?.Dispose();
         }
         catch
         {

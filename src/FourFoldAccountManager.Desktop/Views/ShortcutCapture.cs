@@ -14,7 +14,8 @@ internal enum ShortcutKeyResult
 // Key-capture rules shared by Settings → Shortcuts and plugin settings pages.
 internal static class ShortcutCapture
 {
-    public const string Prompt = "Press a key, with or without Ctrl, Alt, or Shift. Esc cancels.";
+    public const string Prompt =
+        "Press a key, middle or side mouse button, or scroll the wheel, with or without Ctrl, Alt, or Shift. Esc cancels.";
 
     public const string InvalidKeysMessage =
         "Esc, Tab, Enter, Backspace, F5, the Windows key, and Ctrl, Alt, or Shift on their own can't be shortcuts.";
@@ -56,6 +57,24 @@ internal static class ShortcutCapture
         return ShortcutKeyResult.Captured;
     }
 
+    // Left and right click are not shortcuts, so they return false and keep operating the dialog.
+    public static bool TryReadMouseButton(MouseButtonEventArgs e, out GlobalHotkeyChord? chord) =>
+        TryCreateMouse(
+            e.ChangedButton switch
+            {
+                MouseButton.Middle => GlobalHotkeyChord.MiddleClick,
+                MouseButton.XButton1 => GlobalHotkeyChord.MouseButton4,
+                MouseButton.XButton2 => GlobalHotkeyChord.MouseButton5,
+                _ => 0
+            },
+            out chord);
+
+    public static bool TryReadWheel(MouseWheelEventArgs e, out GlobalHotkeyChord? chord) =>
+        TryCreateMouse(
+            e.Delta > 0 ? GlobalHotkeyChord.ScrollUp : e.Delta < 0 ? GlobalHotkeyChord.ScrollDown : (ushort)0,
+            out chord);
+
+
     public static string? DuplicateMessage(IReadOnlyDictionary<GlobalShortcutAction, GlobalHotkeyChord> chords) =>
         GlobalShortcutActions.FindDuplicate(chords) is { } duplicate
             ? $"{GlobalShortcutActions.DisplayName(duplicate.First)} and " +
@@ -63,6 +82,18 @@ internal static class ShortcutCapture
               "Choose a different shortcut for one of them."
             : null;
 
+    private static bool TryCreateMouse(ushort input, out GlobalHotkeyChord? chord)
+    {
+        chord = null;
+        if ((Keyboard.Modifiers & ModifierKeys.Windows) != 0 ||
+            !GlobalHotkeyChord.TryCreate(input, MapSupportedModifiers(Keyboard.Modifiers), out var created))
+        {
+            return false;
+        }
+
+        chord = created;
+        return true;
+    }
     private static GlobalHotkeyModifiers MapSupportedModifiers(ModifierKeys modifiers)
     {
         if ((modifiers & ModifierKeys.Windows) != 0)

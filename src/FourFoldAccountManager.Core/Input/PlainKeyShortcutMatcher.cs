@@ -2,9 +2,10 @@ using FourFoldAccountManager.Core.Models;
 
 namespace FourFoldAccountManager.Core.Input;
 
-// Decides which plain-key shortcut a key press fires. Plain keys are only observed, never blocked, so this
-// tracks held keys itself: a held key fires once, and held Ctrl, Alt, or Shift never stop a plain key unless
-// that exact combination is another active shortcut's modifier chord (which fires through Windows instead).
+// Decides which observed shortcut a key press or mouse input fires. These are only observed, never blocked,
+// so this tracks held keys itself: a held key fires once, and held Ctrl, Alt, or Shift never stop a shortcut
+// bound without them unless that exact combination is another active shortcut (a key chord with a modifier
+// fires through Windows instead; a mouse shortcut with modifiers fires here, on exactly those modifiers).
 public sealed class PlainKeyShortcutMatcher
 {
     private readonly HashSet<ushort> _held = [];
@@ -25,20 +26,22 @@ public sealed class PlainKeyShortcutMatcher
         }
 
         var pressed = new GlobalHotkeyChord(virtualKey, HeldModifiers());
-        if (!pressed.IsPlainKey && _bindings.ContainsValue(pressed))
-        {
-            return null;
-        }
-
+        GlobalShortcutAction? unmodified = null;
         foreach (var (action, chord) in _bindings)
         {
-            if (chord.IsPlainKey && chord.VirtualKey == virtualKey)
+            if (chord == pressed)
             {
-                return action;
+                // A key chord with a modifier fires through Windows, so it is not fired again here.
+                return chord.IsObserved ? action : null;
+            }
+
+            if (chord.VirtualKey == virtualKey && chord.Modifiers == GlobalHotkeyModifiers.None)
+            {
+                unmodified = action;
             }
         }
 
-        return null;
+        return unmodified;
     }
 
     public void KeyUp(ushort virtualKey) => _held.Remove(virtualKey);
