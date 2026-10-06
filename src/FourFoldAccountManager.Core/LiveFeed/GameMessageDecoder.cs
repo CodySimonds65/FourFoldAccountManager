@@ -266,7 +266,7 @@ public static partial class GameMessageDecoder
     }
 
     private static ModerationDisconnected ParseModerationDisconnect(ref MirrorReader reader) =>
-        new(reader.ReadString(MaxSkippedText));
+        new(reader.ReadString(MaxKeptText));
 
     private static void End(ref MirrorReader reader)
     {
@@ -278,7 +278,7 @@ public static partial class GameMessageDecoder
 
     private static int AtLeastZero(int value) => value >= 0 ? value : throw new MirrorFormatException();
 
-    [GeneratedRegex(@"^(?<name>.+) affected (?<count>\d{1,3}) targets?\.( \d{1,3} targets? resisted\.)?$",
+    [GeneratedRegex(@"^(?<name>.+) affected (?<count>[0-9]{1,3}) targets?\.( [0-9]{1,3} targets? resisted\.)?\z",
         RegexOptions.CultureInvariant)]
     private static partial Regex AffectedText();
 }
