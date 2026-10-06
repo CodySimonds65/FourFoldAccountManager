@@ -97,4 +97,17 @@ public sealed class GameMessageDecoderTests
                 MirrorWriter.Message(GameMessageDecoder.AuthResponseType, noise)));
         }
     }
+
+    // A digit from another script must not slip past the skill-text pattern into int.Parse and crash the feed.
+    [Fact]
+    public void ANonAsciiDigitInSkillTextIsAFailureNotACrash()
+    {
+        var payload = new MirrorWriter().Bool(true).String("Fireball affected ٣ targets.").ToArray();
+
+        var result = GameMessageDecoder.DecodeBatch(
+            MirrorWriter.Batch(MirrorWriter.Rpc(GameMessageDecoder.SkillResultSignature, payload)));
+
+        Assert.Empty(result.Events);
+        Assert.Equal(1, result.Failures);
+    }
 }
