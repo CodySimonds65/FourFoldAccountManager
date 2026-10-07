@@ -54,7 +54,10 @@ public sealed class XpReconciler
             before.Class.Level != after.Class.Level)
         {
             Skipped++;
+            // A skipped window breaks the run too: a stale miss from before a level-up, a reconnect or the feed
+            // switching back on must not pair with a later one.
             _openMismatches.Remove(accountId);
+            _missedResults.Remove(accountId);
             return false;
         }
 
@@ -67,7 +70,10 @@ public sealed class XpReconciler
         {
             // No battle and no XP change proves nothing about the feed, so it isn't evidence either way.
             Skipped++;
+            // A skipped window breaks the run too: a stale miss from before a level-up, a reconnect or the feed
+            // switching back on must not pair with a later one.
             _openMismatches.Remove(accountId);
+            _missedResults.Remove(accountId);
             return false;
         }
 
@@ -76,7 +82,9 @@ public sealed class XpReconciler
         var difference = fed - polled;
         var closesPair = _openMismatches.TryGetValue(accountId, out var open) && open == -difference;
         var stopped = false;
-        if (polled > 0 && fed == 0 && !closesPair)
+        // Silent means no battle result arrived at all, whatever its class: a class the game spells differently from
+        // the website must not read as the feed missing every fight.
+        if (polled > 0 && inWindow.Length == 0 && !closesPair)
         {
             var missed = _missedResults.GetValueOrDefault(accountId) + 1;
             stopped = missed >= 2;
