@@ -81,4 +81,43 @@ public sealed class XpReconcilerTests
         reconciler.RecordResult(Account, At(3.01), "Savage", 100);
         Assert.False(Sample(reconciler, 300, 4));
     }
+
+    [Fact]
+    public void AMissBeforeASkippedWindowNeverPairsWithALaterOne()
+    {
+        var reconciler = new XpReconciler();
+        Sample(reconciler, 100, 0);
+        Assert.False(Sample(reconciler, 200, 1)); // one miss: a fight whose result lands just after this poll
+
+        // That fight levelled up, so the next window is skipped and the run of misses starts over.
+        var levelled = new PlayerProgressSnapshot("cody", "Savage",
+            new Dictionary<string, ClassProfileSnapshot>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Savage"] = new(13, 50, Cap(13), null),
+                ["Mage"] = new(3, 0, Cap(3), null)
+            },
+            []);
+        reconciler.RecordResult(Account, At(1.1), "Savage", Cap(12) - 200 + 50);
+        Assert.False(reconciler.RecordSample(Account, levelled, At(2), At(-1)));
+
+        Assert.False(reconciler.RecordSample(Account, levelled with
+        {
+            Classes = new Dictionary<string, ClassProfileSnapshot>(levelled.Classes, StringComparer.OrdinalIgnoreCase)
+            {
+                ["Savage"] = new(13, 150, Cap(13), null)
+            }
+        }, At(3), At(-1)));
+    }
+
+    [Fact]
+    public void ResultsUnderAnotherSpellingOfTheClassAreNotMisses()
+    {
+        // The game and the website spell the class differently, so no result matches it, but results do arrive.
+        var reconciler = new XpReconciler();
+        Sample(reconciler, 100, 0);
+        reconciler.RecordResult(Account, At(0.5), "Savages", 100);
+        Assert.False(Sample(reconciler, 200, 1));
+        reconciler.RecordResult(Account, At(1.5), "Savages", 100);
+        Assert.False(Sample(reconciler, 300, 2));
+    }
 }
