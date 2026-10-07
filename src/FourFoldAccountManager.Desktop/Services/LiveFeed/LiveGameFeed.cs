@@ -410,7 +410,7 @@ internal sealed class LiveGameFeed : IAsyncDisposable
             }
 
             _accounts.Remove(accountId);
-            Tell(tracker => tracker.EndLive(accountId));
+            Tell(tracker => tracker.EndLive(accountId, at));
             // A server kick already told plugins why; the socket closing after it isn't a second disconnect. Plugins
             // weren't told this session started (no successful login), so they aren't told it ended.
             post = _state == LiveFeedState.Active && account.LoginPosted && !account.DisconnectPosted;
@@ -463,9 +463,10 @@ internal sealed class LiveGameFeed : IAsyncDisposable
     // Under _gate: stops watching every account and tells the tracker.
     private void EndAllLive()
     {
+        var at = _clock.GetUtcNow();
         foreach (var accountId in _accounts.Keys)
         {
-            Tell(tracker => tracker.EndLive(accountId));
+            Tell(tracker => tracker.EndLive(accountId, at));
         }
 
         _accounts.Clear();

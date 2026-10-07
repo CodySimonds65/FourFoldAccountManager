@@ -137,7 +137,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         _dispatcher.VerifyAccess();
         if (_active.TryGetValue(accountId, out var account))
         {
-            account.Session.ResetRate();
+            account.Session.ResetRate(DateTimeOffset.UtcNow);
             NotifyChanged();
         }
     }
@@ -147,7 +147,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         _dispatcher.VerifyAccess();
         if (_active.TryGetValue(accountId, out var account))
         {
-            account.Session.ResetAll();
+            account.Session.ResetAll(DateTimeOffset.UtcNow);
             NotifyChanged();
         }
     }
@@ -156,7 +156,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
     // panel may have closed while the call was on its way.
     public void BeginLive(Guid accountId, DateTimeOffset at) => Live(accountId, session => session.BeginLive(at));
 
-    public void EndLive(Guid accountId) => Live(accountId, session => session.EndLive());
+    public void EndLive(Guid accountId, DateTimeOffset at) => Live(accountId, session => session.EndLive(at));
 
     public void ApplyLiveResult(
         Guid accountId, DateTimeOffset at, string? className, long expGained, int reachedLevel, long expNeededToNextLevel) =>
