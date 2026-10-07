@@ -221,8 +221,16 @@ public sealed class XpTrackingSessionLiveTests
         var live = new XpTrackingSession();
         live.ApplySnapshot(Poll("Savage", 12, 100), At(0));
         live.BeginLive(At(0));
+        Assert.Null(live.RateNow(At(0.5))); // under a minute watched
         live.ApplyLiveResult(At(1), "Savage", 300, 12, Cap(12) - 400);
         Assert.Equal(18000, live.RateNow(At(1))!.Value, 6);
+        // Going off live keeps the fallen rate instead of jumping back to the one at the last fight.
+        var ended = new XpTrackingSession();
+        ended.ApplySnapshot(Poll("Savage", 12, 100), At(0));
+        ended.BeginLive(At(0));
+        ended.ApplyLiveResult(At(1), "Savage", 300, 12, Cap(12) - 400);
+        ended.EndLive(At(3));
+        Assert.Equal(6000, ended.RateNow(At(3))!.Value, 6);
         Assert.Equal(6000, live.RateNow(At(3))!.Value, 6); // two idle minutes, no poll yet
 
         var polled = new XpTrackingSession();

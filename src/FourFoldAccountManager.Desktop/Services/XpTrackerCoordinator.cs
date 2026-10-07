@@ -82,7 +82,7 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
                 account.Id, account.Username, rate, account.Session.SessionGain,
                 account.Session.ActiveClassName, remaining,
                 remaining is { } xp && rate is { } perHour && double.IsFinite(perHour) && perHour > 0 ? xp / perHour : null,
-                account.Session.LastSuccessfulAt, StatusOf(account), account.Session.IsStale,
+                account.Session.LastSuccessfulAt, StatusOf(account, rate), account.Session.IsStale,
                 account.Session.IsLive ? account.Session.LastFightAt : null);
         }).ToArray();
     }
@@ -91,9 +91,10 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
     public bool HasLiveAccount => _active.Values.Any(account => account.Session.IsLive);
 
     // While the live game feed watches the account, the two ordinary statuses say so. Problems still show as they are.
-    private static string StatusOf(TrackedAccount account) =>
+    // `rate` is the rate shown beside it, so the two never disagree.
+    private static string StatusOf(TrackedAccount account, double? rate) =>
         account.Session.IsLive && account.Status is "Tracking" or "Collecting baseline"
-            ? (account.Session.RatePerHour is null ? "Live; collecting a minute first" : "Tracking live")
+            ? (rate is null ? "Live; collecting a minute first" : "Tracking live")
             : account.Status;
 
     public IReadOnlyList<(Guid AccountId, int PlayerId, string Username)> GetActiveLeaderboardProfiles()
