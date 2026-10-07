@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using System.Windows.Threading;
 using FourFoldAccountManager.Core.LiveFeed;
+using FourFoldAccountManager.Core.Plugins;
 using FourFoldAccountManager.Core.Tracking;
 using Microsoft.Web.WebView2.Core;
 
@@ -106,12 +107,19 @@ internal sealed class LiveGameFeed : IAsyncDisposable
         }
 
         LiveStatus status;
+        Guid[] watched;
         lock (_gate)
         {
+            watched = _accounts.Keys.ToArray();
             _accounts.Clear();
             _state = enabled ? LiveFeedState.Active : LiveFeedState.Off;
             _reason = null;
             status = CurrentStatus();
+        }
+
+        foreach (var accountId in watched)
+        {
+            Tell(tracker => tracker.EndLive(accountId));
         }
 
         Post("live.statusChanged", status);
@@ -268,13 +276,20 @@ internal sealed class LiveGameFeed : IAsyncDisposable
             return;
         }
 
+        var watching = false;
         lock (_gate)
         {
             if (_state == LiveFeedState.Active)
             {
                 // A new game socket (a login or a reconnect) starts the account's state and its canary afresh.
                 _accounts[tapEvent.AccountId] = new AccountState(id.GetString()!, tapEvent.At);
+                watching = true;
             }
+        }
+
+        if (watching)
+        {
+            Tell(tracker => tracker.BeginLive(tapEvent.AccountId, tapEvent.At));
         }
     }
 
@@ -325,6 +340,7 @@ internal sealed class LiveGameFeed : IAsyncDisposable
         }
 
         var posts = new List<(string Name, object Data)>();
+        var results = new List<BattleResult>();
         bool canaryFailed;
         lock (_gate)
         {
@@ -348,6 +364,7 @@ internal sealed class LiveGameFeed : IAsyncDisposable
                         break;
                     case BattleResult battle:
                         _reconciler.RecordResult(tapEvent.AccountId, tapEvent.At, battle.ClassName, battle.ExpGained);
+                        results.Add(battle);
                         break;
                     case ModerationDisconnected:
                         account.DisconnectPosted = true;
@@ -368,6 +385,13 @@ internal sealed class LiveGameFeed : IAsyncDisposable
         {
             MarkUnavailable("Game protocol changed: the live feed didn't recognize the login. The game may have updated.");
             return;
+        }
+
+        foreach (var battle in results)
+        {
+            Tell(tracker => tracker.ApplyLiveResult(tapEvent.AccountId, tapEvent.At,
+                PluginText.PublicGameText(battle.ClassName), battle.ExpGained, battle.ReachedLevel,
+                battle.ExpNeededToNextLevel));
         }
 
         foreach (var (name, payload) in posts)
@@ -394,6 +418,8 @@ internal sealed class LiveGameFeed : IAsyncDisposable
             post = _state == LiveFeedState.Active && account.LoginPosted && !account.DisconnectPosted;
         }
 
+        Tell(tracker => tracker.EndLive(accountId));
+
         if (post)
         {
             Post("session.disconnected", LiveFeedPayloads.Disconnected(accountId, at));
@@ -403,6 +429,7 @@ internal sealed class LiveGameFeed : IAsyncDisposable
     private void MarkUnavailable(string reason)
     {
         LiveStatus status;
+        Guid[] watched;
         lock (_gate)
         {
             if (_state != LiveFeedState.Active)
@@ -412,8 +439,14 @@ internal sealed class LiveGameFeed : IAsyncDisposable
 
             _state = LiveFeedState.Unavailable;
             _reason = reason;
+            watched = _accounts.Keys.ToArray();
             _accounts.Clear();
             status = CurrentStatus();
+        }
+
+        foreach (var accountId in watched)
+        {
+            Tell(tracker => tracker.EndLive(accountId));
         }
 
         Post("live.statusChanged", status);
@@ -435,6 +468,16 @@ internal sealed class LiveGameFeed : IAsyncDisposable
             if (!_disposed)
             {
                 _postEvent(name, data);
+            }
+        });
+
+    // The XP tracker lives on the UI thread, like the poll that feeds it. Queued in order with the plugin posts.
+    private void Tell(Action<XpTrackerCoordinator> call) =>
+        _dispatcher.InvokeAsync(() =>
+        {
+            if (!_disposed)
+            {
+                call(_tracker);
             }
         });
 
