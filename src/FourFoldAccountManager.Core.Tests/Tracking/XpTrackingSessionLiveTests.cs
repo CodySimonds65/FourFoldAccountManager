@@ -59,7 +59,7 @@ public sealed class XpTrackingSessionLiveTests
         session.ApplySnapshot(Poll("Savage", 12, 100), At(0));
         session.BeginLive(At(0));
         session.ApplyLiveResult(At(0.5), "Savage", 300, 12, Cap(12) - 400);
-        session.EndLive();
+        session.EndLive(At(0.75));
         session.ApplySnapshot(Poll("Savage", 12, 400), At(1)); // the fight's XP, already counted
 
         Assert.False(session.IsLive);
@@ -166,5 +166,52 @@ public sealed class XpTrackingSessionLiveTests
         switched.ApplySnapshot(Poll("Mage", 12, 400), At(1));
         Assert.Equal("Mage", switched.ActiveClassName);
         Assert.Equal(Cap(3), switched.XpUntilNextLevel);
+    }
+
+    [Fact]
+    public void TheIdleStretchBeforeALiveStretchEndsStaysInTheRate()
+    {
+        var session = new XpTrackingSession();
+        session.ApplySnapshot(Poll("Savage", 12, 100), At(0));
+        session.BeginLive(At(0));
+        session.ApplyLiveResult(At(1), "Savage", 300, 12, Cap(12) - 400);
+        session.EndLive(At(5)); // four idle minutes, then a disconnect
+        session.ApplySnapshot(Poll("Savage", 12, 400), At(6));
+
+        // 300 over the 5 watched minutes, not over the 1 minute of the fight.
+        Assert.Equal(3600, session.RatePerHour!.Value, 6);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AResetWhileLiveStartsTheRateFromThePress(bool all)
+    {
+        var session = new XpTrackingSession();
+        session.ApplySnapshot(Poll("Savage", 12, 100), At(0));
+        session.BeginLive(At(0));
+        session.ApplyLiveResult(At(1), "Savage", 200, 12, Cap(12) - 300);
+        if (all) session.ResetAll(At(10)); else session.ResetRate(At(10));
+        session.ApplyLiveResult(At(11), "Savage", 300, 12, Cap(12) - 600);
+        session.ApplySnapshot(Poll("Savage", 12, 600), At(12));
+
+        Assert.True(session.IsLive);
+        // 300 over the 2 watched minutes since the press.
+        Assert.Equal(9000, session.RatePerHour!.Value, 6);
+        Assert.Equal(all ? 300 : 500, session.SessionGain);
+    }
+
+    [Fact]
+    public void ALaggingPollAfterALiveStretchDoesNotCountTheFightAgain()
+    {
+        var session = new XpTrackingSession();
+        session.ApplySnapshot(Poll("Savage", 12, 100), At(0));
+        session.BeginLive(At(0));
+        session.ApplyLiveResult(At(0.9), "Savage", 300, 12, Cap(12) - 400);
+        session.EndLive(At(0.95));
+        session.ApplySnapshot(Poll("Savage", 12, 100), At(1)); // saved just before the fight landed
+        session.ApplySnapshot(Poll("Savage", 12, 400), At(2)); // the same fight, which the live stretch counted
+
+        Assert.Equal(300, session.SessionGain);
     }
 }
