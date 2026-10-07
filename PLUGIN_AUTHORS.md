@@ -134,7 +134,7 @@ fourfold.xp.onUpdated(({ accountId }) => console.log('new XP data for', accountI
 | `nextLevelXp` | number or null | XP the current level needs in total. |
 | `xpUntilNextLevel` | number or null | `nextLevelXp - currentXp`. |
 | `hoursUntilNextLevel` | number or null | At the current XP/hr. `null` when there is no rate yet. |
-| `xpPerHour` | number or null | The current rate. |
+| `xpPerHour` | number or null | The current rate, over the last hour. While the [live game feed](#live-game-feed) watches the account it follows each fight. |
 | `sessionXp` | number | XP gained this session. `0` when unknown. |
 | `classes` | array | `{ className, level, currentXp, nextLevelXp }` for every class. May be empty. |
 | `updatedAt` | string or null | Time of the last successful read, as an ISO 8601 date. |
@@ -142,7 +142,9 @@ fourfold.xp.onUpdated(({ accountId }) => console.log('new XP data for', accountI
 
 FourFold reads an account's XP only while that account is open, and only if FourFold's own XP tracker can read it. If the XP tracker plugin shows no data for an account, neither will yours. For a closed account the number and text fields are `null`, `classes` is empty and `isStale` is `true`. An id that isn't one of the user's accounts is rejected with `invalid-argument`.
 
-`fourfold.xp.onUpdated(callback)` calls `callback({ accountId })` when that account's XP data changes, about once a minute for each open account.
+While the [live game feed](#live-game-feed) watches an account, `className`, `level`, `currentXp`, `nextLevelXp`, `xpUntilNextLevel`, `hoursUntilNextLevel`, `xpPerHour`, `sessionXp` and the active class's row in `classes` follow each fight. `updatedAt` and `isStale` still describe the last read. Otherwise the values come from the read, about once a minute.
+
+`fourfold.xp.onUpdated(callback)` calls `callback({ accountId })` when that account's XP data changes: about once a minute for each open account, and after each fight while the live game feed watches it.
 
 ### Stats
 
@@ -441,7 +443,7 @@ If the user switches the plugin off in the plugin list, its cards are hidden eve
 - Control the game, or see its pages, cookies, sessions or traffic. The [live game feed](#live-game-feed)'s events are all a plugin gets from the game itself.
 - See logins: usernames, emails and passwords are never exposed. Plugins can't see other plugins or any file outside their own folder either.
 - Get other players' data, chat, or anything the live game feed doesn't list.
-- Get real-time XP or profile data. They arrive about once a minute (the live game feed has each fight as it happens), and the timer sends no tick events.
+- Get real-time profile data: silver, gold and location arrive about once a minute. XP follows each fight while the live game feed watches the account, and the timer sends no tick events.
 - Use shortcut keys, sounds or desktop notifications.
 - Draw custom cards. Cards are FourFold's data cards.
 - Add a settings page behind the cog. Keep settings in your own panel.

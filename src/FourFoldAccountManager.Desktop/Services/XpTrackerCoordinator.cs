@@ -73,7 +73,13 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         account.Id, account.Username, account.Session.RatePerHour, account.Session.SessionGain,
         account.Session.ActiveClassName, account.Session.XpUntilNextLevel,
         account.Session.HoursUntilNextLevel,
-        account.Session.LastSuccessfulAt, account.Status, account.Session.IsStale)).ToArray();
+        account.Session.LastSuccessfulAt, StatusOf(account), account.Session.IsStale)).ToArray();
+
+    // While the live game feed watches the account, the two ordinary statuses say so. Problems still show as they are.
+    private static string StatusOf(TrackedAccount account) =>
+        account.Session.IsLive && account.Status is "Tracking" or "Collecting baseline"
+            ? (account.Session.RatePerHour is null ? "Live; collecting a minute first" : "Tracking live")
+            : account.Status;
 
     public IReadOnlyList<(Guid AccountId, int PlayerId, string Username)> GetActiveLeaderboardProfiles()
     {
@@ -84,9 +90,10 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
             .ToArray();
     }
 
-    // The newest profile fetched this session for an open account; null until its first successful fetch.
+    // The newest profile fetched this session for an open account, with the live game feed's last fight laid over it;
+    // null until its first successful fetch.
     public PlayerProgressSnapshot? GetLatestSnapshot(Guid accountId) =>
-        _active.TryGetValue(accountId, out var account) ? account.LatestSnapshot : null;
+        _active.TryGetValue(accountId, out var account) ? account.Session.DisplaySnapshot : null;
 
     internal XpTrackingSession? GetSessionForTesting(Guid accountId) =>
         _active.TryGetValue(accountId, out var account) ? account.Session : null;
@@ -141,6 +148,26 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         if (_active.TryGetValue(accountId, out var account))
         {
             account.Session.ResetAll();
+            NotifyChanged();
+        }
+    }
+
+    // The live game feed's calls, made on the UI thread like the poll's. An account that isn't tracked is ignored: its
+    // panel may have closed while the call was on its way.
+    public void BeginLive(Guid accountId, DateTimeOffset at) => Live(accountId, session => session.BeginLive(at));
+
+    public void EndLive(Guid accountId) => Live(accountId, session => session.EndLive());
+
+    public void ApplyLiveResult(
+        Guid accountId, DateTimeOffset at, string? className, long expGained, int reachedLevel, long expNeededToNextLevel) =>
+        Live(accountId, session => session.ApplyLiveResult(at, className, expGained, reachedLevel, expNeededToNextLevel));
+
+    private void Live(Guid accountId, Action<XpTrackingSession> change)
+    {
+        _dispatcher.VerifyAccess();
+        if (_active.TryGetValue(accountId, out var account))
+        {
+            change(account.Session);
             NotifyChanged();
         }
     }
@@ -264,7 +291,6 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
             account.PlayerId = result.PlayerId;
             var sampledAt = DateTimeOffset.UtcNow;
             account.Session.ApplySnapshot(profile, sampledAt);
-            account.LatestSnapshot = profile;
             // A handler that throws must not turn a good read into a failed one.
             try { ProfileSampled?.Invoke(account.Id, profile, sampledAt); }
             catch (Exception) { }
@@ -314,6 +340,5 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         public XpTrackingSession Session { get; } = new();
         public string Status { get; set; } = "Collecting baseline";
         public bool CanRetryProfileRead { get; set; } = true;
-        public PlayerProgressSnapshot? LatestSnapshot { get; set; }
     }
 }
