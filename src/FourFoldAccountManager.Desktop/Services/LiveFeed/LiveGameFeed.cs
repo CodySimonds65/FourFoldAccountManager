@@ -374,14 +374,14 @@ internal sealed class LiveGameFeed : IAsyncDisposable
 
             // Every login sends both; 60 s of traffic without them means the ids no longer match the game.
             canaryFailed = !(account.SawLogin && account.SawScene) && tapEvent.At - account.OpenedAt > CanaryTimeout;
-            if (!canaryFailed)
+            // One call per frame: the results share the frame's time, and the session ignores a second fight at the same
+            // moment. The last result holds the state they left.
+            if (!canaryFailed && results.Count > 0)
             {
-                foreach (var battle in results)
-                {
-                    Tell(tracker => tracker.ApplyLiveResult(tapEvent.AccountId, tapEvent.At,
-                        PluginText.PublicGameText(battle.ClassName), battle.ExpGained, battle.ReachedLevel,
-                        battle.ExpNeededToNextLevel));
-                }
+                var last = results[^1];
+                var expGained = results.Sum(battle => (long)battle.ExpGained);
+                Tell(tracker => tracker.ApplyLiveResult(tapEvent.AccountId, tapEvent.At,
+                    PluginText.PublicGameText(last.ClassName), expGained, last.ReachedLevel, last.ExpNeededToNextLevel));
             }
         }
 
@@ -477,9 +477,16 @@ internal sealed class LiveGameFeed : IAsyncDisposable
     private void Tell(Action<XpTrackerCoordinator> call) =>
         _dispatcher.InvokeAsync(() =>
         {
-            if (!_disposed)
+            // One bad call must never crash the app. Nothing is logged, as in the worker: the call carries game data.
+            try
             {
-                call(_tracker);
+                if (!_disposed)
+                {
+                    call(_tracker);
+                }
+            }
+            catch (Exception)
+            {
             }
         });
 
