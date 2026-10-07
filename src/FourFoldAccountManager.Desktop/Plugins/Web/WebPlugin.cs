@@ -166,7 +166,19 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
         _root.SetResourceReference(Border.BorderBrushProperty, "Brush.Border");
         // The view lives in the panel while the panel is on screen, and in the parking host the rest of the time. A web
         // view in a hidden tree is throttled by the browser, which would stall the page.
-        _root.IsVisibleChanged += (_, _) => MoveView(_root.IsVisible ? _viewHost : _parkingHost);
+        _root.IsVisibleChanged += (_, _) =>
+        {
+            try
+            {
+                MoveView(_root.IsVisible ? _viewHost : _parkingHost);
+            }
+            catch (Exception)
+            {
+                // Showing the view builds graphics devices, which fails while the graphics driver is restarting.
+                // The plugin stops with its Reload button, instead of the exception ending the app.
+                ShowStopped();
+            }
+        };
     }
 
     public PluginManifest Manifest { get; }
@@ -438,13 +450,60 @@ public sealed class WebPlugin : IFourFoldPlugin, IDisposable
 
     private void MoveView(Panel target)
     {
-        if (_view is not { } view || ReferenceEquals(view.Parent, target))
+        if (_view is not { } view)
         {
             return;
         }
 
-        (view.Parent as Panel)?.Children.Remove(view);
-        target.Children.Add(view);
+        if (!ReferenceEquals(view.Parent, target))
+        {
+            (view.Parent as Panel)?.Children.Remove(view);
+            target.Children.Add(view);
+        }
+
+        // After the move: the control finds its window through the tree it is in.
+        SetFrameCapture(view, !ReferenceEquals(target, _parkingHost));
+    }
+
+    // The WPF web view shows its page by capturing every frame into a Direct3D image of its own: two graphics devices
+    // and a capture session for each view, whatever its size. In this process that is about 80 MB, 66 threads and 1,700
+    // handles a view, and nobody looks at a parked page, so a parked view gives its image up and builds it again when
+    // its panel is shown (about 70 ms). The page itself runs on unchanged. Like UnhookWindowClose, this reaches into the
+    // control's private members, so re-check it on every WebView2 SDK update: when they are renamed it throws, the
+    // plugin doesn't start, and the lost saving is noticed at once.
+    private static void SetFrameCapture(WebView2CompositionControl view, bool capture)
+    {
+        const BindingFlags NonPublic = BindingFlags.Instance | BindingFlags.NonPublic;
+        var imageField = typeof(WebView2CompositionControl).GetField("_d3dImage", NonPublic);
+        var buildImage = typeof(WebView2CompositionControl).GetMethod("TryInitializeD3DImage", NonPublic, Type.EmptyTypes);
+        var baseField = typeof(WebView2CompositionControl).GetField("m_webview2Base", NonPublic);
+        var hostWindowField = baseField?.FieldType.GetField("_hwndTaskSource", NonPublic);
+        if (imageField is null || buildImage is null || baseField is null ||
+            hostWindowField?.FieldType != typeof(TaskCompletionSource<IntPtr>))
+        {
+            throw new InvalidOperationException("The WebView2 control's frame image members weren't found.");
+        }
+
+        if (capture)
+        {
+            // Does nothing when the view still has its image.
+            buildImage.Invoke(view, null);
+            return;
+        }
+
+        if (imageField.GetValue(view) is not IDisposable image)
+        {
+            return;
+        }
+
+        // The control completes this source each time it builds its image, and completing one twice throws. Nothing
+        // waits on it once the view has started, so a fresh one lets the image be built again.
+        hostWindowField.SetValue(baseField.GetValue(view), new TaskCompletionSource<IntPtr>());
+        imageField.SetValue(view, null);
+        image.Dispose();
+        // Disposing isn't enough: the devices and their threads stay until the collector has let go of the image's
+        // capture objects, which it has no reason to do soon, because it can't see how much they hold.
+        GC.Collect();
     }
 
     // Serves the plugin's own files, with the content security policy on every response, and refuses any outside
