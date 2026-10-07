@@ -20,7 +20,7 @@ public partial class MainWindow
             _browserSessions, _xpTracker, (name, data) => _communityPlugins.PostEvent(name, data), Dispatcher,
             TimeProvider.System);
         // A live XP/hr falls while the account idles; redraw the panel and cards so it shows, not only at each poll.
-        _liveRedraw = new DispatcherTimer(TimeSpan.FromSeconds(5), DispatcherPriority.Background, (_, _) =>
+        _liveRedraw = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) =>
         {
             // Rebuilding the rows under a press would lose the click or close its menu; the next tick catches up.
             if (!_shutdownStarted && _xpTracker.HasLiveAccount &&
