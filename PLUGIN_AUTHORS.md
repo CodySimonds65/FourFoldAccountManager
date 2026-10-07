@@ -153,7 +153,7 @@ const stats = await fourfold.stats.get(account.id);
 if (stats) console.log(stats.className, stats.level, stats.hp, stats.attack);
 ```
 
-`fourfold.stats.get(accountId)` returns `{ className, level, hp, sp, attack, magic, skill, speed, luck, defense, resistance, equipment }` for the account's active class, or `null` when the account is closed or hasn't been read yet. There is no stats event: read `stats.get` again when `xp.onUpdated` fires. `hp` to `resistance` are numbers, or `null` when unknown. `equipment` is `{ armor, helmet, hair, weapon }`: each is the slot as the profile page words it, at most 64 characters, or `null` when unknown. An empty slot comes through as the page's own word for it (`Empty`, say), not as `null`. A plugin that reads `equipment` needs `"apiVersion": 2`. An unknown account id is rejected with `invalid-argument`.
+`fourfold.stats.get(accountId)` returns `{ className, level, hp, sp, attack, magic, skill, speed, luck, defense, resistance, equipment }` for the account's active class, or `null` when the account is closed or hasn't been read yet. There is no stats event: read `stats.get` again when `xp.onUpdated` fires. While the live game feed watches the account, `level` follows each fight; the stats themselves come from the last read. `hp` to `resistance` are numbers, or `null` when unknown. `equipment` is `{ armor, helmet, hair, weapon }`: each is the slot as the profile page words it, at most 64 characters, or `null` when unknown. An empty slot comes through as the page's own word for it (`Empty`, say), not as `null`. A plugin that reads `equipment` needs `"apiVersion": 2`. An unknown account id is rejected with `invalid-argument`.
 
 ### Profile
 
@@ -443,7 +443,8 @@ If the user switches the plugin off in the plugin list, its cards are hidden eve
 - Control the game, or see its pages, cookies, sessions or traffic. The [live game feed](#live-game-feed)'s events are all a plugin gets from the game itself.
 - See logins: usernames, emails and passwords are never exposed. Plugins can't see other plugins or any file outside their own folder either.
 - Get other players' data, chat, or anything the live game feed doesn't list.
-- Get real-time profile data: silver, gold and location arrive about once a minute. XP follows each fight while the live game feed watches the account, and the timer sends no tick events.
+- Get real-time profile data: silver, gold and location arrive about once a minute. (XP follows each fight while the live game feed watches the account.)
+- Get timer ticks: the timer sends no tick events.
 - Use shortcut keys, sounds or desktop notifications.
 - Draw custom cards. Cards are FourFold's data cards.
 - Add a settings page behind the cog. Keep settings in your own panel.
