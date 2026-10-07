@@ -48,6 +48,10 @@ public sealed record PanelSettings
 
     public bool BlockStorePages { get; init; }
 
+    // Reads the game's own traffic in each panel (read-only) and sends live battle and scene events to plugins. On by
+    // default; a settings file from before the feed has no value and gets this default.
+    public bool LiveGameFeed { get; init; } = true;
+
     [JsonConverter(typeof(LenientObjectJsonConverter<GlobalHotkeyChord>))]
     public GlobalHotkeyChord RevealXpOverlayTabShortcut { get; init; } =
         GlobalHotkeyChord.DefaultRevealXpOverlayTab;

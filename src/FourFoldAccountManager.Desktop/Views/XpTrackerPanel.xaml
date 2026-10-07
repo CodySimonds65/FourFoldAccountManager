@@ -19,7 +19,7 @@
                             <Border BorderBrush="{DynamicResource Brush.Border}" BorderThickness="0,0,0,1"
                                     Padding="2,12,2,14">
                                 <Border.ContextMenu>
-                                    <ContextMenu>
+                                    <ContextMenu Opened="RowMenu_Opened">
                                         <MenuItem Header="Reset XP/hr" Click="ResetRate_Click" />
                                         <MenuItem Header="Reset all" Click="ResetAll_Click" />
                                     </ContextMenu>

@@ -30,9 +30,12 @@ public sealed record XpTrackerRow(
                 : "— XP to next level",
             FormatTimeUntilNextLevel(state.HoursUntilNextLevel),
             state.Status,
-            state.LastUpdated is { } updated
-                ? $"Updated {updated.ToLocalTime():h:mm:ss tt}"
-                : "Waiting for first snapshot");
+            // While live, the last fight is newer news than the last poll.
+            state.LastFightAt is { } fight && (state.LastUpdated is not { } polled || fight > polled)
+                ? $"Last fight {fight.ToLocalTime():h:mm:ss tt}"
+                : state.LastUpdated is { } updated
+                    ? $"Updated {updated.ToLocalTime():h:mm:ss tt}"
+                    : "Waiting for first snapshot");
     }
 
     private static string FormatTimeUntilNextLevel(double? hoursUntilNextLevel)
