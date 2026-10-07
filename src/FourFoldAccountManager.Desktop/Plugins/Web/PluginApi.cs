@@ -115,6 +115,15 @@ internal sealed class PluginApi(
                 return host.GetProfile(AccountId(parameters)) ?? throw UnknownAccount();
             case "timer.get":
                 return host.GetTimer();
+            case "location.get":
+            {
+                var accountId = AccountId(parameters);
+                return host.GetAccounts().Any(account => account.Id == accountId)
+                    ? host.GetLocation(accountId)
+                    : throw UnknownAccount();
+            }
+            case "live.getStatus":
+                return host.GetLiveStatus();
             case "storage.get":
                 return await storage.GetAsync(Text(parameters, "key"));
             case "storage.set":

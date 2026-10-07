@@ -16,4 +16,18 @@ public static class PluginText
             UnicodeCategory.LineSeparator or UnicodeCategory.ParagraphSeparator => true,
             _ => false
         });
+
+    // Text the game wrote (a location, an item's name, a scene), made safe to hand to a plugin: trimmed, at most 64
+    // characters, and dropped if it could rearrange or hide the text a plugin draws around it.
+    public static string? PublicGameText(string? text)
+    {
+        text = text?.Trim();
+        if (string.IsNullOrEmpty(text) || HasUnsafeCharacter(text))
+        {
+            return null;
+        }
+
+        // Never cut between the two halves of a character outside the basic plane.
+        return text.Length <= 64 ? text : text[..(char.IsHighSurrogate(text[63]) ? 63 : 64)];
+    }
 }

@@ -22,7 +22,12 @@ public sealed class XpRateWindow
         Prune(to);
     }
 
-    public double? GetRate(DateTimeOffset now)
+    public double? GetRate(DateTimeOffset now) => GetRate(now, null, TimeSpan.Zero);
+
+    // The rate over the hour ending at `now`. `openFrom` adds the stretch from then to `now` as watched time that gained
+    // nothing (the time since the live game feed's last fight). Null until the watched time in that hour reaches
+    // `minCovered`.
+    public double? GetRate(DateTimeOffset now, DateTimeOffset? openFrom, TimeSpan minCovered)
     {
         Prune(now);
         var start = now - TimeSpan.FromHours(1);
@@ -42,7 +47,12 @@ public sealed class XpRateWindow
             coveredSeconds += seconds;
         }
 
-        return coveredSeconds > 0 ? gain / coveredSeconds * 3600 : null;
+        if (openFrom is { } open && open < now)
+        {
+            coveredSeconds += (now - (open > start ? open : start)).TotalSeconds;
+        }
+
+        return coveredSeconds > 0 && coveredSeconds >= minCovered.TotalSeconds ? gain / coveredSeconds * 3600 : null;
     }
 
     public void ClearIntervals() => _intervals.Clear();
