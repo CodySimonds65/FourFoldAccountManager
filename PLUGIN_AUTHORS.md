@@ -144,7 +144,7 @@ FourFold reads an account's XP only while that account is open, and only if Four
 
 While the [live game feed](#live-game-feed) watches an account, `className`, `level`, `currentXp`, `nextLevelXp`, `xpUntilNextLevel`, `hoursUntilNextLevel`, `xpPerHour`, `sessionXp` and the active class's row in `classes` follow each fight. `updatedAt` and `isStale` still describe the last read. Otherwise the values come from the read, about once a minute.
 
-`fourfold.xp.onUpdated(callback)` calls `callback({ accountId })` when that account's XP data changes: about once a minute for each open account, and after each fight while the live game feed watches it.
+`fourfold.xp.onUpdated(callback)` calls `callback({ accountId })` when that account's XP data changes: about once a minute for each open account, after each fight while the live game feed watches it, and when the user resets the XP tracker.
 
 ### Stats
 
@@ -204,7 +204,7 @@ Every event has the account's `accountId` and `at`, the time FourFold received i
 
 - **Fights.** The game doesn't say whether a fight was won: a win is a `battle.onResult` after `battle.onEnded`, and an end with no result is an escape or a loss. `battle.onResult` gives `expGained` and `silverGained` (any double-XP event is already included), `expNeededToNextLevel`, `leveledUp`, `reachedLevel`, `className` (or `null`), `unlockedSkillName` (`null` when none unlocked; comma-joined when several do, at most 64 characters) and `statGains`: `{ maxHp, maxSp, hp, sp, att, mag, skl, spd, def, res, lck }`, the points the fight added.
 - **Skills.** `outcome` is `"hit"`, `"miss"` or `"rejected"`. The game rolls once per cast against the skill's chance, so a miss misses every target. A rejected cast (not enough SP, say) never rolled: `skillName` is `null` and `reason` is the game's text. Otherwise `reason` is `null`.
-- **Places.** `scene` is the game's own scene name, such as `westhills_b2_dungeon_01`. `inBattle` is `true` in a fight scene. `fourfold.location.get(accountId)` returns the same `{ accountId, scene, inBattle, at }` for the account's current place, or `null` when FourFold has no live data for it (a closed account, or one that hasn't changed place since the feed started). An unknown account id is rejected with `invalid-argument`.
+- **Places.** `scene` is the game's own scene name, such as `westhills_b2_dungeon_01`, or `null` when the game didn't name one. `inBattle` is `true` in a fight scene. `fourfold.location.get(accountId)` returns the same `{ accountId, scene, inBattle, at }` for the account's current place, or `null` when FourFold has no live data for it (a closed account, or one that hasn't changed place since the feed started). An unknown account id is rejected with `invalid-argument`.
 - **Sessions.** `session.onLoggedIn` fires for a successful login only. `session.onDisconnected` fires on a kick, with the server's text in `reason`, and on a reload or a closed panel, with `reason` `null`. It also ends any fight in progress: a fight cut off by a reload never gets `battle.onEnded`, and after the login the game resumes it with a new `battle.onStarted`.
 - **Status.** `fourfold.live.getStatus()` returns `{ state, reason }`. `state` is `"active"` while the feed is on and reading, `"off"` when the user switched it off, and `"unavailable"` when FourFold can't read the game, with the reason in `reason` (a game update FourFold can't read yet, say). `reason` is `null` otherwise. An account already in game when the feed is switched on sends nothing until its game reconnects.
 
