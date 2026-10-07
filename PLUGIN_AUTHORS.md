@@ -70,7 +70,7 @@ A `plugin.json` that breaks any rule below is rejected: the plugin doesn't load,
 | `version` | yes | `MAJOR.MINOR.PATCH`, digits only, such as `1.0.0`. |
 | `author` | yes | 1 to 40 characters. |
 | `description` | no | At most 200 characters. |
-| `apiVersion` | yes | A whole number: the lowest API version the plugin needs. FourFold supports `1` and `2`. Declare `2` if the plugin calls `fourfold.profile` or reads `equipment`, so that an older FourFold tells the user to update instead of running a plugin that can't work. A higher number is rejected with "Update FourFold to use this plugin." |
+| `apiVersion` | yes | A whole number: the lowest API version the plugin needs. FourFold supports `1`, `2` and `3`. Declare `2` if the plugin calls `fourfold.profile` or reads `equipment`, and `3` if it can't work without the [live game feed](#live-game-feed), so that an older FourFold tells the user to update instead of running a plugin that can't work. A higher number is rejected with "Update FourFold to use this plugin." |
 | `panel` | yes | Path to an existing `.html` file inside the plugin folder. Forward slashes only. |
 | `icon` | no | Path to a `.png` file inside the plugin folder, at most 256 by 256 pixels and 64 KB. Forward slashes only. Without one, the strip shows a default icon. |
 | `sites` | no | At most 10 websites the plugin may contact. Each is an origin: `https://host` or `https://host:port`, with no path, query or `user@`. The host must be a DNS name: no IP address, no trailing dot, and no name that only works on the local network. `localhost`, `.localhost`, `.local`, `.internal`, `.lan` and `.home.arpa` names are refused, and so is a single-label name such as `router`. A subdomain is its own site, so `https://example.com` doesn't cover `https://www.example.com`. An international host name is fine: FourFold converts it to its `xn--` form, and that form is what it shows users. After the conversion the host can contain only letters, digits, dots and dashes, so a name with an underscore or any other punctuation is refused. |
@@ -172,6 +172,39 @@ if (!profile.isStale && profile.silver !== null) console.log(account.label, 'has
 | `isStale` | boolean | `true` when there is no data yet, when the last read failed, and for a closed account. |
 
 The data comes from the same read as XP: about once a minute, for open accounts only. There is no profile event: read `profile.get` again when `xp.onUpdated` fires. That event also fires for changes that aren't a new read, and `updatedAt` only changes with a new one, so compare it to tell them apart. After a failed read `silver`, `gold`, `location` and `updatedAt` keep their last values and `isStale` is `true`. For a closed account the number and text fields are `null`. An unknown account id is rejected with `invalid-argument`.
+
+### Live game feed
+
+```js
+fourfold.battle.onResult(({ accountId, expGained, silverGained, className }) => {
+  console.log(accountId, 'won', expGained, 'XP and', silverGained, 'silver as', className);
+});
+const status = await fourfold.live.getStatus();
+if (status.state !== 'active') console.log('no live events:', status.reason);
+```
+
+API 3. FourFold reads what the game sends to the user's own game panels and passes on a few events as they happen: fights, skill hits and misses, where each account is, and logins. It only reads: it never sends anything to the game or changes what the game does. Plugins get only the fields below, for the user's own accounts. Never other players' data, chat or anything else the game sends.
+
+The user can switch the feed off in FourFold's Settings, and a game update can stop FourFold reading it until FourFold is updated too. So treat live events as a bonus: keep `xp.get` and `profile.get` as the fallback, and check `live.getStatus()`. A plugin that does and keeps `"apiVersion": 2` also runs on an older FourFold, where `fourfold.battle`, `fourfold.location`, `fourfold.session` and `fourfold.live` don't exist: check for them before using them. Declare `3` only if the plugin can't work without the feed.
+
+Every event has the account's `accountId` and `at`, the time FourFold received it, as an ISO 8601 date.
+
+| Call | Fires | Data |
+|---|---|---|
+| `battle.onStarted(callback)` | A fight starts. | `{ accountId, enemyCount, at }` |
+| `battle.onEnded(callback)` | A fight ends. | `{ accountId, at }` |
+| `battle.onResult(callback)` | A fight is won. | See below. |
+| `battle.onSkillResult(callback)` | A skill is used. | `{ accountId, skillName, outcome, targetsAffected, reason, at }` |
+| `location.onChanged(callback)` | An account changes place. | `{ accountId, scene, inBattle, at }` |
+| `session.onLoggedIn(callback)` | An account logs in to the game. | `{ accountId, at }` |
+| `session.onDisconnected(callback)` | An account's game connection ends. | `{ accountId, reason, at }` |
+| `live.onStatusChanged(callback)` | The feed's status changes. | `{ state, reason }` |
+
+- **Fights.** The game doesn't say whether a fight was won: a win is a `battle.onResult` after `battle.onEnded`, and an end with no result is an escape or a loss. `battle.onResult` gives `expGained` and `silverGained` (any double-XP event is already included), `expNeededToNextLevel`, `leveledUp`, `reachedLevel`, `className` (or `null`), `unlockedSkillName` (`null` when none unlocked; comma-joined when several do, at most 64 characters) and `statGains`: `{ maxHp, maxSp, hp, sp, att, mag, skl, spd, def, res, lck }`, the points the fight added.
+- **Skills.** `outcome` is `"hit"`, `"miss"` or `"rejected"`. The game rolls once per cast against the skill's chance, so a miss misses every target. A rejected cast (not enough SP, say) never rolled: `skillName` is `null` and `reason` is the game's text. Otherwise `reason` is `null`.
+- **Places.** `scene` is the game's own scene name, such as `westhills_b2_dungeon_01`. `inBattle` is `true` in a fight scene. `fourfold.location.get(accountId)` returns the same `{ accountId, scene, inBattle, at }` for the account's current place, or `null` when FourFold has no live data for it (a closed account, or one that hasn't changed place since the feed started). An unknown account id is rejected with `invalid-argument`.
+- **Sessions.** `session.onLoggedIn` fires for a successful login only. `session.onDisconnected` fires on a kick, with the server's text in `reason`, and on a reload or a closed panel, with `reason` `null`. It also ends any fight in progress: a fight cut off by a reload never gets `battle.onEnded`, and after the login the game resumes it with a new `battle.onStarted`.
+- **Status.** `fourfold.live.getStatus()` returns `{ state, reason }`. `state` is `"active"` while the feed is on and reading, `"off"` when the user switched it off, and `"unavailable"` when FourFold can't read the game, with the reason in `reason` (a game update FourFold can't read yet, say). `reason` is `null` otherwise. An account already in game when the feed is switched on sends nothing until its game reconnects.
 
 ### Timer
 
@@ -405,9 +438,10 @@ If the user switches the plugin off in the plugin list, its cards are hidden eve
 
 ## What plugins can't do
 
-- Read or control the game, or see its pages, cookies or sessions.
+- Control the game, or see its pages, cookies, sessions or traffic. The [live game feed](#live-game-feed)'s events are all a plugin gets from the game itself.
 - See logins: usernames, emails and passwords are never exposed. Plugins can't see other plugins or any file outside their own folder either.
-- Get real-time data. XP and profile data arrive about once a minute, and the timer sends no tick events.
+- Get other players' data, chat, or anything the live game feed doesn't list.
+- Get real-time XP or profile data. They arrive about once a minute (the live game feed has each fight as it happens), and the timer sends no tick events.
 - Use shortcut keys, sounds or desktop notifications.
 - Draw custom cards. Cards are FourFold's data cards.
 - Add a settings page behind the cog. Keep settings in your own panel.
