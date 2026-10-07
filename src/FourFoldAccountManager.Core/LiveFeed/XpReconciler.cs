@@ -14,6 +14,10 @@ public sealed class XpReconciler
     // battle that ends just before a poll can be counted a window late: +x, then -x. That pair counts as two matches.
     private readonly Dictionary<Guid, long> _openMismatches = [];
 
+    // Each account's compared windows in a row where the poll gained XP and the feed reported none. A game update that
+    // changes only the battle result leaves the feed active with no results; one such window can be the timing pair.
+    private readonly Dictionary<Guid, int> _missedResults = [];
+
     public int Matched { get; private set; }
 
     public int Mismatched { get; private set; }
@@ -31,7 +35,8 @@ public sealed class XpReconciler
     }
 
     // watchedSince: when the feed started watching this account's current game socket, or null when it isn't watching.
-    public void RecordSample(
+    // True when battle results have stopped arriving for this account: the feed should stop being trusted.
+    public bool RecordSample(
         Guid accountId, PlayerProgressSnapshot snapshot, DateTimeOffset sampledAt, DateTimeOffset? watchedSince)
     {
         var hadPrevious = _lastSamples.TryGetValue(accountId, out var previous);
@@ -50,7 +55,7 @@ public sealed class XpReconciler
         {
             Skipped++;
             _openMismatches.Remove(accountId);
-            return;
+            return false;
         }
 
         var polled = after.Class.CurrentXp - before.Class.CurrentXp;
@@ -63,7 +68,27 @@ public sealed class XpReconciler
             // No battle and no XP change proves nothing about the feed, so it isn't evidence either way.
             Skipped++;
             _openMismatches.Remove(accountId);
-            return;
+            return false;
+        }
+
+        // Two in a row rules out the +x/-x timing pair: the second window of a pair has fed > 0.
+        var stopped = false;
+        if (polled > 0 && fed == 0)
+        {
+            var missed = _missedResults.GetValueOrDefault(accountId) + 1;
+            stopped = missed >= 2;
+            if (stopped)
+            {
+                _missedResults.Remove(accountId);
+            }
+            else
+            {
+                _missedResults[accountId] = missed;
+            }
+        }
+        else
+        {
+            _missedResults.Remove(accountId);
         }
 
         var difference = fed - polled;
@@ -71,18 +96,19 @@ public sealed class XpReconciler
         {
             Matched++;
             _openMismatches.Remove(accountId);
-            return;
+            return stopped;
         }
 
         if (_openMismatches.Remove(accountId, out var open) && open == -difference)
         {
             Mismatched--;
             Matched += 2;
-            return;
+            return stopped;
         }
 
         Mismatched++;
         _openMismatches[accountId] = difference;
+        return stopped;
     }
 
     // Matches the game's SkillCatalog.Normalize, so "Dark_Knight" and "dark knight" are the same class.
