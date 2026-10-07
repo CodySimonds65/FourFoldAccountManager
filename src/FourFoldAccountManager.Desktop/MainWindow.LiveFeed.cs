@@ -1,3 +1,4 @@
+using System.Windows.Input;
 using System.Windows.Threading;
 using FourFoldAccountManager.Core.LiveFeed;
 using FourFoldAccountManager.Desktop.Plugins.Web;
@@ -21,7 +22,9 @@ public partial class MainWindow
         // A live XP/hr falls while the account idles; redraw the panel and cards so it shows, not only at each poll.
         _liveRedraw = new DispatcherTimer(TimeSpan.FromSeconds(5), DispatcherPriority.Background, (_, _) =>
         {
-            if (!_shutdownStarted && _xpTracker.HasLiveAccount)
+            // Rebuilding the rows under a press would lose the click or close its menu; the next tick catches up.
+            if (!_shutdownStarted && _xpTracker.HasLiveAccount &&
+                Mouse.LeftButton != MouseButtonState.Pressed && Mouse.RightButton != MouseButtonState.Pressed)
             {
                 RefreshTrackerRows();
             }

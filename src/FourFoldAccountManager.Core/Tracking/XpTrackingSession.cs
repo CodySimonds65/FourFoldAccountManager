@@ -161,6 +161,8 @@ public sealed class XpTrackingSession
 
         _liveMark = null;
         _rebase = true;
+        // The shown rate had already fallen with the idle time; without this it would jump back up until the next poll.
+        RatePerHour = _window.GetRate(at);
     }
 
     // One fight's reward from the live game feed. It counts from the mark to this fight, so the time between fights is
@@ -188,13 +190,13 @@ public sealed class XpTrackingSession
         }
     }
 
-    // At a poll or a fight. While live, the time since the last fight counts as gaining nothing, so the rate falls while
-    // the account idles.
     // The rate to show at `now`. While live, the time since the last fight counts as gaining nothing, so the shown rate
     // falls while the account idles, not only at each poll. Otherwise the rate at the last poll, as before.
     public double? RateNow(DateTimeOffset now) =>
         _liveMark is { } mark ? _window.GetRate(now > mark ? now : mark, mark, LiveRateMinimum) : RatePerHour;
 
+    // At a poll or a fight. While live, the time since the last fight counts as gaining nothing, so the rate falls while
+    // the account idles.
     private double? RateAt(DateTimeOffset at) =>
         _liveMark is { } mark ? _window.GetRate(at, mark, LiveRateMinimum) : _window.GetRate(at);
 

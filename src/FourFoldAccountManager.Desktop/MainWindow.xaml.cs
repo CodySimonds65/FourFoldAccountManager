@@ -3445,6 +3445,7 @@ public partial class MainWindow : Window
             // typed just before closing reaches disk instead of being lost.
             _plugins.XpCalc.View.FlushPendingTargetSave();
             _pluginCardRefreshTimer?.Stop();
+            _liveRedraw?.Stop();
             // First, so a download that finishes now can't reach the plugins that are being disposed.
             _pluginHub.Dispose();
             _communityPlugins.Dispose();
