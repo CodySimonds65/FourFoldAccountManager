@@ -107,19 +107,12 @@ internal sealed class LiveGameFeed : IAsyncDisposable
         }
 
         LiveStatus status;
-        Guid[] watched;
         lock (_gate)
         {
-            watched = _accounts.Keys.ToArray();
-            _accounts.Clear();
+            EndAllLive();
             _state = enabled ? LiveFeedState.Active : LiveFeedState.Off;
             _reason = null;
             status = CurrentStatus();
-        }
-
-        foreach (var accountId in watched)
-        {
-            Tell(tracker => tracker.EndLive(accountId));
         }
 
         Post("live.statusChanged", status);
@@ -276,20 +269,14 @@ internal sealed class LiveGameFeed : IAsyncDisposable
             return;
         }
 
-        var watching = false;
         lock (_gate)
         {
             if (_state == LiveFeedState.Active)
             {
                 // A new game socket (a login or a reconnect) starts the account's state and its canary afresh.
                 _accounts[tapEvent.AccountId] = new AccountState(id.GetString()!, tapEvent.At);
-                watching = true;
+                Tell(tracker => tracker.BeginLive(tapEvent.AccountId, tapEvent.At));
             }
-        }
-
-        if (watching)
-        {
-            Tell(tracker => tracker.BeginLive(tapEvent.AccountId, tapEvent.At));
         }
     }
 
@@ -379,19 +366,21 @@ internal sealed class LiveGameFeed : IAsyncDisposable
 
             // Every login sends both; 60 s of traffic without them means the ids no longer match the game.
             canaryFailed = !(account.SawLogin && account.SawScene) && tapEvent.At - account.OpenedAt > CanaryTimeout;
+            if (!canaryFailed)
+            {
+                foreach (var battle in results)
+                {
+                    Tell(tracker => tracker.ApplyLiveResult(tapEvent.AccountId, tapEvent.At,
+                        PluginText.PublicGameText(battle.ClassName), battle.ExpGained, battle.ReachedLevel,
+                        battle.ExpNeededToNextLevel));
+                }
+            }
         }
 
         if (canaryFailed)
         {
             MarkUnavailable("Game protocol changed: the live feed didn't recognize the login. The game may have updated.");
             return;
-        }
-
-        foreach (var battle in results)
-        {
-            Tell(tracker => tracker.ApplyLiveResult(tapEvent.AccountId, tapEvent.At,
-                PluginText.PublicGameText(battle.ClassName), battle.ExpGained, battle.ReachedLevel,
-                battle.ExpNeededToNextLevel));
         }
 
         foreach (var (name, payload) in posts)
@@ -413,12 +402,11 @@ internal sealed class LiveGameFeed : IAsyncDisposable
             }
 
             _accounts.Remove(accountId);
+            Tell(tracker => tracker.EndLive(accountId));
             // A server kick already told plugins why; the socket closing after it isn't a second disconnect. Plugins
             // weren't told this session started (no successful login), so they aren't told it ended.
             post = _state == LiveFeedState.Active && account.LoginPosted && !account.DisconnectPosted;
         }
-
-        Tell(tracker => tracker.EndLive(accountId));
 
         if (post)
         {
@@ -429,7 +417,6 @@ internal sealed class LiveGameFeed : IAsyncDisposable
     private void MarkUnavailable(string reason)
     {
         LiveStatus status;
-        Guid[] watched;
         lock (_gate)
         {
             if (_state != LiveFeedState.Active)
@@ -439,14 +426,8 @@ internal sealed class LiveGameFeed : IAsyncDisposable
 
             _state = LiveFeedState.Unavailable;
             _reason = reason;
-            watched = _accounts.Keys.ToArray();
-            _accounts.Clear();
+            EndAllLive();
             status = CurrentStatus();
-        }
-
-        foreach (var accountId in watched)
-        {
-            Tell(tracker => tracker.EndLive(accountId));
         }
 
         Post("live.statusChanged", status);
@@ -471,7 +452,19 @@ internal sealed class LiveGameFeed : IAsyncDisposable
             }
         });
 
-    // The XP tracker lives on the UI thread, like the poll that feeds it. Queued in order with the plugin posts.
+    // Under _gate: stops watching every account and tells the tracker.
+    private void EndAllLive()
+    {
+        foreach (var accountId in _accounts.Keys)
+        {
+            Tell(tracker => tracker.EndLive(accountId));
+        }
+
+        _accounts.Clear();
+    }
+
+    // The XP tracker lives on the UI thread, like the poll that feeds it. Called under _gate so the tracker sees calls in
+    // the order the feed's state changed; InvokeAsync only queues, so it can't block there.
     private void Tell(Action<XpTrackerCoordinator> call) =>
         _dispatcher.InvokeAsync(() =>
         {
