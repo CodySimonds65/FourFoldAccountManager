@@ -86,7 +86,7 @@ public sealed class XpReconciler
     }
 
     // Matches the game's SkillCatalog.Normalize, so "Dark_Knight" and "dark knight" are the same class.
-    private static string NormalizeClass(string? name) => (name ?? string.Empty).Trim().Replace('_', ' ').ToLowerInvariant();
+    internal static string NormalizeClass(string? name) => (name ?? string.Empty).Trim().Replace('_', ' ').ToLowerInvariant();
 
     private static (string Name, ClassProfileSnapshot Class)? ActiveClass(PlayerProgressSnapshot snapshot) =>
         snapshot.ActiveClassName is { } name && snapshot.Classes.TryGetValue(name, out var found) ? (name, found) : null;

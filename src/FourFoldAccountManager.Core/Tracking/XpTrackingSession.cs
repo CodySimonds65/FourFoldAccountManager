@@ -1,3 +1,5 @@
+using FourFoldAccountManager.Core.LiveFeed;
+
 namespace FourFoldAccountManager.Core.Tracking;
 
 public sealed class XpTrackingSession
@@ -17,14 +19,23 @@ public sealed class XpTrackingSession
     // Set when a live stretch ends. The next poll only moves the baseline, because the fights counted that XP.
     private bool _rebase;
 
+    // The active class's progress as the last fight left it. Laid over the last poll while it is the newer truth.
+    private LiveProgress? _liveProgress;
+
     public PlayerProgressSnapshot? LastSnapshot { get; private set; }
     public DateTimeOffset? LastSuccessfulAt { get; private set; }
     public double? RatePerHour { get; private set; }
     public long SessionGain => _window.SessionGain;
     public IReadOnlyList<XpGainInterval> Intervals => _window.Intervals;
-    public string? ActiveClassName => LastSnapshot?.ActiveClassName;
+    // The last poll with the live progress laid over it, while that progress is the newer truth (see
+    // LiveProgressApplies). Persistence, ProfileSampled and the reconciler use LastSnapshot, the raw poll.
+    public PlayerProgressSnapshot? DisplaySnapshot =>
+        LastSnapshot is { } polled && _liveProgress is { } live && LiveProgressApplies(polled, live)
+            ? WithLiveProgress(polled, live)
+            : LastSnapshot;
+    public string? ActiveClassName => DisplaySnapshot?.ActiveClassName;
     public long? XpUntilNextLevel =>
-        ActiveClassName is { } name && LastSnapshot?.Classes.TryGetValue(name, out var progress) == true
+        ActiveClassName is { } name && DisplaySnapshot?.Classes.TryGetValue(name, out var progress) == true
             ? progress.NextLevelXp - progress.CurrentXp
             : null;
     public double? HoursUntilNextLevel =>
@@ -44,6 +55,12 @@ public sealed class XpTrackingSession
         if (IsStopped) throw new InvalidOperationException("The tracking session has stopped.");
         if (LastSuccessfulAt is { } previousTime && sampledAt <= previousTime)
             throw new ArgumentOutOfRangeException(nameof(sampledAt));
+
+        // A poll can lag a fight by seconds, but never by two polls: from the second poll since it, the poll is the truth.
+        if (_liveProgress is { } progress && LastSuccessfulAt is { } previousPoll && progress.At <= previousPoll)
+        {
+            _liveProgress = null;
+        }
 
         MissedPreviousSample = _hasFailedPoll;
         ActiveClassUnavailable = string.IsNullOrWhiteSpace(snapshot.ActiveClassName);
@@ -138,6 +155,15 @@ public sealed class XpTrackingSession
         _window.Add(mark, at, Math.Max(0, expGained));
         _liveMark = at;
         RatePerHour = RateAt(at);
+        // The result carries the whole state: the level reached and the XP still needed. The game levels up at most once
+        // per fight, so the level's total follows from the level.
+        if (!string.IsNullOrWhiteSpace(className))
+        {
+            var level = Math.Max(1, reachedLevel);
+            var total = LevelTotal(level);
+            _liveProgress = new LiveProgress(
+                className.Trim(), level, Math.Max(0, total - Math.Max(0, expNeededToNextLevel)), total, at);
+        }
     }
 
     // At a poll or a fight. While live, the time since the last fight counts as gaining nothing, so the rate falls while
@@ -174,4 +200,41 @@ public sealed class XpTrackingSession
         ResetRate();
         _window.ResetSession();
     }
+
+    // The game's ExpNeededForNextLevel: 5·L·(L+1), capped at int.MaxValue.
+    private static long LevelTotal(int level)
+    {
+        long capped = Math.Min(level, 1_000_000);
+        return Math.Min(5 * capped * (capped + 1), int.MaxValue);
+    }
+
+    // Newer than the last poll, or the poll's own active class and ahead of it: the poll that was saved just before
+    // the fight landed.
+    private bool LiveProgressApplies(PlayerProgressSnapshot polled, LiveProgress live)
+    {
+        if (LastSuccessfulAt is not { } polledAt || live.At > polledAt)
+        {
+            return true;
+        }
+
+        return polled.ActiveClassName is { } active &&
+               XpReconciler.NormalizeClass(active) == XpReconciler.NormalizeClass(live.ClassName) &&
+               polled.Classes.TryGetValue(active, out var current) &&
+               (live.Level > current.Level || (live.Level == current.Level && live.CurrentXp > current.CurrentXp));
+    }
+
+    // The poll with the live class active and its level and XP from the fight. Its stats and equipment stay the
+    // poll's. The class keeps the website's spelling when the poll lists it.
+    private static PlayerProgressSnapshot WithLiveProgress(PlayerProgressSnapshot polled, LiveProgress live)
+    {
+        var key = polled.Classes.Keys.FirstOrDefault(name =>
+            XpReconciler.NormalizeClass(name) == XpReconciler.NormalizeClass(live.ClassName)) ?? live.ClassName;
+        var classes = new Dictionary<string, ClassProfileSnapshot>(polled.Classes, StringComparer.OrdinalIgnoreCase);
+        classes[key] = classes.TryGetValue(key, out var existing)
+            ? existing with { Level = live.Level, CurrentXp = live.CurrentXp, NextLevelXp = live.NextLevelXp }
+            : new ClassProfileSnapshot(live.Level, live.CurrentXp, live.NextLevelXp, null);
+        return polled with { ActiveClassName = key, Classes = classes };
+    }
+
+    private sealed record LiveProgress(string ClassName, int Level, long CurrentXp, long NextLevelXp, DateTimeOffset At);
 }
