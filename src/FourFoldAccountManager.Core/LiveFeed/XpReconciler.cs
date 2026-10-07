@@ -71,9 +71,12 @@ public sealed class XpReconciler
             return false;
         }
 
-        // Two in a row rules out the +x/-x timing pair: the second window of a pair has fed > 0.
+        // A silent window that opens a late pair is followed by one where its result arrives, and one that closes an
+        // early pair doesn't count, so timing pairs can't make two in a row. A real break can: -b never cancels -a.
+        var difference = fed - polled;
+        var closesPair = _openMismatches.TryGetValue(accountId, out var open) && open == -difference;
         var stopped = false;
-        if (polled > 0 && fed == 0)
+        if (polled > 0 && fed == 0 && !closesPair)
         {
             var missed = _missedResults.GetValueOrDefault(accountId) + 1;
             stopped = missed >= 2;
@@ -91,7 +94,6 @@ public sealed class XpReconciler
             _missedResults.Remove(accountId);
         }
 
-        var difference = fed - polled;
         if (difference == 0)
         {
             Matched++;
@@ -99,7 +101,8 @@ public sealed class XpReconciler
             return stopped;
         }
 
-        if (_openMismatches.Remove(accountId, out var open) && open == -difference)
+        _openMismatches.Remove(accountId);
+        if (closesPair)
         {
             Mismatched--;
             Matched += 2;

@@ -66,4 +66,19 @@ public sealed class XpReconcilerTests
 
         Assert.Equal((4, 0), (reconciler.Matched, reconciler.Mismatched));
     }
+
+    [Fact]
+    public void AnEarlyPairThenALatePairNeverGivesUpOnTheFeed()
+    {
+        var reconciler = new XpReconciler();
+        Sample(reconciler, 100, 0);
+        // The result lands just before the poll and the XP just after it: the XP shows a window late.
+        reconciler.RecordResult(Account, At(0.99), "Savage", 100);
+        Assert.False(Sample(reconciler, 100, 1));
+        Assert.False(Sample(reconciler, 200, 2)); // silent, but it closes that pair
+        // The next fight's XP shows before the poll and its result just after it.
+        Assert.False(Sample(reconciler, 300, 3));
+        reconciler.RecordResult(Account, At(3.01), "Savage", 100);
+        Assert.False(Sample(reconciler, 300, 4));
+    }
 }
