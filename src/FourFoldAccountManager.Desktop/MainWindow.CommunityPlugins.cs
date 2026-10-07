@@ -19,8 +19,10 @@ namespace FourFoldAccountManager.Desktop;
 public partial class MainWindow : IPluginHostData
 {
     private readonly PluginCardStore _pluginCards = new();
-    private readonly Dictionary<Guid, (DateTimeOffset? LastUpdated, bool IsStale, double? RatePerHour, long SessionGain)>
-        _postedXpUpdates = [];
+    // A live rate changes every time it's read, so it isn't part of what counts as new XP data: a poll, a fight
+    // (SessionGain, LastFightAt) or a reset (HasRate) is.
+    private readonly Dictionary<Guid, (DateTimeOffset? LastUpdated, bool IsStale, bool HasRate, long SessionGain,
+        DateTimeOffset? LastFightAt)> _postedXpUpdates = [];
     private CommunityPluginManager _communityPlugins = null!;
     private PluginHub _pluginHub = null!;
     private string _postedAccounts = string.Empty;
@@ -184,8 +186,8 @@ public partial class MainWindow : IPluginHostData
 
         foreach (var state in _xpTracker.GetStates())
         {
-            var current = (state.LastUpdated, state.IsStale, state.RatePerHour, state.SessionGain);
-            // Equals, not ==, so a NaN rate counts as unchanged instead of posting on every refresh.
+            var current = (state.LastUpdated, state.IsStale, state.RatePerHour is not null, state.SessionGain,
+                state.LastFightAt);
             if (!_postedXpUpdates.TryGetValue(state.AccountId, out var posted) || !posted.Equals(current))
             {
                 _postedXpUpdates[state.AccountId] = current;
@@ -214,19 +216,8 @@ public partial class MainWindow : IPluginHostData
         !string.IsNullOrWhiteSpace(rankingUsername) && profileUsername is not null &&
         string.Equals(profileUsername.Trim(), rankingUsername.Trim(), StringComparison.OrdinalIgnoreCase);
 
-    // Text the game's site wrote (a location, an item's name), made safe to hand to a plugin: trimmed, at most 64
-    // characters, and dropped if it could rearrange or hide the text a plugin draws around it.
-    internal static string? PublicGameText(string? text)
-    {
-        text = text?.Trim();
-        if (string.IsNullOrEmpty(text) || PluginText.HasUnsafeCharacter(text))
-        {
-            return null;
-        }
-
-        // Never cut between the two halves of a character outside the basic plane.
-        return text.Length <= 64 ? text : text[..(char.IsHighSurrogate(text[63]) ? 63 : 64)];
-    }
+    // Text the game's site wrote, made safe to hand to a plugin. The rule lives in Core so the live feed shares it.
+    internal static string? PublicGameText(string? text) => PluginText.PublicGameText(text);
 
     IReadOnlyList<PluginAccountInfo> IPluginHostData.GetAccounts() =>
         _accounts.Select(account => new PluginAccountInfo(
