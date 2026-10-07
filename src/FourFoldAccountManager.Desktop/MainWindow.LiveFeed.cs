@@ -1,3 +1,4 @@
+using System.Windows.Threading;
 using FourFoldAccountManager.Core.LiveFeed;
 using FourFoldAccountManager.Desktop.Plugins.Web;
 using FourFoldAccountManager.Desktop.Services.LiveFeed;
@@ -8,13 +9,24 @@ namespace FourFoldAccountManager.Desktop;
 public partial class MainWindow
 {
     private LiveGameFeed _liveFeed = null!;
+    private DispatcherTimer? _liveRedraw;
 
     // Starts off; MainWindow_Loaded switches it to the saved setting. Panels created before then are remembered and
     // tapped when it switches on.
-    private void InitializeLiveFeed() =>
+    private void InitializeLiveFeed()
+    {
         _liveFeed = new LiveGameFeed(
             _browserSessions, _xpTracker, (name, data) => _communityPlugins.PostEvent(name, data), Dispatcher,
             TimeProvider.System);
+        // A live XP/hr falls while the account idles; redraw the panel and cards so it shows, not only at each poll.
+        _liveRedraw = new DispatcherTimer(TimeSpan.FromSeconds(5), DispatcherPriority.Background, (_, _) =>
+        {
+            if (!_shutdownStarted && _xpTracker.HasLiveAccount)
+            {
+                RefreshTrackerRows();
+            }
+        }, Dispatcher);
+    }
 
     // One line for Settings: the state, then the counts the feed must earn before the XP tracker relies on it.
     private string LiveFeedSummary()
