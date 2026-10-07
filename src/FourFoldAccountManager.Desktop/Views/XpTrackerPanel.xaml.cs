@@ -33,11 +33,21 @@ public partial class XpTrackerPanel : UserControl
         if (TryGetAccountId(sender, out var accountId)) ResetAllRequested?.Invoke(accountId);
     }
 
+    // The rows are rebuilt every second while an account is live, which disconnects an open menu from its row. So the
+    // account is taken when the menu opens, not when an item is clicked.
+    private void RowMenu_Opened(object sender, RoutedEventArgs e)
+    {
+        if (sender is ContextMenu { PlacementTarget: FrameworkElement { DataContext: XpTrackerRow row } } menu)
+        {
+            menu.Tag = row.AccountId;
+        }
+    }
+
     private static bool TryGetAccountId(object sender, out Guid accountId)
     {
-        if (sender is MenuItem { Parent: ContextMenu { PlacementTarget: FrameworkElement { DataContext: XpTrackerRow row } } })
+        if (sender is MenuItem { Parent: ContextMenu { Tag: Guid id } })
         {
-            accountId = row.AccountId;
+            accountId = id;
             return true;
         }
 

@@ -132,6 +132,7 @@ public partial class MainWindow : Window
         _plugins.XpCalc.View.AccountSelectionRequested += SelectAccountFromPlugin;
         _plugins.Timer.ShortcutChangeRequested += TimerPlugin_ShortcutChangeRequested;
         InitializeCommunityPlugins(paths);
+        InitializeLiveFeed();
         RefreshPluginSidebar();
         PluginSidebar.OpenRequested += id =>
         {
@@ -301,6 +302,7 @@ public partial class MainWindow : Window
         {
             ReplaceAccounts(await _accountStore.LoadAsync());
             _panelSettings = await _settingsStore.LoadAsync();
+            _liveFeed.SetEnabled(_panelSettings.LiveGameFeed);
             try
             {
                 var apiOptions = LeaderboardApiOptions.FromEnvironment();
@@ -1075,7 +1077,9 @@ public partial class MainWindow : Window
             GlobalShortcutActions.All.Where(action => _shortcuts?.IsAvailable(action) != true).ToHashSet(),
             showOverlaysInTheatreMode: _panelSettings.ShowOverlaysInTheatreMode,
             secondMonitorMode: _panelSettings.SecondMonitorMode,
-            blockStorePages: _panelSettings.BlockStorePages)
+            blockStorePages: _panelSettings.BlockStorePages,
+            liveGameFeed: _panelSettings.LiveGameFeed,
+            liveFeedSummary: LiveFeedSummary())
         {
             Owner = this
         };
@@ -1101,6 +1105,7 @@ public partial class MainWindow : Window
         var theatreOverlaysChanged = dialog.ShowOverlaysInTheatreMode != _panelSettings.ShowOverlaysInTheatreMode;
         var secondMonitorModeChanged = dialog.SecondMonitorMode != _panelSettings.SecondMonitorMode;
         var storeBlockChanged = dialog.BlockStorePages != _panelSettings.BlockStorePages;
+        var liveFeedChanged = dialog.LiveGameFeed != _panelSettings.LiveGameFeed;
         // Leaving Account tools mode closes the tools window; its spot is saved with the mode change.
         var closingToolsPlacement = secondMonitorModeChanged &&
             dialog.SecondMonitorMode != SecondMonitorMode.AccountToolsWindow
@@ -1111,6 +1116,7 @@ public partial class MainWindow : Window
             !theatreOverlaysChanged &&
             !secondMonitorModeChanged &&
             !storeBlockChanged &&
+            !liveFeedChanged &&
             changedShortcuts.Length == 0 &&
             !dialog.ResetLayoutSizes)
         {
@@ -1139,7 +1145,8 @@ public partial class MainWindow : Window
                         ShowFullScreenExitButton = dialog.ShowFullScreenExitButton,
                         ShowOverlaysInTheatreMode = dialog.ShowOverlaysInTheatreMode,
                         SecondMonitorMode = dialog.SecondMonitorMode,
-                        BlockStorePages = dialog.BlockStorePages
+                        BlockStorePages = dialog.BlockStorePages,
+                        LiveGameFeed = dialog.LiveGameFeed
                     });
                     if (secondMonitorModeChanged && dialog.SecondMonitorMode == SecondMonitorMode.AccountToolsWindow)
                     {
@@ -1189,6 +1196,11 @@ public partial class MainWindow : Window
                 return;
             }
 
+            if (liveFeedChanged)
+            {
+                _liveFeed.SetEnabled(nextSettings.LiveGameFeed);
+            }
+
             RefreshPlainKeyBindings();
             if (dialog.ResetLayoutSizes)
             {
@@ -1236,6 +1248,10 @@ public partial class MainWindow : Window
                     ? nextSettings.SecondMonitorMode == SecondMonitorMode.FloatingCards
                         ? "Second monitor set to Floating cards."
                         : "Second monitor set to Account tools window."
+                    : liveFeedChanged
+                    ? nextSettings.LiveGameFeed
+                        ? "The live game feed is on. A panel already in a game starts sending events the next time it connects."
+                        : "The live game feed is off."
                     : storeBlockChanged
                     ? nextSettings.BlockStorePages
                         ? "The in-game store and gold buttons are now blocked."
@@ -3429,9 +3445,12 @@ public partial class MainWindow : Window
             // typed just before closing reaches disk instead of being lost.
             _plugins.XpCalc.View.FlushPendingTargetSave();
             _pluginCardRefreshTimer?.Stop();
+            _liveRedraw?.Stop();
             // First, so a download that finishes now can't reach the plugins that are being disposed.
             _pluginHub.Dispose();
             _communityPlugins.Dispose();
+            // After the plugins: nothing may be posted to a plugin that is being disposed.
+            await _liveFeed.DisposeAsync();
 
             try
             {

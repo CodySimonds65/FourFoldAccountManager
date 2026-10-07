@@ -124,6 +124,23 @@
                             </StackPanel>
                         </CheckBox>
                     </Border>
+                    <TextBlock Text="LIVE GAME FEED" FontSize="10" Foreground="{DynamicResource Brush.AccentGold}"
+                               Margin="0,20,0,9" />
+                    <Border Padding="14" CornerRadius="9" BorderThickness="1" BorderBrush="{DynamicResource Brush.Border}"
+                            Background="{DynamicResource Brush.Surface}">
+                        <StackPanel>
+                            <CheckBox x:Name="LiveGameFeedOption" VerticalContentAlignment="Top"
+                                      Foreground="{DynamicResource Brush.TextPrimary}">
+                                <StackPanel Margin="8,-2,0,0">
+                                    <TextBlock Text="Send live game events to plugins" FontWeight="SemiBold" />
+                                    <TextBlock Margin="0,4,0,0" Foreground="{DynamicResource Brush.TextMuted}" TextWrapping="Wrap"
+                                               Text="Reads battle results, skill results and scene changes from your own panels as they happen. Read-only: nothing is sent to the game. A panel already in a game starts sending events the next time its game connects." />
+                                </StackPanel>
+                            </CheckBox>
+                            <TextBlock x:Name="LiveFeedCountersText" Margin="28,10,0,0" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource Brush.TextMuted}" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 
