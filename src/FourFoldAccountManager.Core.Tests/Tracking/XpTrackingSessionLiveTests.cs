@@ -214,4 +214,20 @@ public sealed class XpTrackingSessionLiveTests
 
         Assert.Equal(300, session.SessionGain);
     }
+
+    [Fact]
+    public void TheRateShownNowFallsBetweenFightsAndStaysPutWhenPolled()
+    {
+        var live = new XpTrackingSession();
+        live.ApplySnapshot(Poll("Savage", 12, 100), At(0));
+        live.BeginLive(At(0));
+        live.ApplyLiveResult(At(1), "Savage", 300, 12, Cap(12) - 400);
+        Assert.Equal(18000, live.RateNow(At(1))!.Value, 6);
+        Assert.Equal(6000, live.RateNow(At(3))!.Value, 6); // two idle minutes, no poll yet
+
+        var polled = new XpTrackingSession();
+        polled.ApplySnapshot(Poll("Savage", 12, 100), At(0));
+        polled.ApplySnapshot(Poll("Savage", 12, 400), At(1));
+        Assert.Equal(polled.RatePerHour, polled.RateNow(At(30)));
+    }
 }

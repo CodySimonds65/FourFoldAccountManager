@@ -45,6 +45,9 @@ public sealed class XpTrackingSession
     public bool IsStale { get; private set; }
     public bool IsStopped { get; private set; }
     public bool IsLive => _liveMark is not null;
+
+    // When the live game feed last counted a fight. The poll's time alone makes a live tracker look once a minute.
+    public DateTimeOffset? LastFightAt { get; private set; }
     public bool MissedPreviousSample { get; private set; }
     public bool ActiveClassUnavailable { get; private set; }
     public IReadOnlyList<string> InvalidClassNames { get; private set; } = [];
@@ -172,6 +175,7 @@ public sealed class XpTrackingSession
 
         _window.Add(mark, at, Math.Max(0, expGained));
         _liveMark = at;
+        LastFightAt = at;
         RatePerHour = RateAt(at);
         // The result carries the whole state: the level reached and the XP still needed. The game levels up at most once
         // per fight, so the level's total follows from the level.
@@ -186,6 +190,11 @@ public sealed class XpTrackingSession
 
     // At a poll or a fight. While live, the time since the last fight counts as gaining nothing, so the rate falls while
     // the account idles.
+    // The rate to show at `now`. While live, the time since the last fight counts as gaining nothing, so the shown rate
+    // falls while the account idles, not only at each poll. Otherwise the rate at the last poll, as before.
+    public double? RateNow(DateTimeOffset now) =>
+        _liveMark is { } mark ? _window.GetRate(now > mark ? now : mark, mark, LiveRateMinimum) : RatePerHour;
+
     private double? RateAt(DateTimeOffset at) =>
         _liveMark is { } mark ? _window.GetRate(at, mark, LiveRateMinimum) : _window.GetRate(at);
 

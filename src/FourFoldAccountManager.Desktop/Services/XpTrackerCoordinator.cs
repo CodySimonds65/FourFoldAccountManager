@@ -15,7 +15,8 @@ public sealed record XpTrackerState(
     double? HoursUntilNextLevel,
     DateTimeOffset? LastUpdated,
     string Status,
-    bool IsStale);
+    bool IsStale,
+    DateTimeOffset? LastFightAt = null);
 
 public sealed class XpTrackerCoordinator : IAsyncDisposable
 {
@@ -69,11 +70,25 @@ public sealed class XpTrackerCoordinator : IAsyncDisposable
         return result.IsSuccess;
     }
 
-    public IReadOnlyList<XpTrackerState> GetStates() => _active.Values.Select(account => new XpTrackerState(
-        account.Id, account.Username, account.Session.RatePerHour, account.Session.SessionGain,
-        account.Session.ActiveClassName, account.Session.XpUntilNextLevel,
-        account.Session.HoursUntilNextLevel,
-        account.Session.LastSuccessfulAt, StatusOf(account), account.Session.IsStale)).ToArray();
+    // Rates are worked out at the time of asking, so a live account's XP/hr falls while it idles between fights.
+    public IReadOnlyList<XpTrackerState> GetStates()
+    {
+        var now = DateTimeOffset.UtcNow;
+        return _active.Values.Select(account =>
+        {
+            var rate = account.Session.RateNow(now);
+            var remaining = account.Session.XpUntilNextLevel;
+            return new XpTrackerState(
+                account.Id, account.Username, rate, account.Session.SessionGain,
+                account.Session.ActiveClassName, remaining,
+                remaining is { } xp && rate is { } perHour && double.IsFinite(perHour) && perHour > 0 ? xp / perHour : null,
+                account.Session.LastSuccessfulAt, StatusOf(account), account.Session.IsStale,
+                account.Session.IsLive ? account.Session.LastFightAt : null);
+        }).ToArray();
+    }
+
+    // The panel redraws on a timer while this is true, so a live rate visibly falls between fights.
+    public bool HasLiveAccount => _active.Values.Any(account => account.Session.IsLive);
 
     // While the live game feed watches the account, the two ordinary statuses say so. Problems still show as they are.
     private static string StatusOf(TrackedAccount account) =>
