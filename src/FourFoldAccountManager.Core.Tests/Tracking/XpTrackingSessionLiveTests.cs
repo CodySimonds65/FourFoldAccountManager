@@ -98,4 +98,73 @@ public sealed class XpTrackingSessionLiveTests
         Assert.Equal(300, session.SessionGain);
         Assert.Equal(18000, session.RatePerHour!.Value, 6);
     }
+
+    [Fact]
+    public void AFightGivesTheExactProgressAcrossALevelUp()
+    {
+        var session = new XpTrackingSession();
+        session.ApplySnapshot(Poll("Savage", 12, Cap(12) - 50), At(0));
+        session.BeginLive(At(0));
+        // The feed spells the class its own way; it must update the website's entry, not add a second one.
+        session.ApplyLiveResult(At(0.5), " savage", 200, 13, Cap(13) - 150);
+
+        var display = session.DisplaySnapshot!;
+        var savage = display.Classes["Savage"];
+        Assert.Equal((13, 150L, Cap(13)), (savage.Level, savage.CurrentXp, savage.NextLevelXp));
+        Assert.Equal("Savage", display.ActiveClassName);
+        Assert.Equal(2, display.Classes.Count);
+        Assert.Equal(Cap(13) - 150, session.XpUntilNextLevel);
+        // The raw poll is untouched: persistence and the reconciler read it.
+        Assert.Equal(12, session.LastSnapshot!.Classes["Savage"].Level);
+    }
+
+    [Fact]
+    public void AVeryHighLevelCapsTheLevelTotalLikeTheGame()
+    {
+        var session = new XpTrackingSession();
+        session.ApplySnapshot(Poll("Savage", 12, 100), At(0));
+        session.BeginLive(At(0));
+        session.ApplyLiveResult(At(0.5), "Savage", 1, 30000, 10);
+
+        var savage = session.DisplaySnapshot!.Classes["Savage"];
+        Assert.Equal(int.MaxValue, savage.NextLevelXp);
+        Assert.Equal(int.MaxValue - 10L, savage.CurrentXp);
+    }
+
+    [Fact]
+    public void ALaggingPollKeepsTheLiveProgressAndALaterOneReplacesIt()
+    {
+        var session = new XpTrackingSession();
+        session.ApplySnapshot(Poll("Savage", 12, 100), At(0));
+        session.BeginLive(At(0));
+        session.ApplyLiveResult(At(0.9), "Savage", 300, 12, Cap(12) - 400);
+
+        // Saved just before the fight landed: the display must not roll back.
+        session.ApplySnapshot(Poll("Savage", 12, 100), At(1));
+        Assert.Equal(400, session.DisplaySnapshot!.Classes["Savage"].CurrentXp);
+
+        // A second poll since the fight is the truth, even below the live value.
+        session.ApplySnapshot(Poll("Savage", 12, 350), At(2));
+        Assert.Equal(350, session.DisplaySnapshot!.Classes["Savage"].CurrentXp);
+    }
+
+    [Fact]
+    public void ANewerPollAheadOfTheFightOrOnAnotherClassReplacesTheLiveProgress()
+    {
+        var ahead = new XpTrackingSession();
+        ahead.ApplySnapshot(Poll("Savage", 12, 100), At(0));
+        ahead.BeginLive(At(0));
+        ahead.ApplyLiveResult(At(0.9), "Savage", 300, 12, Cap(12) - 400);
+        ahead.ApplySnapshot(Poll("Savage", 12, 450), At(1));
+        Assert.Equal(450, ahead.DisplaySnapshot!.Classes["Savage"].CurrentXp);
+
+        // A class switch in town, with no fight since: the poll's active class wins.
+        var switched = new XpTrackingSession();
+        switched.ApplySnapshot(Poll("Savage", 12, 100), At(0));
+        switched.BeginLive(At(0));
+        switched.ApplyLiveResult(At(0.5), "Savage", 300, 12, Cap(12) - 400);
+        switched.ApplySnapshot(Poll("Mage", 12, 400), At(1));
+        Assert.Equal("Mage", switched.ActiveClassName);
+        Assert.Equal(Cap(3), switched.XpUntilNextLevel);
+    }
 }
