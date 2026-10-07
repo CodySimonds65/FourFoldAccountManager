@@ -192,8 +192,9 @@ public static partial class GameMessageDecoder
         var silver = AtLeastZero(reader.ReadVarInt32());
         var exp = AtLeastZero(reader.ReadVarInt32());
         var needed = AtLeastZero(reader.ReadVarInt32());
+        // No upper bound: levels have no cap in the game, and a misread message fails the length checks anyway.
         var level = reader.ReadVarInt32();
-        if (level is < 1 or > 999)
+        if (level < 1)
         {
             throw new MirrorFormatException();
         }
