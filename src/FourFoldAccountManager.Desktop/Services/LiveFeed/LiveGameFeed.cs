@@ -189,13 +189,21 @@ internal sealed class LiveGameFeed : IAsyncDisposable
 
     private void OnProfileSampled(Guid accountId, PlayerProgressSnapshot snapshot, DateTimeOffset sampledAt)
     {
+        bool resultsStopped;
         lock (_gate)
         {
             // The window only counts when the feed watched this account's game socket for all of it.
             var watchedSince = _state == LiveFeedState.Active && _accounts.TryGetValue(accountId, out var account)
                 ? account.OpenedAt
                 : (DateTimeOffset?)null;
-            _reconciler.RecordSample(accountId, snapshot, sampledAt, watchedSince);
+            resultsStopped = _reconciler.RecordSample(accountId, snapshot, sampledAt, watchedSince);
+        }
+
+        // A game update can change only the battle result: login and scene still decode, so nothing else notices.
+        // MarkUnavailable takes _gate itself.
+        if (resultsStopped)
+        {
+            MarkUnavailable("Battle results stopped arriving. The game may have updated.");
         }
     }
 
