@@ -17,7 +17,9 @@ namespace FourFoldAccountManager.Desktop.Services;
 /// </summary>
 public sealed class AccountBrowserSessionService
 {
-    private static readonly TimeSpan NavigationTimeout = TimeSpan.FromSeconds(30);
+    // 45 s, not 30: since the site moved its database (2026-10-06), the login
+    // step (POST /auth.php) can take over 30 s before the sign-in goes through.
+    private static readonly TimeSpan NavigationTimeout = TimeSpan.FromSeconds(45);
     private readonly LocalDataPaths _paths;
     private readonly Dispatcher _dispatcher;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
