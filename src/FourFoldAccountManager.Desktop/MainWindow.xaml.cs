@@ -44,6 +44,11 @@ public partial class MainWindow : Window
     private readonly PlayerProfileService _playerProfileService;
     private readonly ObservableCollection<XpTrackerRow> _xpTrackerRows = [];
     private readonly List<PanelSlotCard> _slotCards = [];
+    private static readonly TimeSpan InGamePasswordClipboardLifetime = TimeSpan.FromSeconds(30);
+    // Longer window for the auto-copy on launch: the game canvas still has to load before its login appears.
+    private static readonly TimeSpan InGamePasswordLaunchClipboardLifetime = TimeSpan.FromSeconds(120);
+    private DispatcherTimer? _inGamePasswordClearTimer;
+    private string? _copiedInGamePassword;
     private readonly LayoutDividerResizeController _layoutDividerResizeController = new();
     private readonly SemaphoreSlim _settingsMutationGate = new(1, 1);
     private readonly SemaphoreSlim _viewportSaveGate = new(1, 1);
@@ -1912,6 +1917,10 @@ public partial class MainWindow : Window
         UpdateAllSlotPresentations();
         UpdateManageSlotsButton();
         SetBatchLaunchMode(true);
+        // Only auto-copy the in-game password when a single account actually starts: the clipboard holds one
+        // password, so copying during a multi-account batch would leave only the last account's on it.
+        var launchingCount = assignedSlots.Count(item =>
+            item.AccountId is { } id && !(_openAccountIds.Contains(id) && !_failedAccountIds.Contains(id)));
         var outcomes = new List<AssignedAccountStartResult>();
         try
         {
@@ -1936,7 +1945,7 @@ public partial class MainWindow : Window
                         await CloseAccountViewAsync(accountId, preserveFailure: true);
                     }
 
-                    var outcome = await StartAssignedAccountAsync(slot, accountId);
+                    var outcome = await StartAssignedAccountAsync(slot, accountId, autoCopyPassword: launchingCount == 1);
                     RecordAccountStartOutcome(accountId, outcome);
                     outcomes.Add(outcome);
                 }
@@ -1960,7 +1969,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<AssignedAccountStartResult> StartAssignedAccountAsync(PanelSlotCard slot, Guid accountId)
+    private async Task<AssignedAccountStartResult> StartAssignedAccountAsync(PanelSlotCard slot, Guid accountId, bool autoCopyPassword)
     {
         SetSlotStatus(slot, "Opening FourFold sign in…", StatusTone.Info);
         var view = await _browserSessions.CreateViewAsync(accountId, slot.BrowserHost);
@@ -2020,7 +2029,20 @@ public partial class MainWindow : Window
         var playResult = await _browserSessions.SelectPlayInBrowserAsync(accountId);
         if (playResult == PlayInBrowserResult.Activated)
         {
-            SetSlotStatus(slot, "Play now selected. FourFold is loading in this account panel.", StatusTone.Success);
+            if (autoCopyPassword &&
+                TryCopyInGamePasswordToClipboard(credentials.Password, InGamePasswordLaunchClipboardLifetime))
+            {
+                SetSlotStatus(slot,
+                    $"FourFold is loading. Your in-game password is on the clipboard — paste it into the game login. The clipboard clears in {InGamePasswordLaunchClipboardLifetime.TotalSeconds:0} seconds.",
+                    StatusTone.Success);
+            }
+            else
+            {
+                SetSlotStatus(slot,
+                    "Play now selected. FourFold is loading in this account panel. Use the key button to copy your in-game password.",
+                    StatusTone.Success);
+            }
+
             return AssignedAccountStartResult.Opened;
         }
 
@@ -2083,7 +2105,7 @@ public partial class MainWindow : Window
         try
         {
             await CloseAccountViewAsync(accountId, preserveFailure: true);
-            var outcome = await StartAssignedAccountAsync(slot, accountId);
+            var outcome = await StartAssignedAccountAsync(slot, accountId, autoCopyPassword: true);
             RecordAccountStartOutcome(accountId, outcome);
             GlobalStatusText.Text = outcome switch
             {
@@ -2742,6 +2764,7 @@ public partial class MainWindow : Window
         var header = new Grid { Margin = new Thickness(0, 0, 0, 10) };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(42) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var badge = new Border
         {
             Width = 28, Height = 28, CornerRadius = new CornerRadius(8),
@@ -2824,6 +2847,52 @@ public partial class MainWindow : Window
         };
         Grid.SetColumn(accountLabel, 1);
         header.Children.Add(accountLabel);
+
+        var copyPasswordButton = new Button
+        {
+            Tag = slotIndex,
+            Width = 28,
+            Height = 28,
+            MinWidth = 0,
+            MinHeight = 0,
+            Padding = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Center,
+            Focusable = true,
+            IsTabStop = true,
+            ToolTip = "Copy this account's in-game password to the clipboard",
+            Content = new TextBlock
+            {
+                Text = "🔑",
+                FontFamily = new System.Windows.Media.FontFamily("Segoe UI Emoji"),
+                FontSize = 14,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center
+            }
+        };
+        System.Windows.Automation.AutomationProperties.SetName(copyPasswordButton, "Copy in-game password");
+        var copyPasswordStyle = new Style(typeof(Button), (Style)FindResource("AppButtonStyle"));
+        copyPasswordStyle.Setters.Add(new Setter(UIElement.OpacityProperty, 0d));
+        copyPasswordStyle.Triggers.Add(new DataTrigger
+        {
+            Binding = new Binding(nameof(UIElement.IsMouseOver))
+            {
+                RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(Grid), 1)
+            },
+            Value = true,
+            Setters = { new Setter(UIElement.OpacityProperty, 1d) }
+        });
+        copyPasswordStyle.Triggers.Add(new Trigger
+        {
+            Property = UIElement.IsKeyboardFocusedProperty,
+            Value = true,
+            Setters = { new Setter(UIElement.OpacityProperty, 1d) }
+        });
+        copyPasswordButton.Style = copyPasswordStyle;
+        Grid.SetColumn(copyPasswordButton, 2);
+        header.Children.Add(copyPasswordButton);
+        copyPasswordButton.Click += CopyInGamePassword_Click;
+
         content.Children.Add(header);
 
         var status = new TextBlock
@@ -3322,6 +3391,117 @@ public partial class MainWindow : Window
         MoveDownButton.IsEnabled = canEdit && AccountsListBox.SelectedIndex < _accounts.Count - 1;
         FavoriteAccountButton.Content = selected?.IsFavorite == true ? "Unfavorite" : "Favorite";
         AccountCountText.Text = _accounts.Count == 1 ? "1 profile" : $"{_accounts.Count} profiles";
+    }
+
+    // The game no longer remembers the in-game password (it used to store it as plaintext in PlayerPrefs).
+    // This copies it from the secure credential store so the user can paste it into the game's own login,
+    // then clears the clipboard after a short delay to limit exposure.
+    private void CopyInGamePassword_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: int slotIndex })
+        {
+            return;
+        }
+
+        var slot = _slotCards.FirstOrDefault(item => item.SlotIndex == slotIndex);
+        if (slot is null)
+        {
+            return;
+        }
+
+        var accountId = AccountIdFor(slotIndex);
+        AccountCredentials? credentials = null;
+        if (accountId is { } id)
+        {
+            try
+            {
+                credentials = _credentialStore.Read(id);
+            }
+            catch
+            {
+                SetSlotStatus(slot, "Saved login could not be read for this account.", StatusTone.Error);
+                return;
+            }
+        }
+
+        switch (InGamePasswordCopy.Classify(accountId, credentials))
+        {
+            case InGamePasswordCopy.Readiness.NoAccount:
+                SetSlotStatus(slot, "Assign a saved account to this slot first.", StatusTone.Warning);
+                return;
+            case InGamePasswordCopy.Readiness.NoPassword:
+                SetSlotStatus(slot, "No saved password for this account. Add one with Edit profile.", StatusTone.Warning);
+                return;
+        }
+
+        if (!TryCopyInGamePasswordToClipboard(credentials!.Password, InGamePasswordClipboardLifetime))
+        {
+            SetSlotStatus(slot, "The in-game password could not be copied to the clipboard. Try again.", StatusTone.Error);
+            return;
+        }
+
+        SetSlotStatus(slot,
+            $"In-game password copied — paste it into the game login. The clipboard clears in {InGamePasswordClipboardLifetime.TotalSeconds:0} seconds.",
+            StatusTone.Info);
+    }
+
+    // Copies to the clipboard and (re)arms the auto-clear. Returns false if the clipboard was unavailable.
+    private bool TryCopyInGamePasswordToClipboard(string password, TimeSpan lifetime)
+    {
+        if (string.IsNullOrEmpty(password))
+        {
+            return false;
+        }
+
+        try
+        {
+            Clipboard.SetText(password);
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+
+        _copiedInGamePassword = password;
+        StartInGamePasswordClearTimer(lifetime);
+        return true;
+    }
+
+    private void StartInGamePasswordClearTimer(TimeSpan lifetime)
+    {
+        _inGamePasswordClearTimer ??= CreateInGamePasswordClearTimer();
+        _inGamePasswordClearTimer.Stop();
+        _inGamePasswordClearTimer.Interval = lifetime;
+        _inGamePasswordClearTimer.Start();
+    }
+
+    private DispatcherTimer CreateInGamePasswordClearTimer()
+    {
+        var timer = new DispatcherTimer();
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            var copied = _copiedInGamePassword;
+            _copiedInGamePassword = null;
+            if (copied is null)
+            {
+                return;
+            }
+
+            try
+            {
+                var current = Clipboard.ContainsText() ? Clipboard.GetText() : null;
+                if (InGamePasswordCopy.StillOurClipboard(current, copied))
+                {
+                    Clipboard.Clear();
+                }
+            }
+            catch (Exception)
+            {
+                // Clipboard busy or locked by another app: leave it rather than crash.
+            }
+        };
+        return timer;
     }
 
     private void SetSlotStatus(PanelSlotCard slot, string message, StatusTone tone)
