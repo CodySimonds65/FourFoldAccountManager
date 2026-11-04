@@ -5,10 +5,7 @@ using FourFoldAccountManager.Core.Leaderboard;
 
 namespace FourFoldAccountManager.Desktop.Services;
 
-public sealed record LeaderboardClientState(
-    Guid InstallationId,
-    IReadOnlyList<LeaderboardPage> CachedPages,
-    ParticipationHeartbeat? PendingParticipation);
+public sealed record LeaderboardClientState(IReadOnlyList<LeaderboardPage> CachedPages);
 
 public sealed class LeaderboardClientStateStore
 {
@@ -19,26 +16,22 @@ public sealed class LeaderboardClientStateStore
     public async Task<LeaderboardClientState> LoadAsync(CancellationToken ct = default)
     {
         if (!File.Exists(_paths.LeaderboardStateFilePath))
-            return new LeaderboardClientState(Guid.NewGuid(), [], null);
+            return new LeaderboardClientState([]);
         try
         {
             await using var stream = File.OpenRead(_paths.LeaderboardStateFilePath);
             var value = await JsonSerializer.DeserializeAsync<LeaderboardClientState>(stream, AtomicJsonFile.Options, ct);
-            if (value is null || value.InstallationId == Guid.Empty) throw new InvalidDataException();
-            return new LeaderboardClientState(value.InstallationId,
+            if (value is null) throw new InvalidDataException();
+            return new LeaderboardClientState(
                 (value.CachedPages ?? []).Where(page => page is not null &&
-                    LeaderboardApiClient.IsValidPage(page, page.Period, page.Page, page.PageSize)).ToArray(),
-                value.PendingParticipation);
+                    LeaderboardApiClient.IsValidPage(page, page.Period, page.Page, page.PageSize)).ToArray());
         }
         catch (Exception ex) when (ex is JsonException or InvalidDataException or IOException)
         {
-            return new LeaderboardClientState(Guid.NewGuid(), [], null);
+            return new LeaderboardClientState([]);
         }
     }
 
-    public async Task SaveAsync(LeaderboardClientState state, CancellationToken ct = default)
-    {
-        if (state.InstallationId == Guid.Empty) throw new ArgumentException("Installation ID is required.", nameof(state));
-        await AtomicJsonFile.WriteAsync(_paths.LeaderboardStateFilePath, state, ct);
-    }
+    public Task SaveAsync(LeaderboardClientState state, CancellationToken ct = default) =>
+        AtomicJsonFile.WriteAsync(_paths.LeaderboardStateFilePath, state, ct);
 }

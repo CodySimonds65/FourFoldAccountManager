@@ -19,8 +19,6 @@ public sealed record PanelSettings
 
     public bool FillGameToPanel { get; init; } = false;
 
-    public bool ShareLinkedAccounts { get; init; } = false;
-
     public bool ShowFullScreenExitButton { get; init; } = true;
 
     // Whether the plugin panel is open beside the strip. The name and JSON key predate the strip, so existing settings
@@ -106,8 +104,5 @@ public sealed record PanelSettings
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyDictionary<Guid, OverlayBounds>? LegacyXpOverlayBoundsByAccount { get; init; }
 
-    public static PanelSettings Default => new(PanelLayout.TwoByTwo, new Guid?[5])
-    {
-        ShareLinkedAccounts = true
-    };
+    public static PanelSettings Default => new(PanelLayout.TwoByTwo, new Guid?[5]);
 }

@@ -1,8 +1,6 @@
 using System.Net;
 using System.Net.Http;
 using System.IO;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 using FourFoldAccountManager.Core.Data;
 using FourFoldAccountManager.Core.Leaderboard;
 using FourFoldAccountManager.Desktop.Services;
@@ -13,119 +11,64 @@ namespace FourFoldAccountManager.Desktop.Tests.Leaderboard;
 public sealed class LeaderboardCoordinatorTests
 {
     [Fact]
-    public async Task OldSettingsDefaultToPrivateAndOptInSurvivesRestart()
+    public async Task ReadsAnFfdbPageAndKeepsItAcrossRestarts()
+    {
+        using var temp = new TempDirectory();
+        var handler = new RecordingHandler();
+        await using (var coordinator = CreateCoordinator(temp.Path, handler))
+        {
+            var page = await coordinator.RefreshPageAsync(LeaderboardPeriod.Weekly, 2, 25, CancellationToken.None);
+            Assert.NotNull(page);
+            Assert.Equal(26, Assert.Single(page.Entries).Rank);
+            Assert.Equal("pinkmilk", page.Entries[0].Username);
+            Assert.Equal(41, page.TotalEntries);
+        }
+        Assert.Equal("https://ffdb.info/api/leaderboards?period=weekly&page=2",
+            Assert.Single(handler.Requests).ToString());
+
+        await using var restarted = CreateCoordinator(temp.Path, new RecordingHandler { Fail = true });
+        var cached = await restarted.GetCachedPageAsync(LeaderboardPeriod.Weekly, 2, 25, CancellationToken.None);
+        Assert.Equal("pinkmilk", Assert.Single(cached!.Entries).Username);
+        Assert.Null(await restarted.RefreshPageAsync(LeaderboardPeriod.Weekly, 2, 25, CancellationToken.None,
+            scheduleRetry: false));
+    }
+
+    [Fact]
+    public async Task OldStateFileWithParticipationFieldsStillLoadsItsCache()
     {
         using var temp = new TempDirectory();
         var paths = new LocalDataPaths(temp.Path);
-        var settings = new SettingsStore(paths);
-        await settings.SaveAsync(await settings.LoadAsync());
-        var oldJson = JsonNode.Parse(await File.ReadAllTextAsync(paths.SettingsFilePath))!.AsObject();
-        oldJson.Remove("shareLinkedAccounts");
-        await File.WriteAllTextAsync(paths.SettingsFilePath, oldJson.ToJsonString());
-        Assert.False((await settings.LoadAsync()).ShareLinkedAccounts);
-        await settings.SaveAsync((await settings.LoadAsync()) with { ShareLinkedAccounts = true });
-        Assert.True((await settings.LoadAsync()).ShareLinkedAccounts);
+        await using (var coordinator = CreateCoordinator(temp.Path, new RecordingHandler()))
+            await coordinator.RefreshPageAsync(LeaderboardPeriod.Weekly, 2, 25, CancellationToken.None);
+        var json = await File.ReadAllTextAsync(paths.LeaderboardStateFilePath);
+        await File.WriteAllTextAsync(paths.LeaderboardStateFilePath, json.Insert(1,
+            "\"installationId\":\"3f2c1e9a-0000-4000-8000-000000000001\",\"pendingParticipation\":null,"));
+
+        var state = await new LeaderboardClientStateStore(paths).LoadAsync();
+        Assert.Single(state.CachedPages);
     }
 
-    [Fact]
-    public async Task InstallationIdPersistsAndWireRequestContainsOnlyPublicIdentity()
+    private static LeaderboardCoordinator CreateCoordinator(string path, RecordingHandler handler)
     {
-        using var temp = new TempDirectory();
-        var handler = new RecordingHandler();
-        await using var first = CreateCoordinator(temp.Path, handler, sharing: true);
-        await first.InitializeAsync();
-        await first.SyncParticipationAsync([new LeaderboardProfile(42, "Player")], [42], CancellationToken.None);
-        await first.FlushPendingAsync();
-        var firstRequest = handler.Bodies.Single();
-        using var json = JsonDocument.Parse(firstRequest);
-        var id = json.RootElement.GetProperty("installationId").GetGuid();
-        Assert.NotEqual(Guid.Empty, id);
-        Assert.Equal(42, json.RootElement.GetProperty("activePlayerIds")[0].GetInt32());
-        Assert.DoesNotContain("accountId", firstRequest, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("label", firstRequest, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("password", firstRequest, StringComparison.OrdinalIgnoreCase);
-        await using var second = CreateCoordinator(temp.Path, new RecordingHandler(), sharing: true);
-        await second.InitializeAsync();
-        Assert.Equal(id, second.InstallationId);
-    }
-
-    [Fact]
-    public async Task OptOutPersistsLocallyBeforeRequestAndRetriesEmptyHeartbeat()
-    {
-        using var temp = new TempDirectory();
-        var settings = new SettingsStore(new LocalDataPaths(temp.Path));
-        await settings.SaveAsync((await settings.LoadAsync()) with { ShareLinkedAccounts = true });
-        var handler = new RecordingHandler { Fail = true };
-        await using var coordinator = CreateCoordinator(temp.Path, handler, sharing: true,
-            async (enabled, ct) => await settings.SaveAsync((await settings.LoadAsync(ct)) with { ShareLinkedAccounts = enabled }, ct));
-        await coordinator.InitializeAsync();
-        await coordinator.SetSharingEnabledAsync(false, CancellationToken.None);
-        Assert.False((await settings.LoadAsync()).ShareLinkedAccounts);
-        await coordinator.FlushPendingAsync();
-        Assert.True(coordinator.HasPendingParticipation);
-        handler.Fail = false;
-        await coordinator.FlushPendingAsync();
-        Assert.False(coordinator.HasPendingParticipation);
-        using var json = JsonDocument.Parse(handler.Bodies.Last());
-        Assert.False(json.RootElement.GetProperty("sharingEnabled").GetBoolean());
-        Assert.Empty(json.RootElement.GetProperty("activePlayerIds").EnumerateArray());
-    }
-
-    [Fact]
-    public async Task DefaultPrivateStateNeverContactsParticipationEndpoint()
-    {
-        using var temp = new TempDirectory();
-        var handler = new RecordingHandler();
-        await using var coordinator = CreateCoordinator(temp.Path, handler, sharing: false);
-        await coordinator.InitializeAsync();
-        await coordinator.SyncParticipationAsync([new LeaderboardProfile(42, "Player")], [42], CancellationToken.None);
-        await coordinator.FlushPendingAsync();
-        Assert.Empty(handler.Bodies);
-    }
-
-    [Fact]
-    public async Task FailingLeaderboardDoesNotPreventLocalTrackerStart()
-    {
-        using var temp = new TempDirectory();
-        await using var coordinator = CreateCoordinator(temp.Path, new RecordingHandler { Fail = true }, sharing: true);
-        await coordinator.InitializeAsync();
-        await coordinator.SyncParticipationAsync([new LeaderboardProfile(42, "Player")], [42], CancellationToken.None);
-        await coordinator.FlushPendingAsync();
-        await using var tracker = new XpTrackerCoordinator(new LocalDataPaths(temp.Path), _ => Task.CompletedTask);
-        var accountId = Guid.NewGuid();
-        tracker.Start(accountId, "Player", 42);
-        Assert.Equal(accountId, Assert.Single(tracker.GetStates()).AccountId);
-        Assert.Equal(42, Assert.Single(tracker.GetActiveLeaderboardProfiles()).PlayerId);
-        Assert.True(coordinator.HasPendingParticipation);
-    }
-
-    private static LeaderboardCoordinator CreateCoordinator(string path, RecordingHandler handler, bool sharing,
-        Func<bool, CancellationToken, Task>? persist = null)
-    {
-        var client = new LeaderboardApiClient(new HttpClient(handler),
-            new LeaderboardApiOptions(new Uri("https://leaderboard.example/")));
-        return new LeaderboardCoordinator(new LeaderboardClientStateStore(new LocalDataPaths(path)),
-            client, sharing, persist ?? ((_, _) => Task.CompletedTask));
+        var client = new LeaderboardApiClient(new HttpClient(handler), LeaderboardApiOptions.FromEnvironment()!);
+        return new LeaderboardCoordinator(new LeaderboardClientStateStore(new LocalDataPaths(path)), client);
     }
 
     private sealed class RecordingHandler : HttpMessageHandler
     {
-        public List<string> Bodies { get; } = [];
+        public List<Uri> Requests { get; } = [];
         public bool Fail { get; set; }
-        public bool BadJson { get; set; }
-        public int GetRequests { get; private set; }
 
-        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
-            if (request.Content is not null) Bodies.Add(await request.Content.ReadAsStringAsync(ct));
-            if (request.Method == HttpMethod.Get) GetRequests++;
+            Requests.Add(request.RequestUri!);
             if (Fail) throw new HttpRequestException("offline");
-            if (request.Method == HttpMethod.Put) return new HttpResponseMessage(HttpStatusCode.NoContent);
-            var page = request.RequestUri!.Query.Contains("page=2&", StringComparison.Ordinal) ? 2 : 1;
-            var body = BadJson ? "{broken" : $$"""
-                {"period":0,"periodStartUtc":"2026-09-23T00:00:00Z","periodEndUtc":"2026-09-24T00:00:00Z","page":{{page}},"pageSize":50,"totalEntries":2,"generatedAtUtc":"2026-09-23T12:00:00Z","entries":[{"rank":{{page}},"playerId":{{41 + page}},"username":"Player {{page}}","xpGained":100,"lastSampledAtUtc":"2026-09-23T12:00:00Z","isStale":false}]}
+            var (start, end) = LeaderboardPeriodWindow.GetCurrent(LeaderboardPeriod.Weekly, DateTimeOffset.UtcNow);
+            // Shape copied from a live ffdb.info weekly page 2 response.
+            var body = $$"""
+                {"trackingGeneration":"fourfolddb-xp-2026-10-25","source":"fourfolddb","period":1,"periodStartUtc":"{{start:O}}","periodEndUtc":"{{end:O}}","pageSize":25,"totalEntries":41,"generatedAtUtc":"2026-11-04T19:03:58.900Z","trackingStartedAtUtc":"2026-10-25T22:31:55.062Z","lastCollectedAtUtc":"2026-11-04T19:03:58.805Z","initialPassComplete":true,"trackedPlayers":260,"page":2,"fetchedAtUtc":"2026-11-04T19:04:24.677Z","sourceUnavailable":false,"entries":[{"rank":26,"playerId":235,"username":"pinkmilk","xpGained":197839,"lastSampledAtUtc":"2026-11-04T19:03:58.805Z","isStale":false}]}
                 """;
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) };
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) });
         }
     }
 
