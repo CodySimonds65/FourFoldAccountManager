@@ -20,11 +20,7 @@ public sealed class SettingsStore
     {
         if (!File.Exists(_paths.SettingsFilePath))
         {
-            // An existing account file may predate the sharing setting. Keep that installation private.
-            return Validate(PanelSettings.Default with
-            {
-                ShareLinkedAccounts = !File.Exists(_paths.AccountsFilePath)
-            });
+            return Validate(PanelSettings.Default);
         }
 
         try

@@ -22,18 +22,6 @@ public sealed class LeaderboardApiClient : IDisposable
         _ownsClient = ownsClient;
     }
 
-    public async Task SendHeartbeatAsync(ParticipationHeartbeat heartbeat, CancellationToken ct)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(TimeSpan.FromSeconds(75));
-        using var request = new HttpRequestMessage(HttpMethod.Put, new Uri(_baseAddress, "v1/participation"))
-        {
-            Content = JsonContent.Create(heartbeat, options: JsonOptions)
-        };
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
-        response.EnsureSuccessStatusCode();
-    }
-
     public async Task<LeaderboardPage> GetPageAsync(LeaderboardPeriod period, int page, int pageSize, CancellationToken ct)
     {
         if (!Enum.IsDefined(period) || page < 1 || pageSize is < 1 or > 100)
@@ -41,7 +29,8 @@ public sealed class LeaderboardApiClient : IDisposable
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(75));
         var periodText = period.ToString().ToLowerInvariant();
-        var uri = new Uri(_baseAddress, $"v1/leaderboards/{periodText}?page={page}&pageSize={pageSize}");
+        // ffdb.info always serves 25 a page; IsValidPage rejects any other size.
+        var uri = new Uri(_baseAddress, $"api/leaderboards?period={periodText}&page={page}");
         using var response = await _httpClient.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
         response.EnsureSuccessStatusCode();
         var result = await response.Content.ReadFromJsonAsync<LeaderboardPage>(JsonOptions, timeout.Token);

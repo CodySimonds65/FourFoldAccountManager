@@ -2,7 +2,7 @@ namespace FourFoldAccountManager.Desktop.Services;
 
 public sealed record LeaderboardApiOptions(Uri BaseAddress)
 {
-    private const string DefaultServiceUrl = "https://fourfold-shared-xp-leaderboard.onrender.com";
+    private const string DefaultServiceUrl = "https://ffdb.info";
 
     public static LeaderboardApiOptions? FromConfiguredUrl(string? configured)
     {

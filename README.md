@@ -22,7 +22,7 @@ A Windows client for running several FourFold accounts side by side, each in its
 - **Community plugins**: open the plugin list (the wrench) and choose **Plugin hub** to search and install plugins made by the community. Every plugin is reviewed before it is listed, runs in a sandbox, and updates itself. To make one, see [PLUGIN_AUTHORS.md](PLUGIN_AUTHORS.md).
 - **Overlays**: drag XP/hr, stats, XP calculator and timer cards anywhere over the game.
 - **Second monitor**: pop the tools panel into its own window, or float individual cards on any screen.
-- **Shared XP leaderboard**: daily, weekly and monthly XP gains across opted-in players.
+- **XP leaderboard**: daily, weekly and monthly XP gains, read from [ffdb.info](https://ffdb.info).
 - **Store blocking**: optionally stop the in-game store and gold buttons from opening (Settings → Display).
 
 ## Shortcuts
@@ -57,7 +57,7 @@ dotnet run --project src/FourFoldAccountManager.Desktop/FourFoldAccountManager.D
 <details>
 <summary><strong>Leaderboard service (maintainers)</strong></summary>
 
-The desktop uses `https://fourfold-shared-xp-leaderboard.onrender.com`; override it with `FOURFOLD_LEADERBOARD_URL`. Local XP tracking works without it. The server reads public profiles itself and never accepts XP values from the client.
+The desktop reads rankings from `https://ffdb.info/api/leaderboards`; override the host with `FOURFOLD_LEADERBOARD_URL`. It sends nothing, so it needs no server of ours. The service below is no longer used by the desktop.
 
 **Backup:** use PostgreSQL 16+ tools against Neon's direct TLS endpoint, with credentials in `PG*` environment variables. Dumps contain profile IDs and XP data, so keep them private.
 

@@ -92,11 +92,7 @@ public partial class MainWindow : Window
         _browserSessions = new AccountBrowserSessionService(paths, () => _panelSettings.BlockStorePages);
         _xpTracker = new XpTrackerCoordinator(paths);
         _playerProfileService = _xpTracker.ProfileService;
-        _xpTracker.Changed += (_, _) =>
-        {
-            RefreshTrackerRows();
-            _ = SyncLeaderboardParticipationAsync();
-        };
+        _xpTracker.Changed += (_, _) => RefreshTrackerRows();
         FullscreenOverlayTray.EditRequested += (_, _) => SetOverlayEditing(true);
         FullscreenOverlayTray.DoneRequested += (_, _) => SetOverlayEditing(false);
         FullscreenOverlayTray.CardToggleRequested += FullscreenOverlayTray_CardToggleRequested;
@@ -308,21 +304,15 @@ public partial class MainWindow : Window
                 var apiOptions = LeaderboardApiOptions.FromEnvironment();
                 var apiClient = apiOptions is null ? null :
                     new LeaderboardApiClient(new HttpClient(), apiOptions, ownsClient: true);
-                _leaderboard = new LeaderboardCoordinator(new LeaderboardClientStateStore(_dataPaths),
-                    apiClient, _panelSettings.ShareLinkedAccounts,
-                    async (enabled, _) =>
-                    {
-                        await UpdateSettingsAsync(settings => settings with { ShareLinkedAccounts = enabled });
-                    });
+                _leaderboard = new LeaderboardCoordinator(new LeaderboardClientStateStore(_dataPaths), apiClient);
                 await _leaderboard.InitializeAsync();
-                _ = SyncLeaderboardParticipationAsync();
             }
             catch
             {
                 // An unavailable leaderboard must not prevent local account management.
                 _leaderboard = null;
             }
-            LeaderboardPanelView.Configure(_leaderboard, enabled => SetLeaderboardSharingAsync(enabled));
+            LeaderboardPanelView.Configure(_leaderboard);
             _shortcuts?.Initialize(_panelSettings);
             UpdateTimerHotkeys();
             RefreshPlainKeyBindings();
@@ -1985,7 +1975,6 @@ public partial class MainWindow : Window
         _xpTracker.Start(accountId, rankingUsername, profile?.RankingPlayerId);
         RefreshTrackerRows();
         AttachBrowserView(slot, accountId, view);
-        _ = SyncLeaderboardParticipationAsync();
 
         var loginPageResult = await _browserSessions.NavigateAndWaitAsync(accountId, FourFoldDestination.LoginUri);
         if (loginPageResult != BrowserNavigationResult.Navigated)
@@ -3160,7 +3149,6 @@ public partial class MainWindow : Window
         }
         _xpTracker.Stop(accountId);
         RefreshTrackerRows();
-        _ = SyncLeaderboardParticipationAsync();
         UpdateAllSlotPresentations();
         UpdateManageSlotsButton();
     }
@@ -3182,7 +3170,6 @@ public partial class MainWindow : Window
         foreach (var accountId in _xpTracker.GetStates().Select(state => state.AccountId).ToArray())
             _xpTracker.Stop(accountId);
         RefreshTrackerRows();
-        _ = SyncLeaderboardParticipationAsync();
         foreach (var slot in _slotCards)
         {
             slot.View = null;
@@ -3217,42 +3204,6 @@ public partial class MainWindow : Window
     private async Task SaveAccountsAsync()
     {
         await _accountStore.SaveAsync(_accounts.OrderBy(account => account.SortOrder).ToArray());
-        _ = SyncLeaderboardParticipationAsync();
-    }
-
-    internal async Task SetLeaderboardSharingAsync(bool enabled, CancellationToken ct = default)
-    {
-        if (_leaderboard is not { } leaderboard) return;
-        await leaderboard.SetSharingEnabledAsync(enabled, ct);
-        await SyncLeaderboardParticipationAsync();
-    }
-
-    private async Task SyncLeaderboardParticipationAsync()
-    {
-        if (_leaderboard is not { } leaderboard) return;
-        try
-        {
-            var activeProfiles = _xpTracker.GetActiveLeaderboardProfiles()
-                .Where(profile => _openAccountIds.Contains(profile.AccountId))
-                .ToDictionary(profile => profile.AccountId);
-            var profiles = _accounts.Select(account =>
-            {
-                if (activeProfiles.TryGetValue(account.Id, out var active))
-                    return new LeaderboardProfile(active.PlayerId, active.Username);
-
-                return new LeaderboardProfile(account.RankingPlayerId ?? 0,
-                    account.RankingUsername?.Trim() ?? string.Empty);
-            }).Where(profile => profile.PlayerId > 0 && !string.IsNullOrWhiteSpace(profile.Username))
-                .DistinctBy(profile => profile.PlayerId).ToArray();
-            var linkedIds = profiles.Select(profile => profile.PlayerId).ToHashSet();
-            var activeIds = activeProfiles.Values.Select(profile => profile.PlayerId)
-                .Where(linkedIds.Contains).Distinct().ToArray();
-            await leaderboard.SyncParticipationAsync(profiles, activeIds, CancellationToken.None);
-        }
-        catch
-        {
-            // Participation is optional and must never interrupt view launch or local XP tracking.
-        }
     }
 
     private Task<PanelSettings> UpdateSettingsAsync(Func<PanelSettings, PanelSettings> update) =>
@@ -3472,14 +3423,7 @@ public partial class MainWindow : Window
             {
                 await CloseAllOpenViewsAsync();
                 await _xpTracker.DisposeAsync();
-                if (_leaderboard is { } leaderboard)
-                {
-                    await SyncLeaderboardParticipationAsync();
-                    using var goodbyeTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-                    try { await leaderboard.FlushPendingAsync(goodbyeTimeout.Token); }
-                    catch { /* The saved empty heartbeat is retried on next launch. */ }
-                    await leaderboard.DisposeAsync();
-                }
+                if (_leaderboard is { } leaderboard) await leaderboard.DisposeAsync();
             }
             finally
             {

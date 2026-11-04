@@ -11,15 +11,12 @@ public partial class LeaderboardPanel : UserControl
 {
     private const int PageSize = 25;
     private LeaderboardCoordinator? _coordinator;
-    private Func<bool, Task>? _setSharing;
     private CancellationTokenSource? _refreshCancellation;
     private LeaderboardPeriod _period = LeaderboardPeriod.Daily;
     private LeaderboardPage? _page;
     private int _pageNumber = 1;
     private int _refreshVersion;
     private bool _visible;
-    private bool _configured;
-    private bool _changingSharing;
     private bool _showingCachedData;
 
     public LeaderboardPanel()
@@ -31,17 +28,11 @@ public partial class LeaderboardPanel : UserControl
         StateText.Text = "Open the leaderboard to load rankings.";
     }
 
-    public void Configure(LeaderboardCoordinator? coordinator, Func<bool, Task> setSharing)
+    public void Configure(LeaderboardCoordinator? coordinator)
     {
         if (_coordinator is not null) _coordinator.StatusChanged -= Coordinator_StatusChanged;
         _coordinator = coordinator;
-        _setSharing = setSharing;
-        _configured = coordinator is not null;
         if (coordinator is not null) coordinator.StatusChanged += Coordinator_StatusChanged;
-        _changingSharing = true;
-        ShareLinkedAccountsCheckBox.IsChecked = coordinator?.SharingEnabled == true;
-        _changingSharing = false;
-        ShareLinkedAccountsCheckBox.IsEnabled = _configured;
         StateText.Text = coordinator is null
             ? "Leaderboard settings could not be loaded on this PC."
             : coordinator.IsConfigured
@@ -268,28 +259,6 @@ public partial class LeaderboardPanel : UserControl
     }
 
     private void Refresh_Click(object sender, RoutedEventArgs e) => _ = RefreshAsync();
-
-    private async void SharingChanged(object sender, RoutedEventArgs e)
-    {
-        if (_changingSharing || !_configured || _setSharing is null || _coordinator is null) return;
-        var enabled = ShareLinkedAccountsCheckBox.IsChecked == true;
-        ShareLinkedAccountsCheckBox.IsEnabled = false;
-        try
-        {
-            await _setSharing(enabled);
-            StateText.Text = enabled
-                ? "Sharing enabled for linked accounts. Active game views can contribute XP gains."
-                : "Sharing disabled on this device. Previously recorded gains remain visible until their UTC periods end.";
-        }
-        catch
-        {
-            _changingSharing = true;
-            ShareLinkedAccountsCheckBox.IsChecked = _coordinator.SharingEnabled;
-            _changingSharing = false;
-            StateText.Text = "Could not save the sharing preference. Try again.";
-        }
-        finally { ShareLinkedAccountsCheckBox.IsEnabled = true; }
-    }
 
     private sealed record LeaderboardRow(string Rank, string Username, string XpGained,
         string LastSampled, string SampleStatus);
