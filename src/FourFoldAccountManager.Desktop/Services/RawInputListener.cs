@@ -59,7 +59,7 @@ internal sealed class RawInputListener : IDisposable
         }
     }
 
-    // Raw input reaches this window whichever app is in front; mouse shortcuts only act while FourFold is.
+    // Raw input reaches this window whichever app is in front; shortcuts only act while FourFold is.
     public static bool IsThisAppInFront() =>
         GetWindowThreadProcessId(GetForegroundWindow(), out var processId) != 0 && processId == Environment.ProcessId;
 

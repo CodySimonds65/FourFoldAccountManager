@@ -53,6 +53,7 @@ public partial class MainWindow : Window
     private readonly BuiltInPluginSet _plugins;
     private HwndSource? _windowSource;
     private GlobalShortcutRegistry? _shortcuts;
+    private WindowsGlobalHotkeyRegistrar? _hotkeys;
     private RawInputListener? _rawInput;
     private readonly PlainKeyShortcutMatcher _plainKeys = new();
     // Recording a shortcut must not reveal overlays, toggle dividers, or change a live run.
@@ -186,8 +187,12 @@ public partial class MainWindow : Window
 
         _windowSource.AddHook(MainWindow_HwndSourceHook);
         _rawInput = RawInputListener.TryRegister(windowHandle, HandleObservedInput);
+        _hotkeys = new WindowsGlobalHotkeyRegistrar(windowHandle);
+        _hotkeys.SetSuspended(!RawInputListener.IsThisAppInFront());
+        Application.Current.Activated += (_, _) => _hotkeys?.SetSuspended(false);
+        Application.Current.Deactivated += (_, _) => _hotkeys?.SetSuspended(true);
         _shortcuts = new GlobalShortcutRegistry(new PlainKeyRoutingRegistrar(
-            new WindowsGlobalHotkeyRegistrar(windowHandle), plainKeysAvailable: _rawInput is not null));
+            _hotkeys, plainKeysAvailable: _rawInput is not null));
     }
 
     private IntPtr MainWindow_HwndSourceHook(
@@ -263,9 +268,10 @@ public partial class MainWindow : Window
             return;
         }
 
-        // A mouse shortcut only acts while FourFold is in front: scrolling in another app must not switch tabs.
+        // Shortcuts only act while FourFold is in front: keys pressed in another app or game are theirs.
         if (_plainKeys.KeyDown(input) is { } action &&
-            (GlobalHotkeyChord.IsMouseInput(input) ? RawInputListener.IsThisAppInFront() : !IsTypingInFourFold()))
+            RawInputListener.IsThisAppInFront() &&
+            (GlobalHotkeyChord.IsMouseInput(input) || !IsTypingInFourFold()))
         {
             HandleGlobalShortcut(action);
         }
