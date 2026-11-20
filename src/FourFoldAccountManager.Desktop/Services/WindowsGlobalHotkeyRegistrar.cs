@@ -11,6 +11,8 @@ internal sealed class WindowsGlobalHotkeyRegistrar : IGlobalHotkeyRegistrar
     private const uint ModifierNoRepeat = 0x4000;
 
     private readonly IntPtr _windowHandle;
+    private readonly Dictionary<int, (uint Modifiers, uint Key)> _registered = [];
+    private bool _suspended;
 
     public WindowsGlobalHotkeyRegistrar(IntPtr windowHandle)
     {
@@ -46,10 +48,43 @@ internal sealed class WindowsGlobalHotkeyRegistrar : IGlobalHotkeyRegistrar
             modifiers |= ModifierShift;
         }
 
-        return RegisterHotKey(_windowHandle, id, modifiers, chord.VirtualKey);
+        if (!RegisterHotKey(_windowHandle, id, modifiers, chord.VirtualKey))
+        {
+            return false;
+        }
+
+        // While suspended the trial registration only proves Windows would accept the chord.
+        if (_suspended)
+        {
+            _ = UnregisterHotKey(_windowHandle, id);
+        }
+
+        _registered[id] = (modifiers, chord.VirtualKey);
+        return true;
     }
 
-    public void Unregister(int id) => _ = UnregisterHotKey(_windowHandle, id);
+    public void Unregister(int id)
+    {
+        _registered.Remove(id);
+        _ = UnregisterHotKey(_windowHandle, id);
+    }
+
+    // RegisterHotKey takes its chord from every app, so the chords are only held while FourFold is in front.
+    public void SetSuspended(bool suspended)
+    {
+        if (suspended == _suspended)
+        {
+            return;
+        }
+
+        _suspended = suspended;
+        foreach (var (id, chord) in _registered)
+        {
+            _ = suspended
+                ? UnregisterHotKey(_windowHandle, id)
+                : RegisterHotKey(_windowHandle, id, chord.Modifiers, chord.Key);
+        }
+    }
 
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
